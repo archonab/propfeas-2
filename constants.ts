@@ -1,7 +1,6 @@
 
-import { CostCategory, DistributionMethod, FeasibilitySettings, LineItem, RevenueItem, InputType } from './types';
+import { CostCategory, DistributionMethod, FeasibilitySettings, LineItem, RevenueItem, InputType, ScenarioStatus } from './types';
 
-// Fix: Added missing 'totalUnits' property to satisfy FeasibilitySettings type
 export const INITIAL_SETTINGS: FeasibilitySettings = {
   projectName: "Bluewater View",
   description: "Twenty Townhouse Units",
@@ -11,10 +10,13 @@ export const INITIAL_SETTINGS: FeasibilitySettings = {
   discountRate: 15,
   gstRate: 10,
   interestRate: 7.5,
-  totalUnits: 20
+  totalUnits: 20,
+  status: ScenarioStatus.DRAFT,
+  useMarginScheme: true,
+  landLVR: 65,
+  constructionFundingPct: 100
 };
 
-// Fix: Added missing 'code' and 'inputType' properties to each cost item to satisfy LineItem type
 export const INITIAL_COSTS: LineItem[] = [
   {
     id: '1',

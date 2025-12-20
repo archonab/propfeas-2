@@ -9,6 +9,7 @@
     "react-dom": "^18.3.1",
     "decimal.js": "^10.4.3",
     "recharts": "^2.15.0",
-    "lucide-react": "^0.344.0"
+    "lucide-react": "^0.344.0",
+    "@vitejs/plugin-react": "^4.2.1"
   }
 }

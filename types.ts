@@ -58,9 +58,9 @@ export interface LineItem {
   category: CostCategory;
   description: string;
   inputType: InputType;
-  amount: number; // This is the base value ($, %, or rate)
-  startDate: number; // Month index
-  span: number; // Duration
+  amount: number;
+  startDate: number;
+  span: number;
   method: DistributionMethod;
   escalationRate: number;
   isTaxable: boolean;
@@ -86,9 +86,13 @@ export interface FeasibilitySettings {
   discountRate: number;
   gstRate: number;
   interestRate: number;
-  totalUnits: number; // Global unit count for Rate per Unit calcs
+  totalUnits: number;
   status?: ScenarioStatus;
-  equityContribution?: number; // Total equity invested for ROE calculation
+  equityContribution?: number;
+  // New Finance & Tax Properties
+  useMarginScheme: boolean;
+  landLVR: number;
+  constructionFundingPct: number;
 }
 
 export interface MonthlyFlow {
@@ -100,4 +104,5 @@ export interface MonthlyFlow {
   cumulative: number;
   interest: number;
   debtBalance: number;
+  equityOutflow: number;
 }

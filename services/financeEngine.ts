@@ -29,8 +29,8 @@ const distributeValue = (total: number, currentMonth: number, span: number, meth
 
   switch (method) {
     case DistributionMethod.S_CURVE: {
-      const k = 10; // Steepness
-      const x0 = 0.5; // Midpoint
+      const k = 10;
+      const x0 = 0.5;
       
       const getCumulative = (t: number) => {
         const x = t / span;
@@ -72,14 +72,24 @@ const calculateMonthlyCashflow = (
     return acc.plus(new Decimal(rev.units).times(rev.pricePerUnit));
   }, new Decimal(0)).toNumber();
 
-  // 2. Calculate Construction Baseline (for dependent items)
+  // 2. Calculate Land Total (for Margin Scheme)
+  const landTotal = costs
+    .filter(c => c.category === CostCategory.LAND)
+    .reduce((acc, c) => acc.plus(c.amount), new Decimal(0)).toNumber();
+
+  // 3. Calculate Construction Baseline (for dependent items)
   const constructionSum = costs
     .filter(c => c.category === CostCategory.CONSTRUCTION)
     .reduce((acc, c) => acc.plus(c.amount), new Decimal(0)).toNumber();
 
+  const landLVR = new Decimal(settings.landLVR).dividedBy(100);
+  const constFunding = new Decimal(settings.constructionFundingPct).dividedBy(100);
+
   for (let m = 0; m <= settings.durationMonths; m++) {
     let monthlyOutflow = new Decimal(0);
     let monthlyInflow = new Decimal(0);
+    let debtDrawdown = new Decimal(0);
+    let equityContribution = new Decimal(0);
 
     // Process Costs
     costs.forEach(cost => {
@@ -92,27 +102,61 @@ const calculateMonthlyCashflow = (
         const escalationRate = cost.escalationRate || 0;
         const escalationFactor = new Decimal(1).plus(new Decimal(escalationRate).dividedBy(100)).pow(yearsElapsed);
         
-        monthlyOutflow = monthlyOutflow.plus(monthlyValue.times(escalationFactor));
+        const escalatedValue = monthlyValue.times(escalationFactor);
+        monthlyOutflow = monthlyOutflow.plus(escalatedValue);
+
+        // Debt/Equity Split
+        if (cost.category === CostCategory.LAND) {
+          const debtPortion = escalatedValue.times(landLVR);
+          debtDrawdown = debtDrawdown.plus(debtPortion);
+          equityContribution = equityContribution.plus(escalatedValue.minus(debtPortion));
+        } else {
+          // Defaulting to construction funding pct for non-land costs
+          const debtPortion = escalatedValue.times(constFunding);
+          debtDrawdown = debtDrawdown.plus(debtPortion);
+          equityContribution = equityContribution.plus(escalatedValue.minus(debtPortion));
+        }
       }
     });
 
-    // Process Revenue Settlements
+    // Process Revenue Settlements with Margin Scheme Logic
     revenues.forEach(rev => {
       if (m === rev.settlementDate) {
         const revTotal = new Decimal(rev.units).times(rev.pricePerUnit);
         const commission = revTotal.times(rev.commissionRate).dividedBy(100);
-        monthlyInflow = monthlyInflow.plus(revTotal.minus(commission));
+        
+        let gstPayable = new Decimal(0);
+        if (settings.useMarginScheme) {
+          // Margin Scheme: GST is 1/11th of (Revenue - Land)
+          const margin = revTotal.minus(landTotal);
+          if (margin.gt(0)) {
+            gstPayable = margin.dividedBy(11);
+          }
+        } else {
+          // Standard GST: 1/11th of Gross Revenue
+          gstPayable = revTotal.dividedBy(11);
+        }
+
+        monthlyInflow = monthlyInflow.plus(revTotal.minus(commission).minus(gstPayable));
       }
     });
 
-    // Interest Calculation
+    // Interest Calculation (Peak Debt Basis - Capitalised Monthly)
     const monthlyInterestRate = new Decimal(settings.interestRate).dividedBy(100).dividedBy(12);
     const interestCharge = cumulativeDebt.times(monthlyInterestRate);
     
-    monthlyOutflow = monthlyOutflow.plus(interestCharge);
+    // Add current debt drawdowns and interest to balance
+    cumulativeDebt = cumulativeDebt.plus(debtDrawdown).plus(interestCharge);
     
-    const netMonthly = monthlyInflow.minus(monthlyOutflow);
-    cumulativeDebt = cumulativeDebt.minus(netMonthly);
+    // If inflow exists, pay down debt first
+    if (monthlyInflow.gt(0)) {
+      const debtRepayment = Decimal.min(cumulativeDebt, monthlyInflow);
+      cumulativeDebt = cumulativeDebt.minus(debtRepayment);
+      // Net flow is what's left after debt repayment minus any equity outflows
+      monthlyInflow = monthlyInflow.minus(debtRepayment);
+    }
+    
+    const netMonthly = monthlyInflow.minus(equityContribution);
 
     flows.push({
       month: m,
@@ -120,9 +164,10 @@ const calculateMonthlyCashflow = (
       outflow: monthlyOutflow.toNumber(),
       inflow: monthlyInflow.toNumber(),
       net: netMonthly.toNumber(),
-      cumulative: -cumulativeDebt.toNumber(),
+      cumulative: -cumulativeDebt.toNumber(), // Matches cumulative project balance
       interest: interestCharge.toNumber(),
-      debtBalance: cumulativeDebt.toNumber()
+      debtBalance: cumulativeDebt.toNumber(),
+      equityOutflow: equityContribution.toNumber()
     });
   }
 

@@ -29,28 +29,23 @@ export enum ScenarioStatus {
   PROMOTED = 'Promoted'
 }
 
-export interface VendorPlaceholder {
+export interface Project {
   id: string;
-  role: string;
-  category: CostCategory;
-  suggestedBudget: number;
+  code: string;
+  name: string;
+  address: string;
+  thumbnail: string;
+  status: 'Live' | 'Draft' | 'Baseline';
+  stage: 'Planning' | 'Construction' | 'Sales' | 'Acquisition';
+  targetFinish: string;
+  pm: string;
+  openTasks: number;
+  openRFIs: number;
+  conditions: number;
 }
 
-export interface BudgetLineItem extends LineItem {
-  originalBudget: number;
-  committedCost: number;
-  actualCost: number;
-  forecastCost: number;
-}
-
-export interface ProjectBudget {
-  id: string;
-  sourceScenarioId: string;
-  projectName: string;
-  baselineDate: string;
-  lineItems: BudgetLineItem[];
-  vendors: VendorPlaceholder[];
-}
+export type GlobalTab = 'projects' | 'sites' | 'vendors' | 'procurement' | 'contracts' | 'crm' | 'admin';
+export type ProjectModule = 'overview' | 'feasibility' | 'tasks' | 'procurement' | 'contracts' | 'sales' | 'rfi' | 'files';
 
 export interface LineItem {
   id: string;
@@ -89,7 +84,6 @@ export interface FeasibilitySettings {
   totalUnits: number;
   status?: ScenarioStatus;
   equityContribution?: number;
-  // New Finance & Tax Properties
   useMarginScheme: boolean;
   landLVR: number;
   constructionFundingPct: number;
@@ -105,4 +99,27 @@ export interface MonthlyFlow {
   interest: number;
   debtBalance: number;
   equityOutflow: number;
+}
+
+export interface BudgetLineItem extends LineItem {
+  originalBudget: number;
+  committedCost: number;
+  actualCost: number;
+  forecastCost: number;
+}
+
+export interface VendorPlaceholder {
+  id: string;
+  role: string;
+  category: CostCategory;
+  suggestedBudget: number;
+}
+
+export interface ProjectBudget {
+  id: string;
+  sourceScenarioId: string;
+  projectName: string;
+  baselineDate: string;
+  lineItems: BudgetLineItem[];
+  vendors: VendorPlaceholder[];
 }

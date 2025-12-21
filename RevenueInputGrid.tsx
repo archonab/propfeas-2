@@ -6,10 +6,10 @@ interface Props {
   revenues: RevenueItem[];
   setRevenues: React.Dispatch<React.SetStateAction<RevenueItem[]>>;
   projectDuration: number;
+  strategy: RevenueStrategy;
 }
 
-export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, projectDuration }) => {
-  const [globalStrategy, setGlobalStrategy] = useState<RevenueStrategy>('Sell');
+export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, projectDuration, strategy }) => {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
   const toggleExpanded = (id: string) => {
@@ -19,9 +19,9 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
   const addRevenue = () => {
     const newItem: RevenueItem = {
       id: Math.random().toString(36).substr(2, 9),
-      description: 'New Unit Type',
+      description: strategy === 'Sell' ? 'New Unit Type' : 'New Rental Type',
       units: 1,
-      strategy: globalStrategy,
+      strategy: strategy,
       pricePerUnit: 0,
       offsetFromCompletion: 1,
       settlementSpan: 1,
@@ -73,24 +73,22 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
     );
   };
 
+  const isHold = strategy === 'Hold';
+
   return (
     <div className="bg-slate-50 md:bg-white md:rounded-xl md:shadow-sm md:border border-slate-200 overflow-hidden mb-8 relative">
       
       {/* DESKTOP HEADER */}
       <div className="hidden md:flex bg-slate-50 px-6 py-4 border-b border-slate-200 justify-between items-center">
         <div>
-          <h3 className="font-bold text-slate-800">Revenue & Investment Strategy</h3>
-          <p className="text-xs text-slate-500 mt-0.5">Define sales income or rental yields</p>
-        </div>
-        <div className="flex bg-white rounded-lg p-1 border border-slate-200 shadow-sm">
-           <button onClick={() => setGlobalStrategy('Sell')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${globalStrategy === 'Sell' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>Develop to Sell</button>
-           <button onClick={() => setGlobalStrategy('Hold')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${globalStrategy === 'Hold' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>Build to Rent (Hold)</button>
+          <h3 className="font-bold text-slate-800">{isHold ? 'Rental Assumptions' : 'Sales Revenue'}</h3>
+          <p className="text-xs text-slate-500 mt-0.5">{isHold ? 'Forecast rental yields and operating expenses' : 'Unit mix, pricing and settlement timing'}</p>
         </div>
       </div>
 
       {/* MOBILE HEADER */}
       <div className="md:hidden px-1 pb-4 flex justify-between items-end">
-         <h3 className="font-bold text-slate-800 text-lg">Revenue Assumptions</h3>
+         <h3 className="font-bold text-slate-800 text-lg">{isHold ? 'Rental Inputs' : 'Sales Inputs'}</h3>
          <div className="flex items-center space-x-2">
             <span className="text-xs font-bold bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full">{revenues.length} Items</span>
          </div>
@@ -103,9 +101,8 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-widest font-bold">
               <th className="px-4 py-3 w-48">Description</th>
               <th className="px-4 py-3 w-20 text-center">Units</th>
-              <th className="px-4 py-3 w-28">Strategy</th>
               
-              {globalStrategy === 'Sell' ? (
+              {!isHold ? (
                  <>
                     <th className="px-4 py-3 text-right">Price / Unit</th>
                     <th className="px-4 py-3 text-right">Gross Total</th>
@@ -128,7 +125,7 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {revenues.map((item) => {
+            {revenues.filter(r => r.strategy === strategy).map((item) => {
               const exitRate = item.settlementSpan > 0 ? (item.units / item.settlementSpan).toFixed(1) : '-';
               
               return (
@@ -150,18 +147,8 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
                     className="w-16 bg-transparent text-center border-none focus:ring-0 text-xs font-bold bg-slate-100 rounded"
                   />
                 </td>
-                <td className="px-4 py-2">
-                   <select 
-                     value={item.strategy}
-                     onChange={(e) => updateRevenue(item.id, 'strategy', e.target.value)}
-                     className={`w-full text-[10px] font-bold uppercase border-none rounded py-1 pl-2 pr-6 cursor-pointer focus:ring-0 ${item.strategy === 'Sell' ? 'text-blue-600 bg-blue-50' : 'text-indigo-600 bg-indigo-50'}`}
-                   >
-                      <option value="Sell">Sell</option>
-                      <option value="Hold">Hold</option>
-                   </select>
-                </td>
 
-                {item.strategy === 'Sell' ? (
+                {!isHold ? (
                    <>
                       <td className="px-4 py-2 text-right">
                          <div className="relative">
@@ -270,7 +257,7 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
             <tr>
                <td colSpan={10} className="px-4 py-3 bg-slate-50 border-t border-slate-200">
                   <button onClick={addRevenue} className="flex items-center text-xs font-bold text-blue-600 hover:text-blue-700">
-                     <i className="fa-solid fa-plus-circle mr-2"></i> Add Revenue Item
+                     <i className="fa-solid fa-plus-circle mr-2"></i> Add Item
                   </button>
                </td>
             </tr>
@@ -280,8 +267,7 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
 
       {/* MOBILE CARD VIEW */}
       <div className="md:hidden space-y-3 pb-24">
-        {revenues.map((item) => {
-           const isHold = item.strategy === 'Hold';
+        {revenues.filter(r => r.strategy === strategy).map((item) => {
            const borderColor = isHold ? 'border-indigo-200' : 'border-blue-200';
            
            return (
@@ -336,14 +322,7 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
               {expandedRow === item.id && (
                  <div className="px-4 pb-4 pt-0 space-y-4 animate-in fade-in slide-in-from-top-1 duration-200">
                     <div className="border-t border-slate-100 pt-4 grid grid-cols-1 gap-4">
-                       <div>
-                          <label className="text-[10px] font-bold text-slate-400 uppercase">Strategy</label>
-                          <div className="flex mt-1">
-                             <button onClick={() => updateRevenue(item.id, 'strategy', 'Sell')} className={`flex-1 py-2 text-xs font-bold rounded-l-lg border border-r-0 ${!isHold ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200'}`}>Sell</button>
-                             <button onClick={() => updateRevenue(item.id, 'strategy', 'Hold')} className={`flex-1 py-2 text-xs font-bold rounded-r-lg border border-l-0 ${isHold ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>Hold</button>
-                          </div>
-                       </div>
-
+                       
                        {!isHold ? (
                           <>
                              <div className="grid grid-cols-2 gap-3">

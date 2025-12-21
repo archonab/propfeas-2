@@ -107,6 +107,9 @@ export interface FeasibilityScenario {
   status: ScenarioStatus;
   strategy: 'SELL' | 'HOLD'; // High-level strategy intent
   
+  // Scenario Linking (The Feastudy "Golden Thread")
+  linkedSellScenarioId?: string; // If HOLD, this points to the development basis
+  
   // The Financial Model
   settings: FeasibilitySettings;
   costs: LineItem[];

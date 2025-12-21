@@ -11,7 +11,7 @@ import { InvestmentSettings } from './components/InvestmentSettings';
 import { FeasibilityReport } from './FeasibilityReport';
 import { ConsolidatedCashflowReport } from './ConsolidatedCashflowReport';
 import { FinanceSettings } from './FinanceSettings';
-import { SiteContext } from './components/SiteContext'; // Replaced SiteSetup
+import { SiteContext } from './components/SiteContext'; 
 import { AcquisitionManager } from './AcquisitionManager';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Legend } from 'recharts';
 
@@ -36,7 +36,7 @@ interface Props {
   isEditable?: boolean;
   onPromote?: () => void;
   onSaveScenario?: (updatedScenario: FeasibilityScenario) => void;
-  onRequestEditSite?: () => void; // New Callback
+  onRequestEditSite?: () => void; 
   smartRates?: SmartRates;
   libraryData?: LineItem[];
 }
@@ -51,7 +51,10 @@ export const FeasibilityEngine: React.FC<Props> = ({
   smartRates, 
   libraryData 
 }) => {
-  const [activeTab, setActiveTab] = useState(site.status === 'Acquired' ? 'summary' : 'deal');
+  const isHoldStrategy = activeScenario.strategy === 'HOLD';
+  const defaultTab = site.status === 'Acquired' ? 'summary' : (isHoldStrategy ? 'strategy' : 'deal');
+  
+  const [activeTab, setActiveTab] = useState(defaultTab);
   const [reportSubTab, setReportSubTab] = useState<'pnl' | 'cashflow'>('pnl');
 
   // Initialize state from the passed scenario prop
@@ -64,6 +67,14 @@ export const FeasibilityEngine: React.FC<Props> = ({
   const [solveTarget, setSolveTarget] = useState<number>(20);
   const [solveType, setSolveType] = useState<'margin' | 'irr'>('margin');
   const [isSolving, setIsSolving] = useState(false);
+
+  // Find Linked Scenario if applicable
+  const linkedScenario = useMemo(() => {
+      if (activeScenario.strategy === 'HOLD' && activeScenario.linkedSellScenarioId) {
+          return site.scenarios.find(s => s.id === activeScenario.linkedSellScenarioId);
+      }
+      return undefined;
+  }, [activeScenario, site.scenarios]);
 
   // Helper: Construct Current State as Scenario Object
   const currentScenarioState: FeasibilityScenario = useMemo(() => ({
@@ -86,9 +97,14 @@ export const FeasibilityEngine: React.FC<Props> = ({
     setSettings(activeScenario.settings);
     setCosts(activeScenario.costs);
     setRevenues(activeScenario.revenues);
+    // Reset tab on scenario switch to avoid blank states
+    setActiveTab(site.status === 'Acquired' ? 'summary' : (activeScenario.strategy === 'HOLD' ? 'strategy' : 'deal'));
   }, [activeScenario.id]);
 
-  const cashflow = useMemo(() => FinanceEngine.calculateMonthlyCashflow(currentScenarioState, site.dna), [currentScenarioState, site.dna]);
+  const cashflow = useMemo(() => 
+    FinanceEngine.calculateMonthlyCashflow(currentScenarioState, site.dna, linkedScenario), 
+    [currentScenarioState, site.dna, linkedScenario]
+  );
 
   const stats = useMemo(() => {
     const totalOut = cashflow.reduce((acc, curr) => acc + curr.developmentCosts + curr.interestSenior + curr.interestMezz, 0);
@@ -118,8 +134,6 @@ export const FeasibilityEngine: React.FC<Props> = ({
       ltc, lvr
     };
   }, [cashflow, costs, settings.discountRate]);
-
-  const totalLandCost = settings.acquisition.purchasePrice;
 
   const handleUpdateCost = (id: string, field: keyof LineItem, value: any) => {
     if (!isEditable) return;
@@ -193,12 +207,21 @@ export const FeasibilityEngine: React.FC<Props> = ({
     }, 100);
   };
 
-  const navTabs = [
-    { id: 'site', label: 'Context', icon: 'fa-map-location-dot' },
-    { id: 'deal', label: 'Deal & Land', icon: 'fa-handshake' },
-    { id: 'inputs', label: 'Inputs', icon: 'fa-sliders' },
-    { id: 'summary', label: 'Dashboard', icon: 'fa-chart-simple' },
-    { id: 'reports', label: 'Reports', icon: 'fa-file-pdf' }
+  // Define Tabs based on Strategy
+  const navTabs = isHoldStrategy ? [
+      { id: 'site', label: 'Context', icon: 'fa-map-location-dot' },
+      { id: 'strategy', label: 'Hold Strategy', icon: 'fa-chess-rook' },
+      { id: 'rent', label: 'Rental Revenue', icon: 'fa-house-user' },
+      { id: 'inputs', label: 'Operating Costs', icon: 'fa-file-invoice-dollar' },
+      { id: 'summary', label: 'Dashboard', icon: 'fa-chart-simple' },
+      { id: 'reports', label: 'Reports', icon: 'fa-file-pdf' }
+  ] : [
+      { id: 'site', label: 'Context', icon: 'fa-map-location-dot' },
+      { id: 'deal', label: 'Acquisition', icon: 'fa-handshake' },
+      { id: 'inputs', label: 'Construction Costs', icon: 'fa-trowel-bricks' },
+      { id: 'sales', label: 'Sales Revenue', icon: 'fa-tags' },
+      { id: 'summary', label: 'Dashboard', icon: 'fa-chart-simple' },
+      { id: 'reports', label: 'Reports', icon: 'fa-file-pdf' }
   ];
 
   return (
@@ -248,7 +271,7 @@ export const FeasibilityEngine: React.FC<Props> = ({
                </div>
              </div>
 
-             {site.status === 'Due Diligence' && isEditable && (
+             {site.status === 'Due Diligence' && isEditable && !isHoldStrategy && (
                <div className="mt-8 pt-6 border-t border-dashed border-slate-200">
                   <button 
                     onClick={handleExecuteAcquisition}
@@ -275,7 +298,7 @@ export const FeasibilityEngine: React.FC<Props> = ({
       {/* RIGHT: Main Content Area */}
       <div className="flex-1 min-w-0 flex flex-col space-y-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center no-print gap-4 sm:gap-0">
-          <nav className="grid grid-cols-5 gap-1 sm:flex sm:space-x-1 bg-slate-100 p-1 rounded-lg w-full sm:w-auto">
+          <nav className="grid grid-cols-5 gap-1 sm:flex sm:space-x-1 bg-slate-100 p-1 rounded-lg w-full sm:w-auto overflow-x-auto">
             {navTabs.map(tab => (
               <button
                 key={tab.id}
@@ -304,6 +327,8 @@ export const FeasibilityEngine: React.FC<Props> = ({
         </div>
 
         <div className="flex-1 min-w-0">
+          
+          {/* TAB: SITE CONTEXT */}
           {activeTab === 'site' && (
             <SiteContext 
               site={site} 
@@ -311,7 +336,8 @@ export const FeasibilityEngine: React.FC<Props> = ({
             />
           )}
 
-          {activeTab === 'deal' && (
+          {/* TAB: DEAL (Acquisition) - SELL Only */}
+          {activeTab === 'deal' && !isHoldStrategy && (
             <AcquisitionManager 
               settings={settings} 
               onUpdate={setSettings} 
@@ -321,6 +347,49 @@ export const FeasibilityEngine: React.FC<Props> = ({
             />
           )}
 
+          {/* TAB: STRATEGY (Refi) - HOLD Only */}
+          {activeTab === 'strategy' && isHoldStrategy && (
+             <div className="space-y-8 animate-in fade-in duration-300">
+                
+                {linkedScenario && (
+                    <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                            <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center text-indigo-600">
+                                <i className="fa-solid fa-link"></i>
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-bold text-indigo-900">Linked to Development Model</h3>
+                                <p className="text-xs text-indigo-700">Inheriting costs & timeline from: <strong>{linkedScenario.name}</strong></p>
+                            </div>
+                        </div>
+                        <span className="text-[10px] font-bold bg-white text-indigo-600 px-3 py-1 rounded shadow-sm">Read Only Costs</span>
+                    </div>
+                )}
+
+                <FinanceSettings 
+                    settings={settings} 
+                    onUpdate={setSettings} 
+                    peakEquityRequired={stats.peakEquity}
+                    projectLocation={site.dna.address}
+                />
+                
+                <HoldStrategySettings 
+                  settings={settings} 
+                  revenues={revenues} 
+                  cashflow={cashflow}
+                  onUpdate={setSettings} 
+                />
+                
+                <InvestmentSettings 
+                  settings={settings} 
+                  revenues={revenues} 
+                  constructionTotal={stats.constructionTotal}
+                  onUpdate={setSettings} 
+                />
+             </div>
+          )}
+
+          {/* TAB: SUMMARY (Dashboard) */}
           {activeTab === 'summary' && (
             <div className="space-y-6 animate-in fade-in duration-300">
               <div className="flex flex-col sm:flex-row sm:items-baseline justify-between border-b border-slate-200 pb-4 mb-4 gap-2">
@@ -402,7 +471,7 @@ export const FeasibilityEngine: React.FC<Props> = ({
                     </div>
                   </div>
 
-                  {isEditable && site.status !== 'Acquired' && (
+                  {isEditable && site.status !== 'Acquired' && !isHoldStrategy && (
                     <div className="bg-indigo-900 text-white p-6 rounded-xl shadow-lg border border-indigo-800 relative overflow-hidden">
                       <div className="absolute top-0 right-0 p-4 opacity-10">
                         <i className="fa-solid fa-wand-magic-sparkles text-6xl"></i>
@@ -439,37 +508,18 @@ export const FeasibilityEngine: React.FC<Props> = ({
             </div>
           )}
 
+          {/* TAB: INPUTS (Construction/Costs OR Operating Costs) */}
           {activeTab === 'inputs' && (
             <div className="space-y-8 animate-in fade-in duration-300">
-              <FinanceSettings 
-                settings={settings} 
-                onUpdate={setSettings} 
-                peakEquityRequired={stats.peakEquity}
-                projectLocation={site.dna.address} // NEW: Pass address directly
-              />
+              {!isHoldStrategy && (
+                <FinanceSettings 
+                  settings={settings} 
+                  onUpdate={setSettings} 
+                  peakEquityRequired={stats.peakEquity}
+                  projectLocation={site.dna.address} 
+                />
+              )}
               
-              <div>
-                <HoldStrategySettings 
-                  settings={settings} 
-                  revenues={revenues} 
-                  cashflow={cashflow}
-                  onUpdate={setSettings} 
-                />
-                
-                <InvestmentSettings 
-                  settings={settings} 
-                  revenues={revenues} 
-                  constructionTotal={stats.constructionTotal}
-                  onUpdate={setSettings} 
-                />
-
-                <RevenueInputGrid 
-                  revenues={revenues} 
-                  setRevenues={setRevenues} 
-                  projectDuration={settings.durationMonths}
-                />
-              </div>
-
               <FeasibilityInputGrid 
                 costs={costs} 
                 settings={settings} 
@@ -481,9 +531,22 @@ export const FeasibilityEngine: React.FC<Props> = ({
                 onRemove={handleRemoveCost} 
                 smartRates={smartRates}
                 libraryData={libraryData}
-                landArea={site.dna.landArea} // NEW: Pass landArea directly
+                landArea={site.dna.landArea} 
+                strategy={isHoldStrategy ? 'HOLD' : 'SELL'}
               />
             </div>
+          )}
+
+          {/* TAB: SALES or RENTAL REVENUE */}
+          {((activeTab === 'sales' && !isHoldStrategy) || (activeTab === 'rent' && isHoldStrategy)) && (
+             <div className="space-y-8 animate-in fade-in duration-300">
+                <RevenueInputGrid 
+                  revenues={revenues} 
+                  setRevenues={setRevenues} 
+                  projectDuration={settings.durationMonths}
+                  strategy={isHoldStrategy ? 'Hold' : 'Sell'}
+                />
+             </div>
           )}
 
           {activeTab === 'reports' && (

@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState } from 'react';
 import { Site, FeasibilityScenario, ScenarioStatus } from '../types';
 import { FinanceEngine } from '../services/financeEngine';
@@ -237,6 +236,7 @@ export const ScenarioManager: React.FC<Props> = ({ site, onUpdateSite, onSelectS
         onClose={() => setIsWizardOpen(false)}
         onCreate={handleWizardCreate}
         projectName={site.name}
+        existingScenarios={site.scenarios}
       />
 
       {/* Delete Confirmation Modal */}

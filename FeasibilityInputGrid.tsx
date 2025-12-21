@@ -15,7 +15,8 @@ interface Props {
   estimatedRevenue?: number;
   smartRates?: any;
   libraryData?: LineItem[];
-  landArea: number; // Added to decouple from settings.site
+  landArea: number; 
+  strategy?: 'SELL' | 'HOLD';
 }
 
 // --- SUB-COMPONENT: COST SECTION ---
@@ -359,7 +360,7 @@ const CostSection: React.FC<{
 
 export const FeasibilityInputGrid: React.FC<Props> = ({ 
   costs, settings, constructionTotal, estimatedRevenue = 0,
-  onUpdate, onAdd, onBulkAdd, onRemove, smartRates, libraryData, landArea 
+  onUpdate, onAdd, onBulkAdd, onRemove, smartRates, libraryData, landArea, strategy = 'SELL' 
 }) => {
   const [showLibrary, setShowLibrary] = useState(false);
 
@@ -373,8 +374,12 @@ export const FeasibilityInputGrid: React.FC<Props> = ({
       {/* Action Bar */}
       <div className="flex justify-between items-center bg-slate-50 p-3 rounded-lg border border-slate-200">
          <div>
-            <h3 className="text-sm font-bold text-slate-800">Development Costs</h3>
-            <p className="text-xs text-slate-500">Manage budget line items</p>
+            <h3 className="text-sm font-bold text-slate-800">
+                {strategy === 'HOLD' ? 'Operating & Holding Costs' : 'Development Costs'}
+            </h3>
+            <p className="text-xs text-slate-500">
+                {strategy === 'HOLD' ? 'Manage recurrent and statutory outgoings' : 'Manage budget line items'}
+            </p>
          </div>
          <button 
            onClick={() => setShowLibrary(true)}
@@ -391,50 +396,78 @@ export const FeasibilityInputGrid: React.FC<Props> = ({
          libraryData={libraryData}
       />
 
-      {/* 1. Construction Costs */}
-      <CostSection 
-        title="1. Construction Costs" 
-        icon="fa-trowel-bricks"
-        categories={[CostCategory.CONSTRUCTION]}
-        costs={costs} settings={settings}
-        defaultOpen={true}
-        onUpdate={onUpdate} onAdd={onAdd} onRemove={onRemove}
-        constructionTotal={constructionTotal} estimatedRevenue={estimatedRevenue}
-        landArea={landArea}
-      />
+      {strategy === 'SELL' ? (
+          <>
+            {/* 1. Construction Costs */}
+            <CostSection 
+                title="1. Construction Costs" 
+                icon="fa-trowel-bricks"
+                categories={[CostCategory.CONSTRUCTION]}
+                costs={costs} settings={settings}
+                defaultOpen={true}
+                onUpdate={onUpdate} onAdd={onAdd} onRemove={onRemove}
+                constructionTotal={constructionTotal} estimatedRevenue={estimatedRevenue}
+                landArea={landArea}
+            />
 
-      {/* 2. Professional Fees */}
-      <CostSection 
-        title="2. Professional Fees" 
-        icon="fa-user-tie"
-        categories={[CostCategory.CONSULTANTS]}
-        costs={costs} settings={settings}
-        onUpdate={onUpdate} onAdd={onAdd} onRemove={onRemove}
-        constructionTotal={constructionTotal} estimatedRevenue={estimatedRevenue}
-        landArea={landArea}
-      />
+            {/* 2. Professional Fees */}
+            <CostSection 
+                title="2. Professional Fees" 
+                icon="fa-user-tie"
+                categories={[CostCategory.CONSULTANTS]}
+                costs={costs} settings={settings}
+                onUpdate={onUpdate} onAdd={onAdd} onRemove={onRemove}
+                constructionTotal={constructionTotal} estimatedRevenue={estimatedRevenue}
+                landArea={landArea}
+            />
 
-      {/* 3. Statutory & General */}
-      <CostSection 
-        title="3. Statutory & General" 
-        icon="fa-scale-balanced"
-        categories={[CostCategory.STATUTORY, CostCategory.MISCELLANEOUS]}
-        costs={costs} settings={settings}
-        onUpdate={onUpdate} onAdd={onAdd} onRemove={onRemove}
-        constructionTotal={constructionTotal} estimatedRevenue={estimatedRevenue}
-        landArea={landArea}
-      />
+            {/* 3. Statutory & General */}
+            <CostSection 
+                title="3. Statutory & General" 
+                icon="fa-scale-balanced"
+                categories={[CostCategory.STATUTORY, CostCategory.MISCELLANEOUS]}
+                costs={costs} settings={settings}
+                onUpdate={onUpdate} onAdd={onAdd} onRemove={onRemove}
+                constructionTotal={constructionTotal} estimatedRevenue={estimatedRevenue}
+                landArea={landArea}
+            />
 
-      {/* 4. Selling Costs */}
-      <CostSection 
-        title="4. Selling & Marketing" 
-        icon="fa-bullhorn"
-        categories={[CostCategory.SELLING]}
-        costs={costs} settings={settings}
-        onUpdate={onUpdate} onAdd={onAdd} onRemove={onRemove}
-        constructionTotal={constructionTotal} estimatedRevenue={estimatedRevenue}
-        landArea={landArea}
-      />
+            {/* 4. Selling Costs */}
+            <CostSection 
+                title="4. Selling & Marketing" 
+                icon="fa-bullhorn"
+                categories={[CostCategory.SELLING]}
+                costs={costs} settings={settings}
+                onUpdate={onUpdate} onAdd={onAdd} onRemove={onRemove}
+                constructionTotal={constructionTotal} estimatedRevenue={estimatedRevenue}
+                landArea={landArea}
+            />
+          </>
+      ) : (
+          <>
+            {/* HOLD STRATEGY SECTIONS */}
+            <CostSection 
+                title="Operating Expenses (Opex)" 
+                icon="fa-file-invoice-dollar"
+                categories={[CostCategory.MISCELLANEOUS, CostCategory.SELLING]}
+                costs={costs} settings={settings}
+                defaultOpen={true}
+                onUpdate={onUpdate} onAdd={onAdd} onRemove={onRemove}
+                constructionTotal={constructionTotal} estimatedRevenue={estimatedRevenue}
+                landArea={landArea}
+            />
+            
+            <CostSection 
+                title="Statutory & Rates" 
+                icon="fa-scale-balanced"
+                categories={[CostCategory.STATUTORY]}
+                costs={costs} settings={settings}
+                onUpdate={onUpdate} onAdd={onAdd} onRemove={onRemove}
+                constructionTotal={constructionTotal} estimatedRevenue={estimatedRevenue}
+                landArea={landArea}
+            />
+          </>
+      )}
 
     </div>
   );

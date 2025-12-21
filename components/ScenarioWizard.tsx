@@ -8,11 +8,15 @@ interface Props {
   onClose: () => void;
   onCreate: (scenario: FeasibilityScenario) => void;
   projectName: string;
+  existingScenarios: FeasibilityScenario[];
 }
 
-export const ScenarioWizard: React.FC<Props> = ({ isOpen, onClose, onCreate, projectName }) => {
+export const ScenarioWizard: React.FC<Props> = ({ isOpen, onClose, onCreate, projectName, existingScenarios }) => {
   const [name, setName] = useState('');
   const [strategy, setStrategy] = useState<'SELL' | 'HOLD'>('SELL');
+  const [linkedScenarioId, setLinkedScenarioId] = useState<string>('');
+
+  const sellScenarios = existingScenarios.filter(s => s.strategy === 'SELL');
 
   if (!isOpen) return null;
 
@@ -26,42 +30,49 @@ export const ScenarioWizard: React.FC<Props> = ({ isOpen, onClose, onCreate, pro
       id: `scen-${Date.now()}`,
       name: name || (strategy === 'SELL' ? 'New Trading Scenario' : 'New Hold Scenario'),
       lastModified: new Date().toISOString(),
-      isBaseline: false, // New scenarios are never baseline by default
+      isBaseline: false, 
       status: ScenarioStatus.DRAFT,
       strategy: strategy
     };
 
-    // 3. Ensure Project Name consistency
-    newScenario.settings.projectName = projectName;
+    // 3. Link if Hold
+    if (strategy === 'HOLD' && linkedScenarioId) {
+        newScenario.linkedSellScenarioId = linkedScenarioId;
+        // Also copy the projectName to keep it clean
+        const linked = sellScenarios.find(s => s.id === linkedScenarioId);
+        if (linked) {
+            newScenario.settings.projectName = linked.settings.projectName;
+        }
+    } else {
+        newScenario.settings.projectName = projectName;
+    }
 
     onCreate(newScenario);
     onClose();
-    // Reset state for next time
+    // Reset state
     setName('');
     setStrategy('SELL');
+    setLinkedScenarioId('');
   };
+
+  const canCreate = strategy === 'SELL' || (strategy === 'HOLD' && linkedScenarioId !== '');
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      {/* Backdrop */}
       <div 
         className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" 
         onClick={onClose}
       ></div>
       
-      {/* Modal Card */}
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 flex flex-col max-h-[90vh]">
         
-        {/* Header */}
         <div className="px-8 py-6 border-b border-slate-100 bg-white">
            <h2 className="text-xl font-black text-slate-800 tracking-tight">Create Feasibility Scenario</h2>
            <p className="text-sm text-slate-500 mt-1">Select a financial model template to begin analysis.</p>
         </div>
 
-        {/* Content */}
         <div className="p-8 overflow-y-auto">
            
-           {/* Name Input */}
            <div className="mb-8">
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Scenario Name</label>
               <input 
@@ -74,7 +85,6 @@ export const ScenarioWizard: React.FC<Props> = ({ isOpen, onClose, onCreate, pro
               />
            </div>
 
-           {/* Strategy Cards */}
            <div>
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Select Strategy</label>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -100,11 +110,6 @@ export const ScenarioWizard: React.FC<Props> = ({ isOpen, onClose, onCreate, pro
                     <p className="text-xs text-slate-500 font-medium leading-relaxed">
                         Traditional trading model. Revenue driven by gross realisation from unit sales.
                     </p>
-                    <div className="mt-4 pt-4 border-t border-slate-200/60 flex flex-wrap gap-2">
-                        <span className="text-[10px] font-bold px-2 py-1 bg-white rounded border border-slate-200 text-slate-600">Margin on Cost</span>
-                        <span className="text-[10px] font-bold px-2 py-1 bg-white rounded border border-slate-200 text-slate-600">Sales Comm.</span>
-                        <span className="text-[10px] font-bold px-2 py-1 bg-white rounded border border-slate-200 text-slate-600">GST</span>
-                    </div>
                  </div>
 
                  {/* HOLD CARD */}
@@ -126,20 +131,41 @@ export const ScenarioWizard: React.FC<Props> = ({ isOpen, onClose, onCreate, pro
                         {strategy === 'HOLD' && <i className="fa-solid fa-circle-check text-indigo-600 text-xl"></i>}
                     </div>
                     <p className="text-xs text-slate-500 font-medium leading-relaxed">
-                        Investment model (BTR). Revenue driven by recurring rental yield and capital growth.
+                        Investment model (BTR). Inherits development costs from a SELL scenario.
                     </p>
-                    <div className="mt-4 pt-4 border-t border-slate-200/60 flex flex-wrap gap-2">
-                        <span className="text-[10px] font-bold px-2 py-1 bg-white rounded border border-slate-200 text-slate-600">10-Yr IRR</span>
-                        <span className="text-[10px] font-bold px-2 py-1 bg-white rounded border border-slate-200 text-slate-600">Refinance</span>
-                        <span className="text-[10px] font-bold px-2 py-1 bg-white rounded border border-slate-200 text-slate-600">Depreciation</span>
-                    </div>
                  </div>
 
               </div>
            </div>
+
+           {/* Linked Scenario Selector for HOLD */}
+           {strategy === 'HOLD' && (
+               <div className="mt-6 pt-6 border-t border-slate-100 animate-in slide-in-from-top-2">
+                   <label className="block text-xs font-bold text-indigo-600 uppercase tracking-wider mb-2">Development Basis (Required)</label>
+                   {sellScenarios.length > 0 ? (
+                       <select 
+                         value={linkedScenarioId} 
+                         onChange={(e) => setLinkedScenarioId(e.target.value)}
+                         className="w-full border-indigo-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none bg-indigo-50/30"
+                       >
+                           <option value="">-- Select Development Scenario --</option>
+                           {sellScenarios.map(s => (
+                               <option key={s.id} value={s.id}>{s.name} ({s.status})</option>
+                           ))}
+                       </select>
+                   ) : (
+                       <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm font-bold border border-red-100 flex items-center">
+                           <i className="fa-solid fa-triangle-exclamation mr-2"></i>
+                           No "Develop to Sell" scenarios available. You must create a development model first.
+                       </div>
+                   )}
+                   <p className="text-xs text-slate-400 mt-2 ml-1">
+                       The Hold model will dynamically link to the selected development model's acquisition and construction costs.
+                   </p>
+               </div>
+           )}
         </div>
 
-        {/* Footer */}
         <div className="px-8 py-5 bg-slate-50 border-t border-slate-200 flex justify-end space-x-3">
            <button 
              onClick={onClose}
@@ -149,10 +175,13 @@ export const ScenarioWizard: React.FC<Props> = ({ isOpen, onClose, onCreate, pro
            </button>
            <button 
              onClick={handleCreate}
+             disabled={!canCreate}
              className={`px-6 py-2.5 rounded-xl font-bold text-sm text-white shadow-lg transition-all transform active:scale-95 flex items-center ${
-                strategy === 'SELL' 
-                ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-200' 
-                : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200'
+                !canCreate 
+                ? 'bg-slate-300 cursor-not-allowed shadow-none' 
+                : strategy === 'SELL' 
+                    ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-200' 
+                    : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200'
              }`}
            >
              <i className="fa-solid fa-plus mr-2"></i> Create Model

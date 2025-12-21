@@ -10,13 +10,18 @@ interface Props {
 
 export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, projectDuration }) => {
   const [globalStrategy, setGlobalStrategy] = useState<RevenueStrategy>('Sell');
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
+
+  const toggleExpanded = (id: string) => {
+    setExpandedRow(expandedRow === id ? null : id);
+  };
 
   const addRevenue = () => {
     const newItem: RevenueItem = {
       id: Math.random().toString(36).substr(2, 9),
       description: 'New Unit Type',
       units: 1,
-      strategy: globalStrategy,
+      strategy: globalStrategy, // Use current global toggle as default
       pricePerUnit: 0,
       exchangeDate: 0,
       settlementDate: projectDuration, // Default to end
@@ -30,6 +35,10 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
       leaseUpDuration: 6
     };
     setRevenues([...revenues, newItem]);
+    // Auto-expand on mobile if added
+    if (window.innerWidth < 768) {
+        setExpandedRow(newItem.id);
+    }
   };
 
   const updateRevenue = (id: string, field: keyof RevenueItem, value: any) => {
@@ -52,8 +61,10 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-8">
-      <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+    <div className="bg-slate-50 md:bg-white md:rounded-xl md:shadow-sm md:border border-slate-200 overflow-hidden mb-8 relative">
+      
+      {/* --- DESKTOP HEADER --- */}
+      <div className="hidden md:flex bg-slate-50 px-6 py-4 border-b border-slate-200 justify-between items-center">
         <div>
           <h3 className="font-bold text-slate-800">Revenue & Investment Strategy</h3>
           <p className="text-xs text-slate-500 mt-0.5">Define sales income or rental yields</p>
@@ -75,7 +86,17 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      {/* --- MOBILE HEADER --- */}
+      <div className="md:hidden px-1 pb-4 flex justify-between items-end">
+         <h3 className="font-bold text-slate-800 text-lg">Revenue Assumptions</h3>
+         {/* Global strategy toggle for default 'Add' behavior on mobile could go here, but let's keep it simple */}
+         <div className="flex items-center space-x-2">
+            <span className="text-xs font-bold bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full">{revenues.length} Items</span>
+         </div>
+      </div>
+
+      {/* --- DESKTOP TABLE VIEW --- */}
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-left text-sm border-collapse">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-widest font-bold">
@@ -234,6 +255,188 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
           </tbody>
         </table>
       </div>
+
+      {/* --- MOBILE CARD VIEW --- */}
+      <div className="md:hidden space-y-3 pb-24">
+        {revenues.map((item) => {
+           const isHold = item.strategy === 'Hold';
+           const borderColor = isHold ? 'border-indigo-200' : 'border-blue-200';
+           
+           return (
+            <div key={item.id} className={`bg-white rounded-xl shadow-sm border ${borderColor} overflow-hidden`}>
+              
+              {/* Card Header (Always Visible) */}
+              <div 
+                className="p-4 flex flex-col gap-3"
+                onClick={(e) => {
+                   if ((e.target as HTMLElement).tagName === 'INPUT') return;
+                   toggleExpanded(item.id);
+                }}
+              >
+                 <div className="flex justify-between items-start gap-3">
+                    <div className="flex-1">
+                        <input 
+                           type="text" 
+                           value={item.description}
+                           onChange={(e) => updateRevenue(item.id, 'description', e.target.value)}
+                           className="w-full bg-transparent border-b border-transparent focus:border-blue-300 focus:ring-0 p-0 text-base font-bold text-slate-800 placeholder:text-slate-300"
+                           placeholder="Description..."
+                        />
+                        <div className="flex items-center mt-2">
+                           <span className={`text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded border ${isHold ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>
+                              {item.strategy}
+                           </span>
+                           <span className="text-[10px] text-slate-400 font-bold ml-2 flex items-center">
+                              <span className="mr-1">Qty:</span>
+                              <input 
+                                 type="number" 
+                                 value={item.units}
+                                 onChange={(e) => updateRevenue(item.id, 'units', parseFloat(e.target.value))}
+                                 className="w-10 bg-slate-100 rounded px-1 py-0.5 text-center text-slate-800 border-none focus:ring-1 focus:ring-blue-500"
+                              />
+                           </span>
+                        </div>
+                    </div>
+                    <div className="text-right">
+                       <div className="flex flex-col items-end">
+                          <span className="text-base font-black text-slate-800 font-mono">
+                             {isHold 
+                               ? `$${(item.weeklyRent || 0).toLocaleString()}` 
+                               : `$${((item.pricePerUnit * item.units)/1e6).toFixed(2)}m`
+                             }
+                          </span>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase">
+                             {isHold ? '/ week' : 'Gross Sales'}
+                          </span>
+                       </div>
+                       <button onClick={() => toggleExpanded(item.id)} className="text-slate-400 p-1 mt-1">
+                          <i className={`fa-solid fa-chevron-down transition-transform ${expandedRow === item.id ? 'rotate-180 text-blue-500' : ''}`}></i>
+                       </button>
+                    </div>
+                 </div>
+              </div>
+
+              {/* Expanded Details */}
+              {expandedRow === item.id && (
+                 <div className="px-4 pb-4 pt-0 space-y-4 animate-in fade-in slide-in-from-top-1 duration-200">
+                    <div className="border-t border-slate-100 pt-4 grid grid-cols-1 gap-4">
+                       
+                       {/* Strategy Toggle */}
+                       <div>
+                          <label className="text-[10px] font-bold text-slate-400 uppercase">Strategy</label>
+                          <div className="flex mt-1">
+                             <button 
+                               onClick={() => updateRevenue(item.id, 'strategy', 'Sell')}
+                               className={`flex-1 py-2 text-xs font-bold rounded-l-lg border border-r-0 ${!isHold ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200'}`}
+                             >Sell</button>
+                             <button 
+                               onClick={() => updateRevenue(item.id, 'strategy', 'Hold')}
+                               className={`flex-1 py-2 text-xs font-bold rounded-r-lg border border-l-0 ${isHold ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}
+                             >Hold</button>
+                          </div>
+                       </div>
+
+                       {/* Conditional Inputs */}
+                       {!isHold ? (
+                          <>
+                             <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                   <label className="text-[10px] font-bold text-slate-400 uppercase">Price / Unit ($)</label>
+                                   <input 
+                                     type="number" 
+                                     value={item.pricePerUnit}
+                                     onChange={(e) => updateRevenue(item.id, 'pricePerUnit', parseFloat(e.target.value))}
+                                     className="w-full mt-1 bg-white border-slate-200 rounded text-base font-bold text-slate-800 py-2"
+                                   />
+                                </div>
+                                <div>
+                                   <label className="text-[10px] font-bold text-slate-400 uppercase">Agent Fee (%)</label>
+                                   <input 
+                                     type="number" 
+                                     value={item.commissionRate}
+                                     onChange={(e) => updateRevenue(item.id, 'commissionRate', parseFloat(e.target.value))}
+                                     className="w-full mt-1 bg-white border-slate-200 rounded text-base font-bold text-slate-800 py-2"
+                                   />
+                                </div>
+                             </div>
+                             <div>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase">Settlement Month</label>
+                                <input 
+                                  type="number" 
+                                  value={item.settlementDate}
+                                  onChange={(e) => updateRevenue(item.id, 'settlementDate', parseFloat(e.target.value))}
+                                  className="w-full mt-1 bg-white border-slate-200 rounded text-base font-bold text-blue-600 py-2"
+                                />
+                             </div>
+                          </>
+                       ) : (
+                          <>
+                             <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                   <label className="text-[10px] font-bold text-slate-400 uppercase">Weekly Rent ($)</label>
+                                   <input 
+                                     type="number" 
+                                     value={item.weeklyRent}
+                                     onChange={(e) => updateRevenue(item.id, 'weeklyRent', parseFloat(e.target.value))}
+                                     className="w-full mt-1 bg-white border-slate-200 rounded text-base font-bold text-slate-800 py-2"
+                                   />
+                                </div>
+                                <div>
+                                   <label className="text-[10px] font-bold text-slate-400 uppercase">Opex Rate (%)</label>
+                                   <input 
+                                     type="number" 
+                                     value={item.opexRate}
+                                     onChange={(e) => updateRevenue(item.id, 'opexRate', parseFloat(e.target.value))}
+                                     className="w-full mt-1 bg-white border-slate-200 rounded text-base font-bold text-slate-800 py-2"
+                                   />
+                                </div>
+                             </div>
+                             <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                   <label className="text-[10px] font-bold text-slate-400 uppercase">Cap Rate (%)</label>
+                                   <input 
+                                     type="number" 
+                                     step="0.1"
+                                     value={item.capRate}
+                                     onChange={(e) => updateRevenue(item.id, 'capRate', parseFloat(e.target.value))}
+                                     className="w-full mt-1 bg-white border-slate-200 rounded text-base font-bold text-indigo-600 py-2"
+                                   />
+                                </div>
+                                <div>
+                                   <label className="text-[10px] font-bold text-slate-400 uppercase">End Value (Est)</label>
+                                   <div className="w-full mt-1 bg-indigo-50 border border-indigo-100 rounded flex items-center px-3 py-2 text-sm font-bold text-indigo-700">
+                                      ${(getEndValue(item)/1e6).toFixed(2)}m
+                                   </div>
+                                </div>
+                             </div>
+                          </>
+                       )}
+                       
+                       <button 
+                         onClick={() => removeRevenue(item.id)}
+                         className="w-full py-3 mt-2 bg-red-50 text-red-600 font-bold rounded-lg text-sm flex items-center justify-center hover:bg-red-100 transition-colors"
+                       >
+                         <i className="fa-solid fa-trash-can mr-2"></i> Remove Item
+                       </button>
+                    </div>
+                 </div>
+              )}
+
+            </div>
+           );
+        })}
+      </div>
+
+       {/* --- MOBILE STICKY ADD BUTTON --- */}
+       <div className="md:hidden fixed bottom-6 right-6 z-50">
+         <button 
+           onClick={addRevenue}
+           className="w-14 h-14 bg-blue-600 rounded-full shadow-xl shadow-blue-600/30 text-white flex items-center justify-center active:scale-90 transition-transform"
+         >
+            <i className="fa-solid fa-plus text-xl"></i>
+         </button>
+      </div>
+
     </div>
   );
 };

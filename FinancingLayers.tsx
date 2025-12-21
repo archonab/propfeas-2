@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { FeasibilitySettings, DebtLimitMethod } from './types';
 
@@ -46,7 +45,10 @@ export const FinancingLayers: React.FC<Props> = ({ settings, onUpdate, peakEquit
       ...settings,
       capitalStack: {
         ...capitalStack,
-        equityContribution: value
+        equity: {
+            ...capitalStack.equity,
+            initialContribution: value
+        }
       }
     });
   };
@@ -232,7 +234,7 @@ export const FinancingLayers: React.FC<Props> = ({ settings, onUpdate, peakEquit
                      <span className="absolute left-3 top-2 text-emerald-600 font-bold">$</span>
                      <input 
                        type="number" 
-                       value={capitalStack.equityContribution}
+                       value={capitalStack.equity.initialContribution}
                        onChange={(e) => updateEquity(parseFloat(e.target.value))}
                        className="w-full border-2 border-emerald-100 rounded-lg py-2 pl-7 pr-3 text-lg font-black text-emerald-900 focus:outline-none focus:border-emerald-400 bg-white"
                      />
@@ -241,7 +243,7 @@ export const FinancingLayers: React.FC<Props> = ({ settings, onUpdate, peakEquit
               
               <div className="flex justify-between items-center mt-2 px-1">
                  <span className="text-[10px] font-bold uppercase text-slate-400">Peak Requirement</span>
-                 <span className={`text-xs font-bold font-mono ${peakEquityRequired > capitalStack.equityContribution ? 'text-red-500' : 'text-slate-600'}`}>
+                 <span className={`text-xs font-bold font-mono ${peakEquityRequired > capitalStack.equity.initialContribution ? 'text-red-500' : 'text-slate-600'}`}>
                     ${(peakEquityRequired / 1000000).toFixed(2)}m
                  </span>
               </div>

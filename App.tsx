@@ -34,28 +34,55 @@ export default function App() {
     }));
   };
 
+  // Desktop Navigation Icon Component
+  const NavIconDesktop = ({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: string, label: string }) => (
+    <button 
+      onClick={onClick}
+      className={`w-full flex flex-col items-center justify-center py-4 relative group text-slate-500 hover:text-slate-300 transition-colors ${active ? 'text-blue-400' : ''}`}
+    >
+      {active && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-blue-500 rounded-r shadow-[0_0_15px_rgba(59,130,246,0.6)]"></div>}
+      <i className={`${icon} text-xl mb-1`}></i>
+      <span className="text-[9px] font-bold uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity absolute left-16 bg-slate-800 text-white px-2 py-1 rounded shadow-lg whitespace-nowrap z-50 pointer-events-none border border-slate-700">{label}</span>
+    </button>
+  );
+
+  // Mobile Navigation Icon Component
+  const NavIconMobile = ({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: string, label: string }) => (
+    <button 
+      onClick={onClick}
+      className={`flex-1 flex flex-col items-center justify-center h-full space-y-1 transition-all active:scale-95 ${active ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+    >
+      <div className={`relative ${active ? '-translate-y-0.5' : ''} transition-transform`}>
+        <i className={`${icon} text-lg`}></i>
+        {active && <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-1 h-1 bg-blue-600 rounded-full"></div>}
+      </div>
+      <span className={`text-[10px] font-bold ${active ? 'text-blue-600' : 'text-slate-500'}`}>{label}</span>
+    </button>
+  );
+
   return (
-    <div className="h-screen flex flex-col md:flex-row bg-slate-50 overflow-hidden font-sans">
-      {/* Global Sidebar (Left Rail on Desktop, Bottom Nav on Mobile) */}
-      <aside className="w-full md:w-16 h-16 md:h-auto bg-slate-900 flex flex-row md:flex-col items-center justify-around md:justify-start px-4 md:px-0 py-0 md:py-6 shrink-0 no-print order-2 md:order-1 z-50">
-        <div className="hidden md:flex w-10 h-10 bg-blue-600 rounded-lg items-center justify-center text-white mb-10 shadow-lg shadow-blue-900/40">
+    <div className="h-screen flex md:flex-row bg-slate-50 overflow-hidden font-sans">
+      
+      {/* 1. Desktop Sidebar (Hidden on Mobile) */}
+      <aside className="hidden md:flex w-20 bg-slate-900 flex-col items-center py-6 shrink-0 z-50 h-full border-r border-slate-800 shadow-xl">
+        <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white mb-8 shadow-lg shadow-blue-900/40 cursor-pointer hover:bg-blue-500 transition-colors">
           <i className="fa-solid fa-cube text-xl"></i>
         </div>
         
-        <nav className="flex-1 w-full flex flex-row md:flex-col justify-around md:justify-start md:space-y-6">
-          <NavIcon 
+        <nav className="flex-1 w-full flex flex-col items-center space-y-2">
+          <NavIconDesktop 
             active={view === 'pipeline'} 
             onClick={() => { setView('pipeline'); setSelectedSiteId(null); }} 
             icon="fa-solid fa-filter-circle-dollar" 
             label="Pipeline" 
           />
-          <NavIcon 
+          <NavIconDesktop 
             active={view === 'portfolio'} 
             onClick={() => { setView('portfolio'); setSelectedSiteId(null); }} 
             icon="fa-solid fa-building-user" 
             label="Portfolio" 
           />
-          <NavIcon 
+          <NavIconDesktop 
             active={view === 'admin'} 
             onClick={() => setView('admin')} 
             icon="fa-solid fa-gears" 
@@ -63,15 +90,16 @@ export default function App() {
           />
         </nav>
         
-        <div className="hidden md:block mt-auto">
-          <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-500 cursor-pointer hover:bg-slate-700 transition-colors">
+        <div className="mt-auto mb-4">
+          <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 cursor-pointer hover:text-white hover:bg-slate-700 transition-colors border border-slate-700">
             <i className="fa-solid fa-user-tie"></i>
           </div>
         </div>
       </aside>
 
-      {/* Main App Content Area */}
-      <main className="flex-1 overflow-hidden flex flex-col order-1 md:order-2">
+      {/* 2. Main App Content Area */}
+      {/* Added pb-20 on mobile to ensure content clears the fixed bottom nav */}
+      <main className="flex-1 overflow-hidden flex flex-col w-full h-full pb-20 md:pb-0 relative">
         
         {/* Pipeline List View (Funnel Prospects) */}
         {view === 'pipeline' && !selectedSiteId && (
@@ -222,25 +250,42 @@ export default function App() {
         )}
 
         {view === 'admin' && (
-          <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
+          <div className="flex-1 flex flex-col items-center justify-center text-slate-400 pb-16">
              <i className="fa-solid fa-gears text-5xl mb-4"></i>
              <h2 className="text-xl font-bold">Admin Settings</h2>
              <p className="text-sm">Configure global tax rates, user roles, and enterprise modules.</p>
           </div>
         )}
       </main>
+
+      {/* 3. Mobile Bottom Navigation (Hidden on Desktop) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-slate-200 z-50 flex items-center justify-between px-2 shadow-[0_-4px_10px_rgba(0,0,0,0.02)] pb-safe">
+         <NavIconMobile 
+            active={view === 'pipeline'} 
+            onClick={() => { setView('pipeline'); setSelectedSiteId(null); }} 
+            icon="fa-solid fa-filter-circle-dollar" 
+            label="Pipeline" 
+         />
+         <NavIconMobile 
+            active={view === 'portfolio'} 
+            onClick={() => { setView('portfolio'); setSelectedSiteId(null); }} 
+            icon="fa-solid fa-building-user" 
+            label="Portfolio" 
+         />
+         <NavIconMobile 
+            active={view === 'admin'} 
+            onClick={() => setView('admin')} 
+            icon="fa-solid fa-gears" 
+            label="Admin" 
+         />
+         <NavIconMobile 
+            active={false} 
+            onClick={() => {}} 
+            icon="fa-solid fa-circle-user" 
+            label="Profile" 
+         />
+      </nav>
+
     </div>
   );
 }
-
-const NavIcon = ({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: string, label: string }) => (
-  <button 
-    onClick={onClick}
-    className={`md:w-full flex flex-col items-center space-y-1 transition-colors relative group py-2 px-4 md:px-0 md:py-0 ${active ? 'text-blue-400 md:text-white' : 'text-slate-500 hover:text-slate-300'}`}
-  >
-    {active && <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500 rounded-r shadow-[0_0_15px_rgba(59,130,246,0.6)] hidden md:block"></div>}
-    {active && <div className="absolute bottom-0 left-0 right-0 h-1 bg-blue-500 rounded-t md:hidden"></div>}
-    <i className={`${icon} text-xl md:text-lg`}></i>
-    <span className="text-[9px] font-black uppercase tracking-tighter hidden md:block opacity-0 group-hover:opacity-100 transition-opacity">{label}</span>
-  </button>
-);

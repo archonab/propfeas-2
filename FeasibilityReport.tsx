@@ -33,7 +33,7 @@ export const FeasibilityReport: React.FC<Props> = ({ settings, costs, revenues, 
   const profitMargin = marginBeforeInterest - stats.interestTotal;
 
   // Equity Stats
-  const equityRequired = settings.capitalStack.equityContribution; // or derived from cashflow peak
+  const equityRequired = settings.capitalStack.equity.initialContribution; // or derived from cashflow peak
   const marginOnEquity = equityRequired > 0 ? (profitMargin / equityRequired) * 100 : 0;
 
   // Order of Categories to match standard accounting view

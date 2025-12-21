@@ -110,13 +110,13 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
     setCosts(prev => prev.map(c => c.id === id ? { ...c, [field]: value } : c));
   };
 
-  const handleAddCost = () => {
+  const handleAddCost = (category: CostCategory = CostCategory.CONSTRUCTION) => {
     if (!isEditable) return;
     const newItem: LineItem = {
       id: Date.now().toString(),
       code: `C${(costs.length + 1).toString().padStart(3, '0')}`,
-      category: CostCategory.CONSTRUCTION,
-      description: 'New Cost Center',
+      category: category,
+      description: 'New Cost Item',
       inputType: InputType.FIXED,
       amount: 0,
       startDate: 0,
@@ -126,6 +126,11 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
       gstTreatment: GstTreatment.TAXABLE
     };
     setCosts([...costs, newItem]);
+  };
+
+  const handleBulkAddCosts = (newItems: LineItem[]) => {
+    if (!isEditable) return;
+    setCosts(prev => [...prev, ...newItems]);
   };
 
   const handleRemoveCost = (id: string) => {
@@ -273,12 +278,12 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
       {/* RIGHT: Main Content Area */}
       <div className="flex-1 min-w-0 flex flex-col space-y-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center no-print gap-4 sm:gap-0">
-          <nav className="flex space-x-1 bg-slate-100 p-1 rounded-lg w-full sm:w-auto overflow-x-auto no-scrollbar">
+          <nav className="grid grid-cols-2 gap-1 sm:flex sm:space-x-1 bg-slate-100 p-1 rounded-lg w-full sm:w-auto">
             {navTabs.map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-2 rounded-md text-xs font-bold uppercase tracking-wider transition-all flex items-center space-x-2 whitespace-nowrap ${
+                className={`px-2 sm:px-4 py-2 rounded-md text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center sm:justify-start space-x-2 whitespace-nowrap ${
                   activeTab === tab.id ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
@@ -336,7 +341,7 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
                   </div>
                   
                   {/* Capital Stack Visualization */}
-                  <div className="bg-white p-6 rounded-xl border border-slate-200 h-[280px] lg:h-[320px]">
+                  <div className="bg-white p-6 rounded-xl border border-slate-200 h-[320px] lg:h-[320px]">
                       <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-2">
                         <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Capital Stack Utilisation</h3>
                         <div className="flex space-x-3 text-[10px] font-bold">
@@ -473,6 +478,7 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
                 constructionTotal={stats.constructionTotal} 
                 onUpdate={handleUpdateCost} 
                 onAdd={handleAddCost} 
+                onBulkAdd={handleBulkAddCosts}
                 onRemove={handleRemoveCost} 
               />
             </div>

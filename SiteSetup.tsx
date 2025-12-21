@@ -105,7 +105,7 @@ export const SiteSetup: React.FC<Props> = ({ settings, onUpdate, landCost = 0 })
     <div className="space-y-6 animate-in fade-in duration-300">
       
       {/* 1. Smart Address Search */}
-      <div className="relative z-50">
+      <div className="sticky top-0 z-40 bg-slate-50 pb-4 pt-1 -mt-1">
         <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Search Property Address</label>
         <div className="relative">
           <div className="absolute left-4 top-3.5 text-slate-400">

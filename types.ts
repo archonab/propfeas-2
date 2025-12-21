@@ -2,6 +2,8 @@
 export enum DistributionMethod {
   LINEAR = 'Linear',
   S_CURVE = 'S-Curve',
+  BELL_CURVE = 'Bell Curve',
+  MILESTONE = 'Milestone',
   UPFRONT = 'Upfront',
   END = 'End'
 }
@@ -57,8 +59,12 @@ export interface LineItem {
   startDate: number;
   span: number;
   method: DistributionMethod;
-  escalationRate: number;
+  escalationRate: number; // Annual %
   isTaxable: boolean;
+  
+  // Advanced Distribution Settings
+  sCurveSteepness?: number; // k-factor, default 10
+  milestones?: Record<number, number>; // Map of relative month -> percentage (0-100)
 }
 
 export interface RevenueItem {
@@ -72,6 +78,20 @@ export interface RevenueItem {
   isTaxable: boolean;
 }
 
+// --- NEW FINANCIAL TYPES ---
+
+export interface CapitalTier {
+  interestRate: number; // % p.a.
+  establishmentFee: number; // % of peak limit or facility amount
+  limit?: number; // Optional hard limit for Mezzanine
+}
+
+export interface CapitalStack {
+  senior: CapitalTier;
+  mezzanine: CapitalTier;
+  equityContribution: number; // Fixed amount of developer equity (first loss)
+}
+
 export interface FeasibilitySettings {
   projectName: string;
   description: string;
@@ -80,25 +100,44 @@ export interface FeasibilitySettings {
   durationMonths: number;
   discountRate: number;
   gstRate: number;
-  interestRate: number;
   totalUnits: number;
   status?: ScenarioStatus;
-  equityContribution?: number;
   useMarginScheme: boolean;
-  landLVR: number;
-  constructionFundingPct: number;
+  
+  // New Capital Stack Object
+  capitalStack: CapitalStack;
 }
 
 export interface MonthlyFlow {
   month: number;
   label: string;
-  outflow: number;
-  inflow: number;
-  net: number;
-  cumulative: number;
-  interest: number;
-  debtBalance: number;
-  equityOutflow: number;
+  
+  // Operational Flows
+  developmentCosts: number; // Costs before finance
+  netRevenue: number; // Revenue after commissions/GST
+  
+  // Funding Sources (Inflow to project)
+  drawDownEquity: number;
+  drawDownMezz: number;
+  drawDownSenior: number;
+  
+  // Repayment Flows (Outflow from project)
+  repaySenior: number;
+  repayMezz: number;
+  repayEquity: number; // Profit distribution
+  
+  // Balances (End of Month)
+  balanceSenior: number;
+  balanceMezz: number;
+  balanceEquity: number; // Cumulative equity paid in
+  
+  // Costs
+  interestSenior: number;
+  interestMezz: number;
+  
+  // Totals for Charting
+  netCashflow: number;
+  cumulativeCashflow: number;
 }
 
 export interface BudgetLineItem extends LineItem {

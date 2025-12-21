@@ -82,14 +82,24 @@ export const INITIAL_SETTINGS: FeasibilitySettings = {
   location: "Sydney, NSW",
   startDate: "2024-06-01",
   durationMonths: 24,
-  discountRate: 15,
+  discountRate: 15, // Project Discount Rate
   gstRate: 10,
-  interestRate: 7.5,
   totalUnits: 20,
   status: ScenarioStatus.DRAFT,
   useMarginScheme: true,
-  landLVR: 65,
-  constructionFundingPct: 100
+  
+  capitalStack: {
+    equityContribution: 2000000, // Developer "Skin in the game"
+    senior: {
+      interestRate: 6.5,
+      establishmentFee: 1.0
+    },
+    mezzanine: {
+      interestRate: 12.0,
+      establishmentFee: 2.0,
+      limit: 1500000
+    }
+  }
 };
 
 export const INITIAL_COSTS: LineItem[] = [

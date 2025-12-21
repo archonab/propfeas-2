@@ -2,13 +2,14 @@
 import { CostCategory, DistributionMethod, FeasibilitySettings, LineItem, RevenueItem, InputType, ScenarioStatus, Project } from './types';
 
 export const MOCK_PROJECTS: Project[] = [
+  // --- Active Portfolio ---
   {
     id: 'p1',
-    code: 'DAN-KIN-049',
+    code: 'ACT-SYD-001',
     name: "Kings Hill Development",
     address: "Kings Hill, NSW",
     thumbnail: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=400&h=250&auto=format&fit=crop",
-    status: 'Baseline',
+    status: 'active',
     stage: 'Planning',
     targetFinish: '30 Jun 2026',
     pm: 'Sarah Mitchell',
@@ -18,11 +19,11 @@ export const MOCK_PROJECTS: Project[] = [
   },
   {
     id: 'p2',
-    code: 'DAN-PAR-051',
+    code: 'ACT-MEL-042',
     name: "Parkside Estate",
     address: "St Kilda, VIC",
     thumbnail: "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?q=80&w=400&h=250&auto=format&fit=crop",
-    status: 'Live',
+    status: 'active',
     stage: 'Construction',
     targetFinish: '15 Dec 2025',
     pm: 'John Davis',
@@ -30,17 +31,46 @@ export const MOCK_PROJECTS: Project[] = [
     openRFIs: 5,
     conditions: 2
   },
+  // --- Prospects (Pipeline) ---
   {
-    id: 'p3',
-    code: 'DAN-RIV-052',
-    name: "Riverside Apartments",
-    address: "Brisbane, QLD",
+    id: 'prospect-1',
+    code: 'LEAD-089',
+    name: "142 O'Riordan St",
+    address: "Mascot, NSW",
+    thumbnail: "https://images.unsplash.com/photo-1582407947304-fd86f028f716?q=80&w=400&h=250&auto=format&fit=crop",
+    status: 'prospect',
+    stage: 'Analysis',
+    targetFinish: 'TBD',
+    pm: 'Unassigned',
+    openTasks: 0,
+    openRFIs: 0,
+    conditions: 0
+  },
+  {
+    id: 'prospect-2',
+    code: 'LEAD-092',
+    name: "The Old Mill Site",
+    address: "Bowden, SA",
+    thumbnail: "https://images.unsplash.com/photo-1516156008625-3a9d60da923c?q=80&w=400&h=250&auto=format&fit=crop",
+    status: 'prospect',
+    stage: 'Analysis',
+    targetFinish: 'TBD',
+    pm: 'Unassigned',
+    openTasks: 0,
+    openRFIs: 0,
+    conditions: 0
+  },
+  {
+    id: 'prospect-3',
+    code: 'LEAD-104',
+    name: "Coastal Infill Opp",
+    address: "Gold Coast, QLD",
     thumbnail: "https://images.unsplash.com/photo-1497366216548-37526070297c?q=80&w=400&h=250&auto=format&fit=crop",
-    status: 'Draft',
-    stage: 'Sales',
+    status: 'prospect',
+    stage: 'Acquisition',
     targetFinish: '31 Oct 2025',
     pm: 'Emma Wilson',
-    openTasks: 9,
+    openTasks: 2,
     openRFIs: 0,
     conditions: 0
   }

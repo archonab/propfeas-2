@@ -35,8 +35,8 @@ export interface Project {
   name: string;
   address: string;
   thumbnail: string;
-  status: 'Live' | 'Draft' | 'Baseline';
-  stage: 'Planning' | 'Construction' | 'Sales' | 'Acquisition';
+  status: 'prospect' | 'active' | 'complete';
+  stage: 'Analysis' | 'Acquisition' | 'Planning' | 'Construction' | 'Sales';
   targetFinish: string;
   pm: string;
   openTasks: number;
@@ -44,7 +44,7 @@ export interface Project {
   conditions: number;
 }
 
-export type GlobalTab = 'projects' | 'sites' | 'vendors' | 'procurement' | 'contracts' | 'crm' | 'admin';
+export type GlobalView = 'pipeline' | 'portfolio' | 'admin';
 export type ProjectModule = 'overview' | 'feasibility' | 'tasks' | 'procurement' | 'contracts' | 'sales' | 'rfi' | 'files';
 
 export interface LineItem {

@@ -1,150 +1,218 @@
 
 import React, { useState } from 'react';
-import { GlobalTab, Project } from './types';
+import { GlobalView, Project } from './types';
 import { MOCK_PROJECTS } from './constants';
+import { FeasibilityEngine } from './FeasibilityEngine';
 import { ProjectDashboard } from './ProjectDashboard';
 
-const GlobalSidebarItem: React.FC<{ active: boolean; onClick: () => void; icon: string; label: string }> = ({ active, onClick, icon, label }) => (
-  <button
-    onClick={onClick}
-    className={`w-full flex flex-col items-center py-4 space-y-1 transition-all group ${
-      active ? 'text-slate-900 bg-white shadow-sm' : 'text-slate-500 hover:text-slate-800'
-    }`}
-  >
-    <i className={`${icon} text-lg`}></i>
-    <span className="text-[9px] font-bold uppercase tracking-wider">{label}</span>
-  </button>
-);
-
 export default function App() {
-  const [activeGlobalTab, setActiveGlobalTab] = useState<GlobalTab>('projects');
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [view, setView] = useState<GlobalView>('pipeline');
+  const [projects, setProjects] = useState<Project[]>(MOCK_PROJECTS);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
 
-  const activeProject = MOCK_PROJECTS.find(p => p.id === activeProjectId);
+  const selectedProject = projects.find(p => p.id === selectedProjectId);
 
-  if (activeProject) {
-    return (
-      <div className="h-screen flex bg-slate-100 overflow-hidden font-sans">
-        {/* Global Sidebar Persistent */}
-        <aside className="w-20 bg-slate-50 border-r border-slate-200 flex flex-col items-center py-6 no-print">
-          <div className="w-10 h-10 bg-slate-800 rounded-lg flex items-center justify-center text-white mb-8">
-            <i className="fa-solid fa-layer-group"></i>
-          </div>
-          <nav className="flex-1 w-full">
-            <GlobalSidebarItem active={activeGlobalTab === 'projects'} onClick={() => { setActiveProjectId(null); setActiveGlobalTab('projects'); }} icon="fa-solid fa-building" label="Projects" />
-            <GlobalSidebarItem active={activeGlobalTab === 'sites'} onClick={() => {}} icon="fa-solid fa-map-pin" label="Sites" />
-            <GlobalSidebarItem active={activeGlobalTab === 'vendors'} onClick={() => {}} icon="fa-solid fa-users" label="Vendors" />
-            <GlobalSidebarItem active={activeGlobalTab === 'procurement'} onClick={() => {}} icon="fa-solid fa-file-invoice" label="RFQs" />
-            <GlobalSidebarItem active={activeGlobalTab === 'contracts'} onClick={() => {}} icon="fa-solid fa-file-signature" label="Contracts" />
-            <GlobalSidebarItem active={activeGlobalTab === 'crm'} onClick={() => {}} icon="fa-solid fa-address-book" label="CRM" />
-            <GlobalSidebarItem active={activeGlobalTab === 'admin'} onClick={() => {}} icon="fa-solid fa-user-gear" label="Admin" />
-          </nav>
-        </aside>
-        
-        <div className="flex-1 relative overflow-hidden">
-          <ProjectDashboard project={activeProject} onBack={() => setActiveProjectId(null)} />
-        </div>
-      </div>
-    );
-  }
+  const promoteProject = (id: string) => {
+    setProjects(prev => prev.map(p => p.id === id ? { ...p, status: 'active', stage: 'Planning' } : p));
+    setSelectedProjectId(null);
+    setView('portfolio');
+  };
 
   return (
-    <div className="h-screen flex bg-slate-100 font-sans overflow-hidden">
-      {/* Global Sidebar */}
-      <aside className="w-20 bg-slate-50 border-r border-slate-200 flex flex-col items-center py-6">
-        <div className="w-10 h-10 bg-slate-800 rounded-lg flex items-center justify-center text-white mb-8">
-          <i className="fa-solid fa-layer-group"></i>
+    <div className="h-screen flex bg-slate-50 overflow-hidden font-sans">
+      {/* Global Sidebar (Left Rail) */}
+      <aside className="w-16 bg-slate-900 flex flex-col items-center py-6 shrink-0 no-print">
+        <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white mb-10 shadow-lg shadow-blue-900/40">
+          <i className="fa-solid fa-cube text-xl"></i>
         </div>
-        <nav className="flex-1 w-full">
-          <GlobalSidebarItem active={activeGlobalTab === 'projects'} onClick={() => setActiveGlobalTab('projects')} icon="fa-solid fa-building" label="Projects" />
-          <GlobalSidebarItem active={activeGlobalTab === 'sites'} onClick={() => {}} icon="fa-solid fa-map-pin" label="Sites" />
-          <GlobalSidebarItem active={activeGlobalTab === 'vendors'} onClick={() => {}} icon="fa-solid fa-users" label="Vendors" />
-          <GlobalSidebarItem active={activeGlobalTab === 'procurement'} onClick={() => {}} icon="fa-solid fa-file-invoice" label="RFQs" />
-          <GlobalSidebarItem active={activeGlobalTab === 'contracts'} onClick={() => {}} icon="fa-solid fa-file-signature" label="Contracts" />
-          <GlobalSidebarItem active={activeGlobalTab === 'crm'} onClick={() => {}} icon="fa-solid fa-address-book" label="CRM" />
-          <GlobalSidebarItem active={activeGlobalTab === 'admin'} onClick={() => {}} icon="fa-solid fa-user-gear" label="Admin" />
+        <nav className="flex-1 w-full space-y-6">
+          <NavIcon 
+            active={view === 'pipeline'} 
+            onClick={() => { setView('pipeline'); setSelectedProjectId(null); }} 
+            icon="fa-solid fa-filter-circle-dollar" 
+            label="Pipeline" 
+          />
+          <NavIcon 
+            active={view === 'portfolio'} 
+            onClick={() => { setView('portfolio'); setSelectedProjectId(null); }} 
+            icon="fa-solid fa-building-user" 
+            label="Portfolio" 
+          />
+          <NavIcon 
+            active={view === 'admin'} 
+            onClick={() => setView('admin')} 
+            icon="fa-solid fa-gears" 
+            label="Admin" 
+          />
         </nav>
-        <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer">
-          <i className="fa-solid fa-user"></i>
+        <div className="mt-auto">
+          <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-500 cursor-pointer hover:bg-slate-700 transition-colors">
+            <i className="fa-solid fa-user-tie"></i>
+          </div>
         </div>
       </aside>
 
-      {/* Main Content: Project Portfolio */}
-      <main className="flex-1 overflow-y-auto p-10">
-        <div className="max-w-7xl mx-auto">
-          <header className="flex justify-between items-center mb-10">
-            <div>
-              <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Project Portfolio</h1>
-              <p className="text-slate-500 text-sm mt-1 font-medium">Global development directory and status overview.</p>
-            </div>
-            <button className="px-6 py-2.5 bg-slate-800 text-white rounded-lg font-bold hover:bg-slate-700 transition-all shadow-lg flex items-center text-sm">
-              <i className="fa-solid fa-plus mr-2"></i> Create Project
-            </button>
-          </header>
+      {/* Main App Content Area */}
+      <main className="flex-1 overflow-hidden flex flex-col">
+        
+        {/* Pipeline List View (Funnel Prospects) */}
+        {view === 'pipeline' && !selectedProjectId && (
+          <div className="flex-1 p-8 overflow-y-auto animate-in fade-in duration-300">
+            <header className="mb-8 flex justify-between items-end">
+              <div>
+                <h1 className="text-2xl font-black text-slate-800 tracking-tight uppercase">Acquisition Pipeline</h1>
+                <p className="text-sm text-slate-500 font-medium">Site scanning and rapid feasibility analysis.</p>
+              </div>
+              <button className="px-5 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-all shadow-lg text-xs">
+                <i className="fa-solid fa-plus mr-2"></i> Scan New Site
+              </button>
+            </header>
 
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="p-4 border-b border-slate-100 flex items-center space-x-4">
-              <div className="relative flex-1">
-                <i className="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
-                <input type="text" placeholder="Search projects..." className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-slate-300 outline-none" />
-              </div>
-              <div className="flex items-center space-x-2">
-                <button className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50"><i className="fa-solid fa-filter mr-2"></i>Stage</button>
-                <button className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50"><i className="fa-solid fa-layer-group mr-2"></i>Status</button>
-              </div>
-            </div>
-            
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                  <th className="px-6 py-4">Code</th>
-                  <th className="px-6 py-4">Name</th>
-                  <th className="px-6 py-4">Stage</th>
-                  <th className="px-6 py-4">Start</th>
-                  <th className="px-6 py-4">Finish</th>
-                  <th className="px-6 py-4">Open Tasks</th>
-                  <th className="px-6 py-4">RFIs</th>
-                  <th className="px-6 py-4">Conditions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {MOCK_PROJECTS.map(project => (
-                  <tr 
-                    key={project.id} 
-                    onClick={() => setActiveProjectId(project.id)}
-                    className="hover:bg-slate-50 cursor-pointer transition-colors group"
-                  >
-                    <td className="px-6 py-4 mono text-xs text-slate-400">{project.code}</td>
-                    <td className="px-6 py-4 font-bold text-slate-700 group-hover:text-blue-600 transition-colors">{project.name}</td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-tight ${
-                        project.stage === 'Planning' ? 'bg-blue-100 text-blue-700' :
-                        project.stage === 'Construction' ? 'bg-amber-100 text-amber-700' :
-                        'bg-emerald-100 text-emerald-700'
-                      }`}>
-                        {project.stage}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-slate-500">01 Mar 2024</td>
-                    <td className="px-6 py-4 text-slate-500">{project.targetFinish}</td>
-                    <td className="px-6 py-4 text-center font-semibold text-slate-600">{project.openTasks}</td>
-                    <td className="px-6 py-4 text-center font-semibold text-slate-600">{project.openRFIs}</td>
-                    <td className="px-6 py-4 text-center font-semibold text-slate-600">{project.conditions}</td>
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                  <tr>
+                    <th className="px-6 py-4">ID</th>
+                    <th className="px-6 py-4">Opportunity</th>
+                    <th className="px-6 py-4">Location</th>
+                    <th className="px-6 py-4">Analysis Status</th>
+                    <th className="px-6 py-4 text-right">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="p-4 border-t border-slate-100 flex justify-between items-center bg-slate-50">
-              <span className="text-xs text-slate-400 font-medium tracking-tight">Showing {MOCK_PROJECTS.length} of {MOCK_PROJECTS.length} projects</span>
-              <div className="flex space-x-1">
-                <button className="w-8 h-8 flex items-center justify-center rounded border border-slate-200 bg-white text-slate-400 hover:bg-slate-50"><i className="fa-solid fa-chevron-left text-xs"></i></button>
-                <button className="w-8 h-8 flex items-center justify-center rounded border border-slate-200 bg-slate-800 text-white font-bold text-xs">1</button>
-                <button className="w-8 h-8 flex items-center justify-center rounded border border-slate-200 bg-white text-slate-400 hover:bg-slate-50"><i className="fa-solid fa-chevron-right text-xs"></i></button>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {projects.filter(p => p.status === 'prospect').map(project => (
+                    <tr 
+                      key={project.id} 
+                      className="hover:bg-blue-50/50 cursor-pointer transition-colors"
+                      onClick={() => setSelectedProjectId(project.id)}
+                    >
+                      <td className="px-6 py-4 mono text-xs text-slate-400">{project.code}</td>
+                      <td className="px-6 py-4 font-bold text-slate-700">{project.name}</td>
+                      <td className="px-6 py-4 text-slate-500">{project.address}</td>
+                      <td className="px-6 py-4">
+                          <span className="px-2 py-1 bg-amber-100 text-amber-700 rounded text-[10px] font-black uppercase tracking-tighter">Draft Feas</span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <button className="text-blue-600 font-bold text-xs hover:underline flex items-center justify-end w-full">
+                          Open Model <i className="fa-solid fa-arrow-right ml-2"></i>
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Pipeline Detail View (Full Page Acquisition Model) */}
+        {view === 'pipeline' && selectedProject && (
+          <div className="flex-1 p-8 overflow-y-auto bg-slate-50 animate-in slide-in-from-bottom-4 duration-500">
+            <div className="max-w-7xl mx-auto">
+              <header className="flex justify-between items-start mb-8 pb-6 border-b border-slate-200">
+                <div>
+                  <button 
+                    onClick={() => setSelectedProjectId(null)} 
+                    className="text-slate-400 hover:text-slate-600 transition-colors text-[10px] font-bold uppercase tracking-widest flex items-center mb-4"
+                  >
+                    <i className="fa-solid fa-chevron-left mr-2"></i> Back to Pipeline
+                  </button>
+                  <h2 className="text-3xl font-black text-slate-800 tracking-tight uppercase">{selectedProject.name}</h2>
+                  <p className="text-sm text-slate-500 font-medium mt-1">Acquisition Feasibility Model v1.4</p>
+                </div>
+                <div className="flex items-center space-x-3">
+                   <div className="px-3 py-1 bg-amber-100 text-amber-800 rounded text-[10px] font-bold uppercase">Prospect</div>
+                   <div className="w-px h-8 bg-slate-300 mx-2"></div>
+                   <div className="text-right">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase">Last Updated</p>
+                      <p className="text-xs font-bold text-slate-700">Just Now</p>
+                   </div>
+                </div>
+              </header>
+              
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+                <FeasibilityEngine 
+                  projectName={selectedProject.name} 
+                  isEditable={true} 
+                  onPromote={() => promoteProject(selectedProject.id)} 
+                />
               </div>
             </div>
           </div>
-        </div>
+        )}
+
+        {/* Portfolio View (Active Projects) */}
+        {view === 'portfolio' && !selectedProjectId && (
+          <div className="flex-1 p-8 overflow-y-auto animate-in fade-in duration-500">
+             <header className="mb-8">
+               <h1 className="text-2xl font-black text-slate-800 tracking-tight uppercase">Owned Portfolio</h1>
+               <p className="text-sm text-slate-500 font-medium">Enterprise management of live development sites.</p>
+             </header>
+
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                {projects.filter(p => p.status === 'active').map(project => (
+                  <div 
+                    key={project.id}
+                    onClick={() => setSelectedProjectId(project.id)}
+                    className="bg-white rounded-2xl overflow-hidden border border-slate-200 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer group"
+                  >
+                    <div className="h-40 bg-slate-100 relative overflow-hidden">
+                       <img src={project.thumbnail} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" alt="" />
+                       <div className="absolute top-4 right-4 bg-white/90 backdrop-blur px-3 py-1 rounded-full text-[10px] font-black uppercase text-slate-800 shadow-sm">
+                          {project.stage}
+                       </div>
+                    </div>
+                    <div className="p-6">
+                       <h3 className="text-lg font-bold text-slate-800 leading-tight">{project.name}</h3>
+                       <p className="text-xs text-slate-500 mt-1 flex items-center">
+                          <i className="fa-solid fa-location-dot mr-2 opacity-50"></i> {project.address}
+                       </p>
+                       <div className="mt-6 flex justify-between items-end">
+                          <div>
+                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Project PM</p>
+                             <div className="flex items-center space-x-2">
+                                <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-[8px] font-bold text-slate-600">SM</div>
+                                <span className="text-xs font-bold text-slate-700">{project.pm}</span>
+                             </div>
+                          </div>
+                          <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center">
+                             Workspace <i className="fa-solid fa-arrow-right ml-2 group-hover:translate-x-1 transition-transform"></i>
+                          </span>
+                       </div>
+                    </div>
+                  </div>
+                ))}
+             </div>
+          </div>
+        )}
+
+        {/* Selected Project Shell (Full ERP Workspace) */}
+        {view === 'portfolio' && selectedProject && (
+          <ProjectDashboard 
+            project={selectedProject} 
+            onBack={() => setSelectedProjectId(null)} 
+          />
+        )}
+
+        {view === 'admin' && (
+          <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
+             <i className="fa-solid fa-gears text-5xl mb-4"></i>
+             <h2 className="text-xl font-bold">Admin Settings</h2>
+             <p className="text-sm">Configure global tax rates, user roles, and enterprise modules.</p>
+          </div>
+        )}
       </main>
     </div>
   );
 }
+
+const NavIcon = ({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: string, label: string }) => (
+  <button 
+    onClick={onClick}
+    className={`w-full flex flex-col items-center space-y-1 transition-colors relative group ${active ? 'text-white' : 'text-slate-500 hover:text-slate-300'}`}
+  >
+    {active && <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500 rounded-r shadow-[0_0_15px_rgba(59,130,246,0.6)]"></div>}
+    <i className={`${icon} text-lg`}></i>
+    <span className="text-[9px] font-black uppercase tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity">{label}</span>
+  </button>
+);

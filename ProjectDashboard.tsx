@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { SiteLead, ProjectModule, LineItem, CostCategory, RevenueItem } from './types';
+import { SiteLead, ProjectModule, LineItem, CostCategory, RevenueItem, SmartRates } from './types';
 import { FeasibilityEngine } from './FeasibilityEngine';
 import { ScenarioComparison, ScenarioData } from './ScenarioComparison';
 import { INITIAL_COSTS, INITIAL_REVENUE, INITIAL_SETTINGS } from './constants';
@@ -8,6 +8,8 @@ import { INITIAL_COSTS, INITIAL_REVENUE, INITIAL_SETTINGS } from './constants';
 interface Props {
   site: SiteLead;
   onBack: () => void;
+  smartRates?: SmartRates;
+  libraryData?: LineItem[];
 }
 
 const ProjectSidebarItem: React.FC<{ active: boolean; onClick: () => void; icon: string; label: string }> = ({ active, onClick, icon, label }) => (
@@ -22,7 +24,7 @@ const ProjectSidebarItem: React.FC<{ active: boolean; onClick: () => void; icon:
   </button>
 );
 
-export const ProjectDashboard: React.FC<Props> = ({ site, onBack }) => {
+export const ProjectDashboard: React.FC<Props> = ({ site, onBack, smartRates, libraryData }) => {
   const [activeModule, setActiveModule] = useState<ProjectModule | 'compare'>('overview');
 
   const navItems: { id: ProjectModule | 'compare'; label: string; icon: string }[] = [
@@ -152,7 +154,12 @@ export const ProjectDashboard: React.FC<Props> = ({ site, onBack }) => {
                     <i className="fa-solid fa-lock mr-2"></i> Read Only
                   </span>
                </header>
-               <FeasibilityEngine site={site} isEditable={false} />
+               <FeasibilityEngine 
+                  site={site} 
+                  isEditable={false} 
+                  smartRates={smartRates}
+                  libraryData={libraryData}
+               />
             </div>
           )}
           

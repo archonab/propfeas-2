@@ -1,17 +1,30 @@
 
 import React, { useState, useMemo } from 'react';
 import { CostCategory, LineItem } from './types';
-import { STANDARD_LIBRARY } from './costLibrary';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   onImport: (items: LineItem[]) => void;
+  libraryData?: LineItem[];
 }
 
-export const CostLibraryModal: React.FC<Props> = ({ isOpen, onClose, onImport }) => {
+export const CostLibraryModal: React.FC<Props> = ({ isOpen, onClose, onImport, libraryData = [] }) => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [openCategories, setOpenCategories] = useState<Set<string>>(new Set(Object.values(CostCategory)));
+
+  // Group libraryData by Category
+  const groupedLibrary = useMemo(() => {
+    const grouped: Record<string, LineItem[]> = {};
+    Object.values(CostCategory).forEach(c => grouped[c] = []);
+    
+    libraryData.forEach(item => {
+      if (grouped[item.category]) {
+        grouped[item.category].push(item);
+      }
+    });
+    return grouped;
+  }, [libraryData]);
 
   if (!isOpen) return null;
 
@@ -33,7 +46,7 @@ export const CostLibraryModal: React.FC<Props> = ({ isOpen, onClose, onImport })
 
   // Category Bulk Selection
   const toggleCategorySelectAll = (cat: CostCategory) => {
-    const items = STANDARD_LIBRARY[cat] || [];
+    const items = groupedLibrary[cat] || [];
     const allIds = items.map(i => i.id);
     const newSet = new Set(selectedIds);
     
@@ -54,7 +67,7 @@ export const CostLibraryModal: React.FC<Props> = ({ isOpen, onClose, onImport })
     const itemsToImport: LineItem[] = [];
     
     // Iterate through library to find selected items
-    Object.values(STANDARD_LIBRARY).flat().forEach(item => {
+    libraryData.forEach(item => {
       if (selectedIds.has(item.id)) {
         // Clone and assign new unique ID
         itemsToImport.push({
@@ -99,7 +112,7 @@ export const CostLibraryModal: React.FC<Props> = ({ isOpen, onClose, onImport })
         {/* Scrollable List */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
           {Object.values(CostCategory).map((cat) => {
-            const items = STANDARD_LIBRARY[cat];
+            const items = groupedLibrary[cat];
             if (!items || items.length === 0) return null;
 
             const isOpen = openCategories.has(cat);

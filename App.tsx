@@ -1,14 +1,54 @@
 
-import React, { useState } from 'react';
-import { GlobalView, SiteLead, FeasibilitySettings } from './types';
-import { MOCK_SITES } from './constants';
+import React, { useState, useEffect } from 'react';
+import { GlobalView, SiteLead, FeasibilitySettings, SmartRates, LineItem, CostCategory } from './types';
+import { MOCK_SITES, DEFAULT_RATES } from './constants';
+import { STANDARD_LIBRARY } from './costLibrary';
 import { FeasibilityEngine } from './FeasibilityEngine';
 import { ProjectDashboard } from './ProjectDashboard';
+import { AdminSettings } from './AdminSettings';
+
+// Helper: Flatten the Library Object to Array for initial state
+const flattenLibrary = (lib: Record<CostCategory, LineItem[]>): LineItem[] => {
+  return Object.values(lib).flat();
+};
 
 export default function App() {
   const [view, setView] = useState<GlobalView>('pipeline');
   const [sites, setSites] = useState<SiteLead[]>(MOCK_SITES);
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
+
+  // --- Global Admin State ---
+  const [smartRates, setSmartRates] = useState<SmartRates>(DEFAULT_RATES);
+  const [customLibrary, setCustomLibrary] = useState<LineItem[]>([]);
+
+  // Load Admin Data on Mount
+  useEffect(() => {
+    // Load Rates
+    const savedRates = localStorage.getItem('devfeas_admin_rates');
+    if (savedRates) {
+      setSmartRates(JSON.parse(savedRates));
+    }
+
+    // Load Library
+    const savedLib = localStorage.getItem('devfeas_admin_library');
+    if (savedLib) {
+      setCustomLibrary(JSON.parse(savedLib));
+    } else {
+      // Init from hardcoded standard library
+      setCustomLibrary(flattenLibrary(STANDARD_LIBRARY));
+    }
+  }, []);
+
+  // Persistence hooks to save changes
+  useEffect(() => {
+    localStorage.setItem('devfeas_admin_rates', JSON.stringify(smartRates));
+  }, [smartRates]);
+
+  useEffect(() => {
+    if (customLibrary.length > 0) {
+      localStorage.setItem('devfeas_admin_library', JSON.stringify(customLibrary));
+    }
+  }, [customLibrary]);
 
   const selectedSite = sites.find(p => p.id === selectedSiteId);
 
@@ -32,6 +72,35 @@ export default function App() {
       }
       return p;
     }));
+  };
+
+  const handleCreateNewSite = () => {
+    const newId = `lead-${Date.now()}`;
+    const newSite: SiteLead = {
+      id: newId,
+      code: `PROS-${Math.floor(Math.random() * 1000)}`, // Random prospect code
+      name: "New Acquisition Opportunity",
+      thumbnail: "https://images.unsplash.com/photo-1560518883-ce09059eeffa?q=80&w=400&auto=format&fit=crop", // Default office/site placeholder
+      status: 'Prospect',
+      stage: 'Analysis',
+      pm: 'Unassigned',
+      openTasks: 0,
+      openRFIs: 0,
+      conditions: 0,
+      dna: {
+        address: "Enter Site Address...",
+        landArea: 0,
+        lga: "Pending",
+        zoning: "Pending",
+        overlays: [],
+        agent: { name: "", company: "" },
+        vendor: { name: "" },
+        milestones: {}
+      }
+    };
+
+    setSites(prev => [newSite, ...prev]); // Add to top of list
+    setSelectedSiteId(newId); // Open immediately
   };
 
   // Desktop Navigation Icon Component
@@ -109,7 +178,10 @@ export default function App() {
                 <h1 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight uppercase">Acquisition Pipeline</h1>
                 <p className="text-sm text-slate-500 font-medium">Site scanning and rapid feasibility analysis.</p>
               </div>
-              <button className="w-full md:w-auto px-5 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-all shadow-lg text-xs flex items-center justify-center">
+              <button 
+                onClick={handleCreateNewSite}
+                className="w-full md:w-auto px-5 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-all shadow-lg text-xs flex items-center justify-center"
+              >
                 <i className="fa-solid fa-plus mr-2"></i> Scan New Site
               </button>
             </header>
@@ -190,6 +262,8 @@ export default function App() {
                   isEditable={true} 
                   onPromote={() => promoteSite(selectedSite.id)}
                   onChange={(newSettings) => updateSiteData(selectedSite.id, newSettings)}
+                  smartRates={smartRates}
+                  libraryData={customLibrary}
                 />
               </div>
             </div>
@@ -245,16 +319,20 @@ export default function App() {
         {view === 'portfolio' && selectedSite && (
           <ProjectDashboard 
             site={selectedSite} 
-            onBack={() => setSelectedSiteId(null)} 
+            onBack={() => setSelectedSiteId(null)}
+            smartRates={smartRates}
+            libraryData={customLibrary}
           />
         )}
 
+        {/* Admin Settings (Backend Control Panel) */}
         {view === 'admin' && (
-          <div className="flex-1 flex flex-col items-center justify-center text-slate-400 pb-16">
-             <i className="fa-solid fa-gears text-5xl mb-4"></i>
-             <h2 className="text-xl font-bold">Admin Settings</h2>
-             <p className="text-sm">Configure global tax rates, user roles, and enterprise modules.</p>
-          </div>
+          <AdminSettings 
+            rates={smartRates} 
+            setRates={setSmartRates} 
+            library={customLibrary} 
+            setLibrary={setCustomLibrary} 
+          />
         )}
       </main>
 

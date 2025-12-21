@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { INITIAL_COSTS, INITIAL_REVENUE, INITIAL_SETTINGS } from './constants';
-import { FeasibilitySettings, LineItem, RevenueItem, CostCategory, DistributionMethod, InputType, ScenarioStatus, GstTreatment, SiteLead } from './types';
+import { FeasibilitySettings, LineItem, RevenueItem, CostCategory, DistributionMethod, InputType, ScenarioStatus, GstTreatment, SiteLead, SmartRates } from './types';
 import { FinanceEngine } from './services/financeEngine';
 import { SolverService } from './services/solverService';
 import { SensitivityMatrix } from './SensitivityMatrix';
@@ -33,9 +33,11 @@ interface Props {
   isEditable?: boolean;
   onPromote?: () => void;
   onChange?: (settings: FeasibilitySettings) => void;
+  smartRates?: SmartRates;
+  libraryData?: LineItem[];
 }
 
-export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, onPromote, onChange }) => {
+export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, onPromote, onChange, smartRates, libraryData }) => {
   // Default to 'summary' if acquired, otherwise 'site'
   const [activeTab, setActiveTab] = useState(site.status === 'Acquired' ? 'summary' : 'site');
   const [reportSubTab, setReportSubTab] = useState<'pnl' | 'cashflow'>('pnl');
@@ -480,6 +482,8 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
                 onAdd={handleAddCost} 
                 onBulkAdd={handleBulkAddCosts}
                 onRemove={handleRemoveCost} 
+                smartRates={smartRates}
+                libraryData={libraryData}
               />
             </div>
           )}

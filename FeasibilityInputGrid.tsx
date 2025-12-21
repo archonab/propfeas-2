@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { CostCategory, DistributionMethod, InputType, LineItem, FeasibilitySettings, GstTreatment } from './types';
+import { CostCategory, DistributionMethod, InputType, LineItem, FeasibilitySettings, GstTreatment, SmartRates, LineItemTag } from './types';
 import { PhasingChart } from './PhasingChart';
 import { CostLibraryModal } from './CostLibraryModal';
 
@@ -12,6 +12,8 @@ interface Props {
   onBulkAdd: (items: LineItem[]) => void;
   onRemove: (id: string) => void;
   constructionTotal: number;
+  smartRates?: SmartRates;
+  libraryData?: LineItem[];
 }
 
 // --- SUB-COMPONENT: COST SECTION ---
@@ -37,7 +39,16 @@ const CostSection: React.FC<{
 
   const sectionCosts = costs.filter(c => categories.includes(c.category));
   
-  const sectionTotal = sectionCosts.reduce((acc, item) => acc + item.amount, 0);
+  const sectionTotal = sectionCosts.reduce((acc, item) => {
+    // We need to calculate the nominal amount for totals if it's a rate/pct
+    let amount = item.amount;
+    if (item.inputType === InputType.PCT_CONSTRUCTION) amount = (item.amount / 100) * constructionTotal;
+    else if (item.inputType === InputType.PCT_REVENUE) amount = (item.amount / 100) * estimatedRevenue;
+    else if (item.inputType === InputType.RATE_PER_SQM) amount = item.amount * (settings.site.landArea || 0);
+    else if (item.inputType === InputType.RATE_PER_UNIT) amount = item.amount * (settings.totalUnits || 0);
+    return acc + amount;
+  }, 0);
+
   const perUnit = settings.totalUnits > 0 ? sectionTotal / settings.totalUnits : 0;
 
   const toggleExpanded = (id: string) => setExpandedRow(expandedRow === id ? null : id);
@@ -59,48 +70,144 @@ const CostSection: React.FC<{
     return Object.entries(milestones).map(([k, v]) => `${k}:${v}`).join(', ');
   };
 
+  // --- Helper: Smart Driver Context ---
+  const getSmartContext = (item: LineItem) => {
+    let driverValue = 0;
+    let driverLabel = '';
+    let isPercentage = false;
+    let showDriver = false;
+    let warning: string | null = null;
+
+    switch (item.inputType) {
+        case InputType.PCT_CONSTRUCTION:
+            driverValue = constructionTotal;
+            driverLabel = 'Const. Cost';
+            isPercentage = true;
+            showDriver = true;
+            if (driverValue <= 0) warning = 'No Construction Cost';
+            break;
+        case InputType.PCT_REVENUE:
+            driverValue = estimatedRevenue;
+            driverLabel = 'Est. Revenue';
+            isPercentage = true;
+            showDriver = true;
+            break;
+        case InputType.RATE_PER_SQM:
+            driverValue = settings.site.landArea;
+            driverLabel = `${(driverValue || 0).toLocaleString()} sqm Site`;
+            showDriver = true;
+            if (!driverValue || driverValue <= 0) warning = 'Missing Land Area';
+            break;
+        case InputType.RATE_PER_UNIT:
+            driverValue = settings.totalUnits;
+            driverLabel = `${driverValue} Units`;
+            showDriver = true;
+            if (!driverValue || driverValue <= 0) warning = 'No Units Defined';
+            break;
+    }
+
+    const calculatedValue = isPercentage 
+        ? (driverValue * (item.amount / 100)) 
+        : (driverValue * item.amount);
+
+    return { showDriver, driverLabel, calculatedValue, warning };
+  };
+
   // --- Shared Advanced Config Form ---
-  const AdvancedConfigSection = ({ item }: { item: LineItem }) => (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-1">
-            <label className="text-[10px] font-bold uppercase text-slate-500">Escalation %</label>
-            <div className="flex items-center bg-white border border-slate-200 rounded px-2 shadow-sm">
-              <input 
-                  type="number" 
-                  value={item.escalationRate || 0}
-                  onChange={(e) => onUpdate(item.id, 'escalationRate', parseFloat(e.target.value))}
-                  className="w-full text-sm md:text-xs font-bold border-none focus:ring-0 p-1.5"
-              />
-            </div>
-        </div>
-        {item.method === DistributionMethod.S_CURVE && (
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold uppercase text-slate-500">Steepness (k)</label>
-              <div className="flex items-center h-[34px]">
+  const AdvancedConfigSection = ({ item }: { item: LineItem }) => {
+    // Defines which tags are available for the current category
+    const getAvailableTags = (): { value: LineItemTag, label: string }[] => {
+      const base = [{ value: 'NONE' as LineItemTag, label: 'Standard Item (No Special Logic)' }];
+      
+      if (item.category === CostCategory.LAND) {
+        return [...base, 
+          { value: 'LAND_PRICE', label: 'Land Purchase Price' },
+          { value: 'STAMP_DUTY', label: 'Stamp Duty (Acquisition)' },
+          { value: 'LEGAL_PURCHASE', label: 'Legal Fees (Purchase)' }
+        ];
+      }
+      if (item.category === CostCategory.SELLING) {
+        return [...base,
+          { value: 'AGENT_FEE', label: 'Agent Commission (Dynamic)' },
+          { value: 'LEGAL_SALES', label: 'Legal Fees (Settlement)' }
+        ];
+      }
+      // Statutory sometimes has duty if miscategorized, but best to keep strict
+      if (item.category === CostCategory.STATUTORY) {
+         return [...base, { value: 'STAMP_DUTY', label: 'Stamp Duty (If Statutory)' }];
+      }
+      return base;
+    };
+
+    const availableTags = getAvailableTags();
+
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase text-slate-500">Escalation %</label>
+              <div className="flex items-center bg-white border border-slate-200 rounded px-2 shadow-sm">
                 <input 
-                    type="range" min="5" max="20" step="1"
-                    value={item.sCurveSteepness || 10}
-                    onChange={(e) => onUpdate(item.id, 'sCurveSteepness', parseFloat(e.target.value))}
-                    className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                    type="number" 
+                    value={item.escalationRate || 0}
+                    onChange={(e) => onUpdate(item.id, 'escalationRate', parseFloat(e.target.value))}
+                    className="w-full text-sm md:text-xs font-bold border-none focus:ring-0 p-1.5"
                 />
               </div>
+          </div>
+          {item.method === DistributionMethod.S_CURVE && (
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase text-slate-500">Steepness (k)</label>
+                <div className="flex items-center h-[34px]">
+                  <input 
+                      type="range" min="5" max="20" step="1"
+                      value={item.sCurveSteepness || 10}
+                      onChange={(e) => onUpdate(item.id, 'sCurveSteepness', parseFloat(e.target.value))}
+                      className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                  />
+                </div>
+              </div>
+          )}
+        </div>
+        
+        {/* Special Function Tag */}
+        {availableTags.length > 1 && (
+           <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase text-slate-500 flex items-center">
+                 Special Function
+                 <div className="group/tip relative ml-1">
+                    <i className="fa-solid fa-circle-question text-slate-400"></i>
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover/tip:block bg-slate-800 text-white text-[10px] p-2 rounded w-48 z-50">
+                       Tags allow the engine to apply specific logic (e.g. Agent Fees calculated dynamically on settlement revenue).
+                    </div>
+                 </div>
+              </label>
+              <select 
+                 value={item.specialTag || 'NONE'} 
+                 onChange={(e) => onUpdate(item.id, 'specialTag', e.target.value)}
+                 className="w-full bg-white border border-slate-200 rounded text-xs font-bold text-indigo-700 focus:ring-indigo-500 py-1.5"
+              >
+                 {availableTags.map(tag => (
+                    <option key={tag.value} value={tag.value}>{tag.label}</option>
+                 ))}
+              </select>
+           </div>
+        )}
+
+        {item.method === DistributionMethod.MILESTONE && (
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase text-slate-500">Milestones</label>
+              <input 
+                  type="text" placeholder="1:10, 6:40"
+                  defaultValue={getMilestoneString(item.milestones)}
+                  onBlur={(e) => handleMilestoneChange(item.id, e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded px-3 py-2 text-sm md:text-xs mono focus:ring-2 focus:ring-blue-100 shadow-sm"
+              />
             </div>
         )}
       </div>
-      {item.method === DistributionMethod.MILESTONE && (
-          <div className="space-y-1">
-            <label className="text-[10px] font-bold uppercase text-slate-500">Milestones</label>
-            <input 
-                type="text" placeholder="1:10, 6:40"
-                defaultValue={getMilestoneString(item.milestones)}
-                onBlur={(e) => handleMilestoneChange(item.id, e.target.value)}
-                className="w-full bg-white border border-slate-200 rounded px-3 py-2 text-sm md:text-xs mono focus:ring-2 focus:ring-blue-100 shadow-sm"
-            />
-          </div>
-      )}
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6">
@@ -156,6 +263,8 @@ const CostSection: React.FC<{
                  {sectionCosts.map((item) => {
                    const isOverProject = (item.startDate + item.span) > settings.durationMonths;
                    const isCalculated = item.inputType !== InputType.FIXED;
+                   const hasTag = item.specialTag && item.specialTag !== 'NONE';
+                   const { showDriver, driverLabel, calculatedValue, warning } = getSmartContext(item);
 
                    return (
                      <React.Fragment key={item.id}>
@@ -169,7 +278,10 @@ const CostSection: React.FC<{
                             <input type="text" value={item.code} onChange={e => onUpdate(item.id, 'code', e.target.value)} className="w-full bg-transparent border-none focus:ring-0 text-xs text-slate-400 font-mono" />
                           </td>
                           <td className="px-4 py-2">
-                             <input type="text" value={item.description} onChange={e => onUpdate(item.id, 'description', e.target.value)} className="w-full bg-transparent border-none focus:ring-0 text-xs font-bold text-slate-700" />
+                             <div className="flex flex-col">
+                                <input type="text" value={item.description} onChange={e => onUpdate(item.id, 'description', e.target.value)} className="w-full bg-transparent border-none focus:ring-0 text-xs font-bold text-slate-700" />
+                                {hasTag && <span className="text-[9px] text-indigo-500 font-bold uppercase tracking-tighter px-1">{item.specialTag?.replace('_', ' ')}</span>}
+                             </div>
                           </td>
                           <td className="px-4 py-2">
                              <select value={item.inputType} onChange={e => onUpdate(item.id, 'inputType', e.target.value)} className="bg-transparent border-none focus:ring-0 text-xs text-blue-600 font-medium cursor-pointer w-full">
@@ -179,8 +291,19 @@ const CostSection: React.FC<{
                           <td className="px-4 py-2 text-right">
                              <div className="flex flex-col items-end">
                                 <input type="number" value={item.amount} onChange={e => onUpdate(item.id, 'amount', parseFloat(e.target.value))} className={`w-24 bg-transparent text-right mono text-xs font-bold border-none focus:ring-0 ${isCalculated ? 'text-indigo-600' : 'text-slate-900'}`} />
-                                {item.inputType === InputType.PCT_CONSTRUCTION && (
-                                   <span className="text-[9px] text-slate-400">Yield: ${(constructionTotal * (item.amount/100)).toLocaleString()}</span>
+                                {showDriver && (
+                                   <div className="flex items-center mt-1 space-x-1 justify-end">
+                                      {warning ? (
+                                          <span className="text-[9px] text-red-500 font-bold bg-red-50 px-1 rounded flex items-center cursor-help" title={warning}>
+                                             <i className="fa-solid fa-triangle-exclamation mr-1"></i> Check Site
+                                          </span>
+                                      ) : (
+                                          <span className="text-[9px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded flex items-center whitespace-nowrap group/driver cursor-help">
+                                             <span className="font-bold text-slate-600 mr-1">${(calculatedValue).toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
+                                             <span className="opacity-75 text-[8px] uppercase tracking-wide hidden xl:inline">x {driverLabel}</span>
+                                          </span>
+                                      )}
+                                   </div>
                                 )}
                              </div>
                           </td>
@@ -233,6 +356,8 @@ const CostSection: React.FC<{
              {sectionCosts.map(item => {
                const isCalculated = item.inputType !== InputType.FIXED;
                const isOverProject = (item.startDate + item.span) > settings.durationMonths;
+               const hasTag = item.specialTag && item.specialTag !== 'NONE';
+               const { showDriver, driverLabel, calculatedValue, warning } = getSmartContext(item);
 
                return (
                   <div key={item.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -252,9 +377,10 @@ const CostSection: React.FC<{
                                  className="w-full bg-transparent border-b border-transparent focus:border-blue-300 focus:ring-0 p-0 text-base font-bold text-slate-800 placeholder:text-slate-300"
                                  placeholder="Description..."
                               />
-                              <div className="flex items-center mt-1 space-x-2">
+                              <div className="flex items-center mt-1 space-x-2 flex-wrap gap-y-1">
                                  <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 rounded">{item.code}</span>
                                  {isOverProject && <span className="text-[10px] text-red-600 font-bold bg-red-100 px-1.5 rounded">Duration Error</span>}
+                                 {hasTag && <span className="text-[9px] text-white font-bold bg-indigo-500 px-1.5 rounded uppercase">{item.specialTag?.replace('_', ' ')}</span>}
                               </div>
                            </div>
                            <div className="text-right">
@@ -263,6 +389,18 @@ const CostSection: React.FC<{
                                  onChange={e => onUpdate(item.id, 'amount', parseFloat(e.target.value))}
                                  className={`w-28 text-right bg-transparent border-b border-transparent focus:border-blue-300 focus:ring-0 p-0 text-base font-bold ${isCalculated ? 'text-indigo-600' : 'text-slate-900'}`}
                               />
+                              {showDriver && (
+                                <div className="flex justify-end mt-1">
+                                   {warning ? (
+                                      <span className="text-[9px] text-red-500 font-bold bg-red-50 px-1.5 rounded">⚠️ {warning}</span>
+                                   ) : (
+                                      <div className="text-[9px] bg-slate-50 text-slate-500 px-1.5 rounded text-right">
+                                         <span className="font-bold block">${(calculatedValue/1000).toFixed(0)}k</span>
+                                         <span className="text-[8px] opacity-75">via {driverLabel}</span>
+                                      </div>
+                                   )}
+                                </div>
+                              )}
                               <button onClick={() => toggleExpanded(item.id)} className="block ml-auto mt-1 text-slate-400 p-1">
                                  <i className={`fa-solid fa-chevron-down transition-transform ${expandedRow === item.id ? 'rotate-180 text-blue-500' : ''}`}></i>
                               </button>
@@ -348,13 +486,72 @@ const CostSection: React.FC<{
 
 
 // --- MAIN GRID COMPONENT ---
-export const FeasibilityInputGrid: React.FC<Props> = ({ costs, settings, onUpdate, onAdd, onBulkAdd, onRemove, constructionTotal }) => {
+export const FeasibilityInputGrid: React.FC<Props> = ({ costs, settings, onUpdate, onAdd, onBulkAdd, onRemove, constructionTotal, smartRates, libraryData }) => {
   // Estimated Revenue for Yield Calcs (Fixed for now, usually passed in)
   const estimatedRevenue = 10000000; 
   const [showLibrary, setShowLibrary] = useState(false);
 
   const handleAdd = (category: CostCategory) => {
     onAdd(category); 
+  };
+
+  const handleLibraryImport = (items: LineItem[]) => {
+    // Apply Smart Defaults logic here based on Item Code or Category
+    // This allows the Admin "Smart Logic" settings to override specific known items on import.
+    
+    const smartItems = items.map(item => {
+      // 1. Architect Fees
+      // Matches CON-001 from standard library or any Architect item
+      if (smartRates && (item.code === 'CON-001' || item.description.toLowerCase().includes('architect'))) {
+        return { 
+           ...item, 
+           amount: smartRates.architectPct,
+           inputType: InputType.PCT_CONSTRUCTION 
+        };
+      }
+
+      // 2. Project Management
+      if (smartRates && (item.code === 'CON-002' || item.description.toLowerCase().includes('project management'))) {
+        return { 
+           ...item, 
+           amount: smartRates.projectManagementPct,
+           inputType: InputType.PCT_CONSTRUCTION 
+        };
+      }
+
+      // 3. Civil Engineering
+      // Typically Rate per Sqm, but needs to be converted to fixed based on site area? 
+      // Or keep as Rate per Sqm if engine supports. Engine supports RATE_PER_SQM.
+      if (smartRates && (item.code === 'CON-005' || item.description.toLowerCase().includes('civil engineer'))) {
+        return { 
+           ...item, 
+           amount: smartRates.civilEngRatePerSqm,
+           inputType: InputType.RATE_PER_SQM
+        };
+      }
+      
+      // 4. Landscape
+      if (smartRates && (item.code === 'CON-012' || item.description.toLowerCase().includes('landscape'))) {
+        return { 
+           ...item, 
+           amount: smartRates.landscapeRatePerSqm,
+           inputType: InputType.RATE_PER_SQM
+        };
+      }
+
+      // 5. Contingency
+      if (smartRates && (item.code === 'BLD-002' || item.description.toLowerCase().includes('contingency'))) {
+        return { 
+           ...item, 
+           amount: smartRates.contingencyPct,
+           inputType: InputType.PCT_CONSTRUCTION 
+        };
+      }
+
+      return item;
+    });
+
+    onBulkAdd(smartItems);
   };
 
   return (
@@ -377,9 +574,8 @@ export const FeasibilityInputGrid: React.FC<Props> = ({ costs, settings, onUpdat
       <CostLibraryModal 
          isOpen={showLibrary} 
          onClose={() => setShowLibrary(false)} 
-         onImport={(items) => {
-            onBulkAdd(items);
-         }}
+         onImport={handleLibraryImport}
+         libraryData={libraryData}
       />
 
       {/* 1. Acquisition Costs */}

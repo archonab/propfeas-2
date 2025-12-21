@@ -2,7 +2,7 @@
 import Decimal from 'decimal.js';
 import { 
   LineItem, RevenueItem, FeasibilitySettings, MonthlyFlow, DistributionMethod, 
-  InputType, CostCategory, DebtLimitMethod, EquityMode, InterestRateMode, FeeBase, CapitalTier, GstTreatment
+  InputType, CostCategory, DebtLimitMethod, EquityMode, InterestRateMode, FeeBase, CapitalTier, GstTreatment, LineItemTag
 } from '../types';
 
 // Helper: Error Function for Bell Curve
@@ -119,9 +119,22 @@ const getMonthlyInterestRate = (tier: CapitalTier, currentMonth: number): Decima
   return new Decimal(annualRate).dividedBy(100).dividedBy(12);
 };
 
+// Helper: Get Total by Tag (Used for Equity Base Calc)
+const getTaggedTotal = (
+  items: LineItem[], 
+  tags: LineItemTag[], 
+  settings: FeasibilitySettings, 
+  constructionSum: number, 
+  totalRevenue: number
+): Decimal => {
+  return items
+    .filter(i => i.specialTag && tags.includes(i.specialTag))
+    .reduce((acc, c) => acc.plus(calculateLineItemTotal(c, settings, constructionSum, totalRevenue)), new Decimal(0));
+};
+
 /**
  * CORE CASHFLOW ENGINE
- * Updated for Feastudy 7.0 parity + Build to Rent Logic
+ * Updated for Feastudy 7.0 parity + Build to Rent Logic + Special Tagging
  */
 const calculateMonthlyCashflow = (
   settings: FeasibilitySettings,
@@ -131,9 +144,6 @@ const calculateMonthlyCashflow = (
   const flows: MonthlyFlow[] = [];
 
   // --- 1. Pre-Calculation & Totals ---
-  // Note: For revenue items with 'Hold' strategy, pricePerUnit might be 0 or N/A.
-  // We use estimated sales value for input calculation if strategy is sell,
-  // or (AnnualRent / CapRate) for hold strategy estimation for fees.
   
   const totalRevenue = revenues.reduce((acc, rev) => {
     let itemValue = new Decimal(0);
@@ -154,17 +164,24 @@ const calculateMonthlyCashflow = (
     .filter(c => c.category === CostCategory.CONSTRUCTION)
     .reduce((acc, c) => acc.plus(c.amount), new Decimal(0)).toNumber();
 
-  // Total Development Cost (Pre-Interest) for Equity Calculations
+  // Total Development Cost (Pre-Interest)
   const totalDevCostPreInterest = costs
     .reduce((acc, c) => acc.plus(calculateLineItemTotal(c, settings, constructionSum, totalRevenue)), new Decimal(0))
     .toNumber();
 
-  const totalLandCost = costs
-    .filter(c => c.category === CostCategory.LAND)
-    .reduce((acc, c) => acc.plus(c.amount), new Decimal(0)).toNumber();
+  // --- NEW: Smart Acquisition Cost Base for Equity ---
+  // If user has tagged items as LAND_PRICE, STAMP_DUTY, etc., use those.
+  // Otherwise, fallback to the Category totals.
+  let acquisitionCostBase = getTaggedTotal(costs, ['LAND_PRICE', 'STAMP_DUTY', 'LEGAL_PURCHASE'], settings, constructionSum, totalRevenue);
+  
+  if (acquisitionCostBase.equals(0)) {
+    // Fallback to Category
+    acquisitionCostBase = new Decimal(costs
+        .filter(c => c.category === CostCategory.LAND)
+        .reduce((acc, c) => acc.plus(c.amount), new Decimal(0)));
+  }
 
   const marginLandBase = costs
-    // Logic check: Margin Base usually includes Land that was acquired GST-Free or via Margin Scheme
     .filter(c => c.category === CostCategory.LAND && (c.gstTreatment === GstTreatment.GST_FREE || c.gstTreatment === GstTreatment.MARGIN_SCHEME))
     .reduce((acc, c) => acc.plus(calculateLineItemTotal(c, settings, constructionSum, totalRevenue)), new Decimal(0));
 
@@ -177,7 +194,7 @@ const calculateMonthlyCashflow = (
   const getDynamicLimit = (tier: CapitalTier) => {
     const rawLimit = tier.limit || 0;
     if (tier.limitMethod === DebtLimitMethod.LVR) return new Decimal(totalRevenue).times(rawLimit).dividedBy(100);
-    if (tier.limitMethod === DebtLimitMethod.LTC) return new Decimal(totalDevCostPreInterest).times(rawLimit).dividedBy(100); // Approximation using pre-interest
+    if (tier.limitMethod === DebtLimitMethod.LTC) return new Decimal(totalDevCostPreInterest).times(rawLimit).dividedBy(100);
     return new Decimal(rawLimit > 0 ? rawLimit : 9999999999);
   };
 
@@ -198,7 +215,8 @@ const calculateMonthlyCashflow = (
       equityPool = new Decimal(equityConfig.initialContribution);
       break;
     case EquityMode.PCT_LAND:
-      equityPool = new Decimal(totalLandCost).times(equityConfig.percentageInput).dividedBy(100);
+      // Uses the smart acquisition base
+      equityPool = acquisitionCostBase.times(equityConfig.percentageInput).dividedBy(100);
       break;
     case EquityMode.PCT_TOTAL_COST:
       equityPool = new Decimal(totalDevCostPreInterest).times(equityConfig.percentageInput).dividedBy(100);
@@ -207,12 +225,11 @@ const calculateMonthlyCashflow = (
       equityPool = equityConfig.instalments.reduce((acc, i) => acc.plus(i.amount), new Decimal(0));
       break;
     case EquityMode.PCT_MONTHLY:
-      // Pari Passu - We simulate a large pool, but the restriction happens per month
+      // Pari Passu
       equityPool = new Decimal(999999999999); 
       break;
   }
   
-  // For fixed pool modes, we track availability
   if (equityConfig.mode !== EquityMode.PCT_MONTHLY) {
     totalEquityCommitted = equityPool; 
   }
@@ -232,9 +249,9 @@ const calculateMonthlyCashflow = (
 
   for (let m = 0; m <= settings.durationMonths; m++) {
     
-    // A. Operational Cashflows
-    let monthlyNetCost = new Decimal(0);
-    let monthlyGSTPaid = new Decimal(0);
+    // --- STEP A: PROCESS REVENUE FIRST (For Dynamic Selling Costs) ---
+    let monthlyNetRevenue = new Decimal(0);
+    let monthlyGrossRevenue = new Decimal(0); // Track Gross Sales
     const monthlyBreakdown: Record<CostCategory, number> = {
         [CostCategory.LAND]: 0,
         [CostCategory.CONSULTANTS]: 0,
@@ -244,56 +261,15 @@ const calculateMonthlyCashflow = (
         [CostCategory.SELLING]: 0,
         [CostCategory.FINANCE]: 0
     };
-    
-    // Process Costs
-    costs.forEach(cost => {
-      if (m >= cost.startDate && m < cost.startDate + cost.span) {
-        const totalAmount = calculateLineItemTotal(cost, settings, constructionSum, totalRevenue);
-        const monthlyBaseValue = distributeValue(totalAmount, m - cost.startDate, cost);
-        
-        let monthlyEscalated = monthlyBaseValue;
-        const annualRate = (cost.escalationRate || 0) / 100;
-        if (annualRate > 0) {
-           const monthlyRate = Math.pow(1 + annualRate, 1/12) - 1;
-           const compoundingFactor = new Decimal(Math.pow(1 + monthlyRate, m));
-           monthlyEscalated = monthlyBaseValue.times(compoundingFactor);
-        }
-        
-        monthlyNetCost = monthlyNetCost.plus(monthlyEscalated);
-        monthlyBreakdown[cost.category] = (monthlyBreakdown[cost.category] || 0) + monthlyEscalated.toNumber();
-
-        // GST Logic: Only add GST if TAXABLE. 
-        // GST Free, Input Taxed, Margin Scheme on cost side implies NO GST to pay/claim on the cashflow.
-        if (cost.gstTreatment === GstTreatment.TAXABLE) {
-          const gstRate = (settings.gstRate || 10) / 100;
-          monthlyGSTPaid = monthlyGSTPaid.plus(monthlyEscalated.times(gstRate));
-        }
-      }
-    });
-
-    // Add Estab Fees to "Cost" in Month 0 (to trigger funding)
-    if (m === 0) {
-      monthlyNetCost = monthlyNetCost.plus(unpaidSeniorFee).plus(unpaidMezzFee);
-      // Allocate fees to Finance Category breakdown
-      monthlyBreakdown[CostCategory.FINANCE] += (unpaidSeniorFee.toNumber() + unpaidMezzFee.toNumber());
-    }
-
-    // Process Revenue
-    let monthlyNetRevenue = new Decimal(0);
-    let monthlyGrossRevenue = new Decimal(0); // Track Gross Sales
 
     revenues.forEach(rev => {
       // Logic split for Sell vs Hold
       if (rev.strategy === 'Hold') {
-         const settlementStart = rev.settlementDate; // Or we can use a separate 'operationStartDate'
+         const settlementStart = rev.settlementDate; 
          if (m >= settlementStart) {
-            // Calculate Monthly Rent
-            // Gross Annual = Weekly * 52 * Units
             const grossAnnualRent = new Decimal(rev.weeklyRent || 0).times(52).times(rev.units);
             const monthlyGross = grossAnnualRent.dividedBy(12);
             
-            // Lease Up Ramp Up
-            // e.g. if leaseUpDuration is 6 months, scale from 0 to 100% over 6 months from settlement
             const monthsSinceOpen = m - settlementStart;
             let occupancyRate = 1;
             if (rev.leaseUpDuration && rev.leaseUpDuration > 0) {
@@ -303,16 +279,9 @@ const calculateMonthlyCashflow = (
             const realizedGross = monthlyGross.times(occupancyRate);
             monthlyGrossRevenue = monthlyGrossRevenue.plus(realizedGross);
 
-            // Opex
             const opex = realizedGross.times((rev.opexRate || 0) / 100);
-            
-            // Net Rent
-            // Note: Rent is usually Input Taxed (Residential) or Taxable (Commercial). 
-            // Simplified here to Net + GST logic if taxable.
             const netRent = realizedGross.minus(opex);
             
-            // GST on Rent? Assuming Residential (Input Taxed) for now so no GST on income.
-            // If commercial, we'd need a flag on the revenue item. rev.isTaxable handles this.
             let gstLiability = new Decimal(0);
             if (rev.isTaxable) {
                 gstLiability = realizedGross.dividedBy(11);
@@ -321,54 +290,98 @@ const calculateMonthlyCashflow = (
             monthlyNetRevenue = monthlyNetRevenue.plus(netRent).minus(gstLiability);
          }
 
-         // Terminal Value (Deemed Sale) at end of project
+         // Terminal Value
          if (m === settings.durationMonths) {
              const grossAnnualRent = new Decimal(rev.weeklyRent || 0).times(52).times(rev.units);
              const netAnnualRent = grossAnnualRent.times(1 - (rev.opexRate || 0) / 100);
              const capRate = (rev.capRate || 5) / 100;
              const terminalValue = capRate > 0 ? netAnnualRent.dividedBy(capRate) : new Decimal(0);
              
-             // Treat as a large inflow
              monthlyGrossRevenue = monthlyGrossRevenue.plus(terminalValue);
-             // Assume selling costs apply? For Deemed Sale usually no agency fees if just valuation, 
-             // but if simulating exit, yes. Let's assume net proceeds.
              monthlyNetRevenue = monthlyNetRevenue.plus(terminalValue);
          }
 
       } else {
-        // 'Sell' Strategy (Standard)
+        // 'Sell' Strategy
         if (m === rev.settlementDate) {
             const revTotal = new Decimal(rev.units).times(rev.pricePerUnit);
             monthlyGrossRevenue = monthlyGrossRevenue.plus(revTotal);
 
+            // Standard inline commission (Legacy support)
             const commission = revTotal.times(rev.commissionRate).dividedBy(100);
-            
-            // Add Commission to Selling Costs breakdown
             monthlyBreakdown[CostCategory.SELLING] += commission.toNumber();
 
             let gstLiability = new Decimal(0);
-            
-            // Revenue GST Logic
             if (rev.isTaxable) {
-            if (settings.useMarginScheme) {
-                const totalUnits = settings.totalUnits || 1;
-                const allocatedLandBase = marginLandBase.times(rev.units).dividedBy(totalUnits);
-                const margin = revTotal.minus(allocatedLandBase);
-                if (margin.gt(0)) gstLiability = margin.dividedBy(11);
-            } else {
-                gstLiability = revTotal.dividedBy(11);
-            }
+                if (settings.useMarginScheme) {
+                    const totalUnits = settings.totalUnits || 1;
+                    const allocatedLandBase = marginLandBase.times(rev.units).dividedBy(totalUnits);
+                    const margin = revTotal.minus(allocatedLandBase);
+                    if (margin.gt(0)) gstLiability = margin.dividedBy(11);
+                } else {
+                    gstLiability = revTotal.dividedBy(11);
+                }
             }
             monthlyNetRevenue = monthlyNetRevenue.plus(revTotal.minus(commission).minus(gstLiability));
         }
       }
     });
 
-    // B. Interest Calculation
+    // --- STEP B: PROCESS COSTS (Using Computed Revenue for Agents) ---
+    let monthlyNetCost = new Decimal(0);
+    let monthlyGSTPaid = new Decimal(0);
+    
+    costs.forEach(cost => {
+      let monthlyBaseValue = new Decimal(0);
+
+      // Check for Special Tags allowing Dynamic Calculations
+      const isDynamicAgentFee = (cost.specialTag === 'AGENT_FEE' || cost.specialTag === 'LEGAL_SALES') && cost.inputType === InputType.PCT_REVENUE;
+
+      if (isDynamicAgentFee) {
+         // DYNAMIC AGENT FEES:
+         // Apply % to THIS MONTH'S Gross Revenue, ignoring start/end dates
+         if (monthlyGrossRevenue.gt(0)) {
+            monthlyBaseValue = monthlyGrossRevenue.times(cost.amount).dividedBy(100);
+         }
+      } else if (m >= cost.startDate && m < cost.startDate + cost.span) {
+         // STANDARD DISTRIBUTION
+         const totalAmount = calculateLineItemTotal(cost, settings, constructionSum, totalRevenue);
+         monthlyBaseValue = distributeValue(totalAmount, m - cost.startDate, cost);
+      }
+
+      if (monthlyBaseValue.gt(0)) {
+        let monthlyEscalated = monthlyBaseValue;
+        
+        // Don't escalate dynamic fees, they scale with revenue price naturally
+        if (!isDynamicAgentFee) {
+            const annualRate = (cost.escalationRate || 0) / 100;
+            if (annualRate > 0) {
+               const monthlyRate = Math.pow(1 + annualRate, 1/12) - 1;
+               const compoundingFactor = new Decimal(Math.pow(1 + monthlyRate, m));
+               monthlyEscalated = monthlyBaseValue.times(compoundingFactor);
+            }
+        }
+        
+        monthlyNetCost = monthlyNetCost.plus(monthlyEscalated);
+        monthlyBreakdown[cost.category] = (monthlyBreakdown[cost.category] || 0) + monthlyEscalated.toNumber();
+
+        if (cost.gstTreatment === GstTreatment.TAXABLE) {
+          const gstRate = (settings.gstRate || 10) / 100;
+          monthlyGSTPaid = monthlyGSTPaid.plus(monthlyEscalated.times(gstRate));
+        }
+      }
+    });
+
+    // Add Estab Fees to "Cost" in Month 0
+    if (m === 0) {
+      monthlyNetCost = monthlyNetCost.plus(unpaidSeniorFee).plus(unpaidMezzFee);
+      monthlyBreakdown[CostCategory.FINANCE] += (unpaidSeniorFee.toNumber() + unpaidMezzFee.toNumber());
+    }
+
+    // --- STEP C: INTEREST & FUNDING ---
     const seniorRate = getMonthlyInterestRate(settings.capitalStack.senior, m);
     const mezzRate = getMonthlyInterestRate(settings.capitalStack.mezzanine, m);
     
-    // Line Fees
     const seniorLineFeeRate = new Decimal(settings.capitalStack.senior.lineFee || 0).dividedBy(100).dividedBy(12);
     const seniorActive = m >= (settings.capitalStack.senior.activationMonth || 0);
     const seniorLineFee = (seniorActive && seniorLimit.lt(9999999999)) ? seniorLimit.times(seniorLineFeeRate) : new Decimal(0);
@@ -380,11 +393,9 @@ const calculateMonthlyCashflow = (
     const interestSenior = seniorBalance.times(seniorRate).plus(seniorLineFee);
     const interestMezz = mezzBalance.times(mezzRate).plus(mezzLineFee);
 
-    // C. Surplus Interest
     const lendingRate = new Decimal(settings.capitalStack.surplusInterestRate || 0).dividedBy(100).dividedBy(12);
     const lendingInterestIncome = surplusBalance.times(lendingRate);
 
-    // D. Capitalisation
     let financeFundingNeed = new Decimal(0);
 
     if (settings.capitalStack.senior.isInterestCapitalised !== false) { 
@@ -403,7 +414,7 @@ const calculateMonthlyCashflow = (
     const totalOutflow = monthlyNetCost.plus(monthlyGSTPaid).plus(financeFundingNeed);
     const totalInflow = monthlyNetRevenue.plus(pendingITCRefund).plus(lendingInterestIncome);
     
-    pendingITCRefund = monthlyGSTPaid; // Refund next month
+    pendingITCRefund = monthlyGSTPaid;
 
     const netPeriodCashflow = totalInflow.minus(totalOutflow);
     runningCumulativeCashflow = runningCumulativeCashflow.plus(netPeriodCashflow);
@@ -413,8 +424,6 @@ const calculateMonthlyCashflow = (
 
     if (netPeriodCashflow.lt(0)) {
        fundingNeed = netPeriodCashflow.abs();
-       
-       // Use Surplus first
        if (surplusBalance.gt(0)) {
          const fromSurplus = Decimal.min(surplusBalance, fundingNeed);
          surplusBalance = surplusBalance.minus(fromSurplus);
@@ -431,22 +440,13 @@ const calculateMonthlyCashflow = (
     // --- UPGRADED EQUITY LOGIC (Pari Passu & Phasing) ---
     if (fundingNeed.gt(0)) {
         if (equityConfig.mode === EquityMode.PCT_MONTHLY) {
-            // Pari Passu Mode:
-            // Developer must contribute X% of the deficit. 
-            // Debt covers the remainder.
             const pariPassuPct = new Decimal(equityConfig.percentageInput).dividedBy(100);
             const targetEquityDraw = fundingNeed.times(pariPassuPct);
-            
-            // Note: If we had a hard "Total Equity Cap" even for Pari Passu, we would check totalEquityCommitted here.
-            // Currently assuming "pay as you go" implies availability.
             drawEquity = targetEquityDraw;
             cumulativeEquityUsed = cumulativeEquityUsed.plus(drawEquity);
-            
-            // Determine remainder for debt
             fundingNeed = fundingNeed.minus(drawEquity);
 
         } else if (equityConfig.mode === EquityMode.INSTALMENTS) {
-             // Specific Injection Dates
              const injection = equityConfig.instalments.find(i => i.month === m);
              if (injection) {
                  const amount = new Decimal(injection.amount);
@@ -462,8 +462,6 @@ const calculateMonthlyCashflow = (
                  }
              }
         } else {
-            // Pool Based (Upfront, % Land, % Total Cost)
-            // Available Equity = TotalCommitted - Used
             const available = totalEquityCommitted.minus(cumulativeEquityUsed);
             if (available.gt(0)) {
                 drawEquity = Decimal.min(available, fundingNeed);
@@ -473,8 +471,7 @@ const calculateMonthlyCashflow = (
         }
     }
 
-    // --- DEBT LOGIC ---
-    // 2. Mezzanine
+    // Debt Waterfall
     const mezzAvailable = mezzLimit.minus(mezzBalance);
     if (fundingNeed.gt(0) && mezzAvailable.gt(0)) {
       const amount = Decimal.min(fundingNeed, mezzAvailable);
@@ -483,40 +480,35 @@ const calculateMonthlyCashflow = (
       fundingNeed = fundingNeed.minus(amount);
     }
 
-    // 3. Senior Debt
     if (fundingNeed.gt(0)) {
       drawSenior = fundingNeed;
       seniorBalance = seniorBalance.plus(drawSenior);
       fundingNeed = new Decimal(0);
     }
 
-    // F. Repayment Waterfall
+    // Repayment Waterfall
     let repaySenior = new Decimal(0);
     let repayMezz = new Decimal(0);
     let repayEquity = new Decimal(0);
 
     if (repaymentCapacity.gt(0)) {
-        // 1. Pay Senior
         if (seniorBalance.gt(0)) {
             const amount = Decimal.min(repaymentCapacity, seniorBalance);
             repaySenior = amount;
             seniorBalance = seniorBalance.minus(amount);
             repaymentCapacity = repaymentCapacity.minus(amount);
         }
-        // 2. Pay Mezz
         if (repaymentCapacity.gt(0) && mezzBalance.gt(0)) {
             const amount = Decimal.min(repaymentCapacity, mezzBalance);
             repayMezz = amount;
             mezzBalance = mezzBalance.minus(amount);
             repaymentCapacity = repaymentCapacity.minus(amount);
         }
-        // 3. Pay Equity (standard waterfall pays equity back last)
         if (repaymentCapacity.gt(0)) {
             repayEquity = repaymentCapacity;
         }
     }
 
-    // Record Flow
     flows.push({
       month: m,
       label: getMonthLabel(settings.startDate, m),
@@ -548,13 +540,8 @@ const calculateMonthlyCashflow = (
 // ... keep existing stats/report functions ...
 const calculateReportStats = (settings: FeasibilitySettings, costs: LineItem[], revenues: RevenueItem[]) => {
   const totalRevenueGross = revenues.reduce((acc, rev) => {
-      // Note: for reports, we might want to distinguish Rental Income vs Sales Income.
-      // For now, aggregating strictly based on standard metrics.
       if (rev.strategy === 'Hold') {
-          // Estimate total held value + rent collected for report stats
           const grossAnnualRent = (rev.weeklyRent || 0) * 52 * rev.units;
-          // Approximate total rent collected over project duration (simple)
-          // This is a rough estimation for static report. Accurate flow is in monthly array.
           const durationYears = (settings.durationMonths - rev.settlementDate) / 12;
           const totalRent = durationYears > 0 ? grossAnnualRent * durationYears : 0;
           

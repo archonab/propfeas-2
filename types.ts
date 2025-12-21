@@ -39,6 +39,25 @@ export enum ScenarioStatus {
   PROMOTED = 'Promoted'
 }
 
+// --- SPECIAL LOGIC TAGS ---
+export type LineItemTag = 'LAND_PRICE' | 'STAMP_DUTY' | 'LEGAL_PURCHASE' | 'AGENT_FEE' | 'LEGAL_SALES' | 'NONE';
+export type RevenueItemTag = 'GROSS_SALES' | 'OTHER_INCOME' | 'NONE';
+
+// --- GLOBAL SETTINGS TYPES ---
+export interface SmartRates {
+  // Smart Logic Defaults
+  architectPct: number;
+  projectManagementPct: number;
+  civilEngRatePerSqm: number;
+  landscapeRatePerSqm: number;
+  contingencyPct: number;
+  
+  // Global Drivers (New)
+  defaultGstRate: number;
+  defaultEscalationRate: number;
+  defaultAgentFeePct: number;
+}
+
 // --- SENSITIVITY TYPES ---
 export type SensitivityVariable = 'revenue' | 'cost' | 'duration' | 'interest';
 
@@ -122,6 +141,9 @@ export interface LineItem {
   // Advanced Distribution Settings
   sCurveSteepness?: number; // k-factor, default 10
   milestones?: Record<number, number>; // Map of relative month -> percentage (0-100)
+  
+  // Special Logic
+  specialTag?: LineItemTag; 
 }
 
 export type RevenueStrategy = 'Sell' | 'Hold';
@@ -144,6 +166,9 @@ export interface RevenueItem {
   opexRate?: number; // % of Gross Rent
   capRate?: number; // %
   leaseUpDuration?: number; // Months to stabilize
+
+  // Special Logic
+  specialTag?: RevenueItemTag;
 }
 
 // --- ADVANCED FINANCIAL TYPES (FEASTUDY 7.0) ---

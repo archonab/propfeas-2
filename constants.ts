@@ -1,5 +1,17 @@
 
-import { CostCategory, DistributionMethod, FeasibilitySettings, LineItem, RevenueItem, InputType, ScenarioStatus, SiteLead, EquityMode, InterestRateMode, FeeBase, DebtLimitMethod, GstTreatment } from './types';
+import { CostCategory, DistributionMethod, FeasibilitySettings, LineItem, RevenueItem, InputType, ScenarioStatus, SiteLead, EquityMode, InterestRateMode, FeeBase, DebtLimitMethod, GstTreatment, SmartRates } from './types';
+
+export const DEFAULT_RATES: SmartRates = {
+  architectPct: 4.5,
+  projectManagementPct: 2.0,
+  civilEngRatePerSqm: 120,
+  landscapeRatePerSqm: 50,
+  contingencyPct: 5.0,
+  // New Global Drivers
+  defaultGstRate: 10.0,
+  defaultEscalationRate: 3.0,
+  defaultAgentFeePct: 2.2
+};
 
 export const MOCK_SITES: SiteLead[] = [
   // --- Active Portfolio (Acquired) ---

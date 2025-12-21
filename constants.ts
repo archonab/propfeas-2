@@ -1,5 +1,5 @@
 
-import { CostCategory, DistributionMethod, FeasibilitySettings, LineItem, RevenueItem, InputType, ScenarioStatus, Project } from './types';
+import { CostCategory, DistributionMethod, FeasibilitySettings, LineItem, RevenueItem, InputType, ScenarioStatus, Project, EquityMode, InterestRateMode, FeeBase, DebtLimitMethod } from './types';
 
 export const MOCK_PROJECTS: Project[] = [
   // --- Active Portfolio ---
@@ -89,15 +89,29 @@ export const INITIAL_SETTINGS: FeasibilitySettings = {
   useMarginScheme: true,
   
   capitalStack: {
-    equityContribution: 2000000, // Developer "Skin in the game"
+    surplusInterestRate: 2.5,
+    equity: {
+      mode: EquityMode.SUM_OF_MONEY,
+      initialContribution: 2000000,
+      instalments: [],
+      percentageInput: 20,
+    },
     senior: {
+      rateMode: InterestRateMode.SINGLE,
       interestRate: 6.5,
-      establishmentFee: 1.0
+      variableRates: [],
+      establishmentFeeBase: FeeBase.PERCENT,
+      establishmentFee: 1.0,
+      limitMethod: DebtLimitMethod.FIXED
     },
     mezzanine: {
+      rateMode: InterestRateMode.SINGLE,
       interestRate: 12.0,
+      variableRates: [],
+      establishmentFeeBase: FeeBase.PERCENT,
       establishmentFee: 2.0,
-      limit: 1500000
+      limit: 1500000,
+      limitMethod: DebtLimitMethod.FIXED
     }
   }
 };

@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { INITIAL_COSTS, INITIAL_REVENUE, INITIAL_SETTINGS } from './constants';
 import { FeasibilitySettings, LineItem, RevenueItem, CostCategory, DistributionMethod, InputType, ScenarioStatus } from './types';
@@ -6,7 +7,7 @@ import { SolverService } from './services/solverService';
 import { SensitivityMatrix } from './SensitivityMatrix';
 import { FeasibilityInputGrid } from './FeasibilityInputGrid';
 import { FeasibilityReport } from './FeasibilityReport';
-import { FinancingLayers } from './FinancingLayers';
+import { FinanceSettings } from './FinanceSettings';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Legend } from 'recharts';
 
 interface Props {
@@ -31,7 +32,7 @@ export const FeasibilityEngine: React.FC<Props> = ({ projectName, isEditable = t
   const stats = useMemo(() => {
     // 1. Basic Profit Metrics
     const totalOut = cashflow.reduce((acc, curr) => acc + curr.developmentCosts + curr.interestSenior + curr.interestMezz, 0);
-    const totalIn = cashflow.reduce((acc, curr) => acc + curr.netRevenue, 0);
+    const totalIn = cashflow.reduce((acc, curr) => acc + curr.netRevenue + curr.lendingInterestIncome, 0);
     const profit = totalIn - totalOut;
     const margin = totalOut > 0 ? (profit / totalOut) * 100 : 0;
     
@@ -45,6 +46,7 @@ export const FeasibilityEngine: React.FC<Props> = ({ projectName, isEditable = t
     const peakSenior = Math.max(...cashflow.map(f => f.balanceSenior));
     const peakMezz = Math.max(...cashflow.map(f => f.balanceMezz));
     const peakTotalDebt = Math.max(...cashflow.map(f => f.balanceSenior + f.balanceMezz));
+    const peakEquity = Math.max(...cashflow.map(f => f.balanceEquity));
     
     // LTC = Peak Debt / Total Development Cost
     const ltc = totalOut > 0 ? (peakTotalDebt / totalOut) * 100 : 0;
@@ -58,7 +60,7 @@ export const FeasibilityEngine: React.FC<Props> = ({ projectName, isEditable = t
     return { 
       profit, margin, irr, npv, totalOut, totalIn, 
       constructionTotal, interestTotal, 
-      peakSenior, peakMezz, peakTotalDebt,
+      peakSenior, peakMezz, peakTotalDebt, peakEquity,
       ltc, lvr
     };
   }, [cashflow, costs, settings.discountRate]);
@@ -122,9 +124,6 @@ export const FeasibilityEngine: React.FC<Props> = ({ projectName, isEditable = t
 
         if (dutyIndex !== -1) {
           newCosts[dutyIndex] = { ...newCosts[dutyIndex], amount: result.stampDuty };
-        } else {
-          // Optional: Create stamp duty item if it doesn't exist? 
-          // For now we just solve based on existing items.
         }
 
         setCosts(newCosts);
@@ -207,7 +206,7 @@ export const FeasibilityEngine: React.FC<Props> = ({ projectName, isEditable = t
                   <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Finance Covenants</h3>
                   <div className="space-y-4">
                       <div className="pb-4 border-b border-slate-200">
-                        <ControlItem label="Equity Commit." val={`$${(settings.capitalStack.equityContribution/1e6).toFixed(1)}M`} />
+                        <ControlItem label="Peak Equity" val={`$${(stats.peakEquity/1e6).toFixed(1)}M`} />
                         <ControlItem label="Senior Rate" val={`${settings.capitalStack.senior.interestRate}%`} />
                         <ControlItem label="Mezzanine Rate" val={`${settings.capitalStack.mezzanine.interestRate}%`} />
                       </div>
@@ -301,7 +300,7 @@ export const FeasibilityEngine: React.FC<Props> = ({ projectName, isEditable = t
 
         {activeTab === 'inputs' && (
           <div className="space-y-8 animate-in fade-in duration-300">
-             <FinancingLayers settings={settings} onUpdate={setSettings} />
+             <FinanceSettings settings={settings} onUpdate={setSettings} peakEquityRequired={stats.peakEquity} />
              <FeasibilityInputGrid 
                costs={costs} 
                settings={settings} 

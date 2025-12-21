@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { INITIAL_COSTS, INITIAL_REVENUE, INITIAL_SETTINGS } from './constants';
 import { FeasibilitySettings, LineItem, RevenueItem, CostCategory, DistributionMethod, InputType, ScenarioStatus } from './types';
@@ -7,6 +6,7 @@ import { SolverService } from './services/solverService';
 import { SensitivityMatrix } from './SensitivityMatrix';
 import { FeasibilityInputGrid } from './FeasibilityInputGrid';
 import { FeasibilityReport } from './FeasibilityReport';
+import { FinancingLayers } from './FinancingLayers';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Legend } from 'recharts';
 
 interface Props {
@@ -300,14 +300,17 @@ export const FeasibilityEngine: React.FC<Props> = ({ projectName, isEditable = t
         )}
 
         {activeTab === 'inputs' && (
-          <FeasibilityInputGrid 
-            costs={costs} 
-            settings={settings} 
-            constructionTotal={stats.constructionTotal} 
-            onUpdate={handleUpdateCost} 
-            onAdd={handleAddCost} 
-            onRemove={handleRemoveCost} 
-          />
+          <div className="space-y-8 animate-in fade-in duration-300">
+             <FinancingLayers settings={settings} onUpdate={setSettings} />
+             <FeasibilityInputGrid 
+               costs={costs} 
+               settings={settings} 
+               constructionTotal={stats.constructionTotal} 
+               onUpdate={handleUpdateCost} 
+               onAdd={handleAddCost} 
+               onRemove={handleRemoveCost} 
+             />
+          </div>
         )}
 
         {activeTab === 'reports' && (
@@ -319,15 +322,15 @@ export const FeasibilityEngine: React.FC<Props> = ({ projectName, isEditable = t
 };
 
 const KPITile = ({ label, val, color }: { label: string, val: string, color: string }) => (
-  <div className="bg-white p-4 rounded-xl border border-slate-200">
-    <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">{label}</span>
-    <span className={`text-xl font-black ${color}`}>{val}</span>
+  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-center">
+    <p className={`text-2xl font-black ${color}`}>{val}</p>
+    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{label}</p>
   </div>
 );
 
 const ControlItem = ({ label, val }: { label: string, val: string }) => (
-  <div className="flex justify-between items-center text-xs mb-2">
-    <span className="text-slate-500">{label}</span>
-    <span className="font-bold text-slate-900 mono">{val}</span>
+  <div className="flex justify-between items-center text-xs">
+    <span className="font-bold text-slate-500 uppercase">{label}</span>
+    <span className="font-mono font-bold text-slate-700">{val}</span>
   </div>
 );

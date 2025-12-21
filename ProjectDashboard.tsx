@@ -1,7 +1,9 @@
 
 import React, { useState } from 'react';
-import { Project, ProjectModule } from './types';
+import { Project, ProjectModule, LineItem, CostCategory, RevenueItem } from './types';
 import { FeasibilityEngine } from './FeasibilityEngine';
+import { ScenarioComparison, ScenarioData } from './ScenarioComparison';
+import { INITIAL_COSTS, INITIAL_REVENUE, INITIAL_SETTINGS } from './constants';
 
 interface Props {
   project: Project;
@@ -21,15 +23,47 @@ const ProjectSidebarItem: React.FC<{ active: boolean; onClick: () => void; icon:
 );
 
 export const ProjectDashboard: React.FC<Props> = ({ project, onBack }) => {
-  const [activeModule, setActiveModule] = useState<ProjectModule>('overview');
+  const [activeModule, setActiveModule] = useState<ProjectModule | 'compare'>('overview');
 
-  const navItems: { id: ProjectModule; label: string; icon: string }[] = [
+  const navItems: { id: ProjectModule | 'compare'; label: string; icon: string }[] = [
     { id: 'overview', label: 'Overview', icon: 'fa-solid fa-chart-pie' },
     { id: 'feasibility', label: 'Feasibility (Baseline)', icon: 'fa-solid fa-calculator' },
+    { id: 'compare', label: 'Scenario Compare', icon: 'fa-solid fa-scale-balanced' },
     { id: 'procurement', label: 'RFQs / Tenders', icon: 'fa-solid fa-file-contract' },
     { id: 'sales', label: 'Sales & Settlements', icon: 'fa-solid fa-dollar-sign' },
     { id: 'files', label: 'Documents', icon: 'fa-solid fa-folder' },
   ];
+
+  // Mock Data Construction for "Compare" view
+  // In a real app, this would come from a Scenarios API
+  const baselineScenario: ScenarioData = {
+    id: 'base',
+    name: 'Approved Baseline',
+    isBaseline: true,
+    settings: { ...INITIAL_SETTINGS, projectName: project.name },
+    costs: INITIAL_COSTS,
+    revenues: INITIAL_REVENUE
+  };
+
+  // Create an "Option B" scenario with higher costs but higher sales
+  const optionBScenario: ScenarioData = {
+    id: 'opt-b',
+    name: 'High Spec Option',
+    isBaseline: false,
+    settings: { ...INITIAL_SETTINGS, projectName: project.name },
+    costs: INITIAL_COSTS.map(c => {
+       if (c.category === CostCategory.CONSTRUCTION) {
+         return { ...c, amount: c.amount * 1.15 }; // +15% Construction Cost
+       }
+       return c;
+    }),
+    revenues: INITIAL_REVENUE.map(r => ({
+       ...r,
+       pricePerUnit: r.pricePerUnit * 1.20 // +20% Sales Price
+    }))
+  };
+
+  const comparisonScenarios = [baselineScenario, optionBScenario];
 
   return (
     <div className="h-full flex overflow-hidden animate-in fade-in duration-300">
@@ -119,8 +153,12 @@ export const ProjectDashboard: React.FC<Props> = ({ project, onBack }) => {
                <FeasibilityEngine projectName={project.name} isEditable={false} />
             </div>
           )}
+          
+          {activeModule === 'compare' && (
+            <ScenarioComparison scenarios={comparisonScenarios} />
+          )}
 
-          {['procurement', 'sales', 'files'].includes(activeModule) && (
+          {['procurement', 'sales', 'files'].includes(activeModule as any) && (
             <div className="flex flex-col items-center justify-center py-40 animate-in zoom-in-95 duration-500">
               <i className={`${navItems.find(n => n.id === activeModule)?.icon} text-5xl text-slate-100 mb-6`}></i>
               <h3 className="text-lg font-bold text-slate-800 tracking-tight">{navItems.find(n => n.id === activeModule)?.label} Module</h3>

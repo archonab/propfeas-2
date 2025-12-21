@@ -150,13 +150,15 @@ const calculateMonthlyCashflow = (
     return acc.plus(new Decimal(rev.units).times(rev.pricePerUnit));
   }, new Decimal(0)).toNumber();
 
-  const landTotal = costs
-    .filter(c => c.category === CostCategory.LAND)
-    .reduce((acc, c) => acc.plus(c.amount), new Decimal(0)).toNumber();
-
   const constructionSum = costs
     .filter(c => c.category === CostCategory.CONSTRUCTION)
     .reduce((acc, c) => acc.plus(c.amount), new Decimal(0)).toNumber();
+
+  // MARGIN SCHEME BASE: Sum of NON-TAXABLE Land Costs
+  // Used for: GST = (Sales - LandBase) / 11
+  const marginLandBase = costs
+    .filter(c => c.category === CostCategory.LAND && !c.isTaxable)
+    .reduce((acc, c) => acc.plus(calculateLineItemTotal(c, settings, constructionSum, totalRevenue)), new Decimal(0));
 
   // --- 2. Initialize Capital Stack State ---
   let equityCommitmentRemaining = new Decimal(settings.capitalStack.equityContribution);
@@ -165,11 +167,15 @@ const calculateMonthlyCashflow = (
   let seniorBalance = new Decimal(0);
   let mezzBalance = new Decimal(0);
 
+  // ITC LAG STATE: GST paid in Month M is refunded in Month M+1
+  let pendingITCRefund = new Decimal(0);
+
   // --- 3. Monthly Loop ---
   for (let m = 0; m <= settings.durationMonths; m++) {
     
     // A. Calculate Operational Cashflows (Pre-Finance)
-    let monthlyCost = new Decimal(0);
+    let monthlyNetCost = new Decimal(0);
+    let monthlyGSTPaid = new Decimal(0);
     
     costs.forEach(cost => {
       // Check if cost is active in this month
@@ -179,55 +185,109 @@ const calculateMonthlyCashflow = (
         const monthlyBaseValue = distributeValue(totalAmount, m - cost.startDate, cost);
         
         // --- Compounding Escalation Logic ---
-        // Formula: Cost * (1 + MonthlyRate)^MonthsElapsed
-        // Monthly Rate derived from Annual Rate: (1 + Annual%)^(1/12) - 1
-        
+        let monthlyEscalated = monthlyBaseValue;
         const annualRate = (cost.escalationRate || 0) / 100;
         
         if (annualRate > 0) {
            const monthlyRate = Math.pow(1 + annualRate, 1/12) - 1;
-           // Apply compounding based on how many months have passed since project start (m)
            const compoundingFactor = new Decimal(Math.pow(1 + monthlyRate, m));
-           monthlyCost = monthlyCost.plus(monthlyBaseValue.times(compoundingFactor));
-        } else {
-           monthlyCost = monthlyCost.plus(monthlyBaseValue);
+           monthlyEscalated = monthlyBaseValue.times(compoundingFactor);
+        }
+        
+        monthlyNetCost = monthlyNetCost.plus(monthlyEscalated);
+
+        // Calculate GST Outflow for this month (to be refunded next month)
+        if (cost.isTaxable) {
+          const gstRate = (settings.gstRate || 10) / 100;
+          monthlyGSTPaid = monthlyGSTPaid.plus(monthlyEscalated.times(gstRate));
         }
       }
     });
 
-    let monthlyRevenue = new Decimal(0);
+    let monthlyNetRevenue = new Decimal(0);
     revenues.forEach(rev => {
       if (m === rev.settlementDate) {
         const revTotal = new Decimal(rev.units).times(rev.pricePerUnit);
         const commission = revTotal.times(rev.commissionRate).dividedBy(100);
         
-        let gstPayable = new Decimal(0);
+        let gstLiability = new Decimal(0);
         if (settings.useMarginScheme) {
-          const margin = revTotal.minus(landTotal); // Simplified per unit
-          if (margin.gt(0)) gstPayable = margin.dividedBy(11);
+          // Margin Scheme: GST = (Sales - Allocatable Land Base) / 11
+          // Allocatable Land Base = Total Land Base * (Units Settling / Total Units)
+          const totalUnits = settings.totalUnits || 1;
+          const allocatedLandBase = marginLandBase.times(rev.units).dividedBy(totalUnits);
+          
+          const margin = revTotal.minus(allocatedLandBase);
+          if (margin.gt(0)) {
+            gstLiability = margin.dividedBy(11);
+          }
         } else {
-          gstPayable = revTotal.dividedBy(11);
+          // Standard Scheme: GST = Sales / 11
+          gstLiability = revTotal.dividedBy(11);
         }
-        monthlyRevenue = monthlyRevenue.plus(revTotal.minus(commission).minus(gstPayable));
+        monthlyNetRevenue = monthlyNetRevenue.plus(revTotal.minus(commission).minus(gstLiability));
       }
     });
 
     // B. Interest Calculation (Capitalised to Debt Balances)
-    // Monthly Rates
+    // Interest Rate Monthly
     const seniorRateMonthly = new Decimal(settings.capitalStack.senior.interestRate).dividedBy(100).dividedBy(12);
     const mezzRateMonthly = new Decimal(settings.capitalStack.mezzanine.interestRate).dividedBy(100).dividedBy(12);
 
-    const interestSenior = seniorBalance.times(seniorRateMonthly);
-    const interestMezz = mezzBalance.times(mezzRateMonthly);
+    // Line Fees
+    const seniorLineFeeRate = new Decimal(settings.capitalStack.senior.lineFee || 0).dividedBy(100).dividedBy(12);
+    const seniorLimit = new Decimal(settings.capitalStack.senior.limit || 0);
+    const seniorLineFee = seniorLimit.gt(0) ? seniorLimit.times(seniorLineFeeRate) : new Decimal(0);
 
-    // Capitalise interest
-    seniorBalance = seniorBalance.plus(interestSenior);
-    mezzBalance = mezzBalance.plus(interestMezz);
+    const mezzLineFeeRate = new Decimal(settings.capitalStack.mezzanine.lineFee || 0).dividedBy(100).dividedBy(12);
+    const mezzLineFee = (settings.capitalStack.mezzanine.limit) 
+        ? new Decimal(settings.capitalStack.mezzanine.limit).times(mezzLineFeeRate) 
+        : new Decimal(0);
 
-    // C. Funding Waterfall (Filling the buckets)
-    // Costs to be funded this month:
-    let fundingNeed = monthlyCost;
+    const interestSenior = seniorBalance.times(seniorRateMonthly).plus(seniorLineFee);
+    const interestMezz = mezzBalance.times(mezzRateMonthly).plus(mezzLineFee);
+
+    // C. Capitalisation vs Servicing
+    // If NOT capitalised, interest adds to the cash funding requirement for the month.
+    let financeFundingNeed = new Decimal(0);
+
+    if (settings.capitalStack.senior.isInterestCapitalised !== false) { 
+        seniorBalance = seniorBalance.plus(interestSenior);
+    } else {
+        financeFundingNeed = financeFundingNeed.plus(interestSenior);
+    }
+
+    if (settings.capitalStack.mezzanine.isInterestCapitalised !== false) {
+        mezzBalance = mezzBalance.plus(interestMezz);
+    } else {
+        financeFundingNeed = financeFundingNeed.plus(interestMezz);
+    }
+
+    // D. Funding Waterfall (Filling the buckets)
     
+    // CASH FLOW CALCULATION
+    // Outflows: Net Costs + GST Paid This Month + Non-Capitalised Interest
+    const totalOutflow = monthlyNetCost.plus(monthlyGSTPaid).plus(financeFundingNeed);
+    
+    // Inflows: Net Revenue + GST Input Tax Credits (Refund from Previous Month)
+    const totalInflow = monthlyNetRevenue.plus(pendingITCRefund);
+    
+    // Store GST Paid this month to be the Refund for Next Month
+    pendingITCRefund = monthlyGSTPaid;
+
+    // Net Position for the Month
+    const netPeriodCashflow = totalInflow.minus(totalOutflow);
+
+    let fundingNeed = new Decimal(0);
+    let repaymentCapacity = new Decimal(0);
+
+    // Determine if we need to Draw Funds or can Repay Funds
+    if (netPeriodCashflow.lt(0)) {
+       fundingNeed = netPeriodCashflow.abs();
+    } else {
+       repaymentCapacity = netPeriodCashflow;
+    }
+
     let drawEquity = new Decimal(0);
     let drawMezz = new Decimal(0);
     let drawSenior = new Decimal(0);
@@ -259,8 +319,7 @@ const calculateMonthlyCashflow = (
       fundingNeed = new Decimal(0);
     }
 
-    // D. Repayment Waterfall (Draining the buckets)
-    let repaymentCapacity = monthlyRevenue;
+    // E. Repayment Waterfall (Draining the buckets)
     let repaySenior = new Decimal(0);
     let repayMezz = new Decimal(0);
     let repayEquity = new Decimal(0);
@@ -291,8 +350,9 @@ const calculateMonthlyCashflow = (
       month: m,
       label: getMonthLabel(settings.startDate, m),
       
-      developmentCosts: monthlyCost.toNumber(),
-      netRevenue: monthlyRevenue.toNumber(),
+      // We report Net Cost for the table/chart as is standard, but the funding logic used Gross
+      developmentCosts: monthlyNetCost.toNumber(), 
+      netRevenue: monthlyNetRevenue.toNumber(),
       
       drawDownEquity: drawEquity.toNumber(),
       drawDownMezz: drawMezz.toNumber(),
@@ -309,12 +369,78 @@ const calculateMonthlyCashflow = (
       interestSenior: interestSenior.toNumber(),
       interestMezz: interestMezz.toNumber(),
       
-      netCashflow: monthlyRevenue.minus(monthlyCost).toNumber(),
-      cumulativeCashflow: 0 // Calculated elsewhere if needed
+      // True Net Cashflow after finance movements (excluding debt draw/repay)
+      netCashflow: netPeriodCashflow.toNumber(),
+      cumulativeCashflow: 0 
     });
   }
 
   return flows;
+};
+
+const calculateReportStats = (
+  settings: FeasibilitySettings,
+  costs: LineItem[],
+  revenues: RevenueItem[]
+) => {
+  // 1. Revenue Stats
+  const totalRevenueGross = revenues.reduce((acc, rev) => {
+    return acc + (rev.units * rev.pricePerUnit);
+  }, 0);
+
+  // We need construction total to calculate some land costs if they are % based (rare for land, but good for robustness)
+  const fixedConstruction = costs
+    .filter(c => c.category === CostCategory.CONSTRUCTION && c.inputType === InputType.FIXED)
+    .reduce((acc, c) => acc + c.amount, 0);
+
+  // Land Total for Margin Scheme calculation (Must be NON-TAXABLE items only)
+  const landBaseForMargin = costs
+    .filter(c => c.category === CostCategory.LAND && !c.isTaxable)
+    .reduce((acc, c) => acc + calculateLineItemTotal(c, settings, fixedConstruction, totalRevenueGross), 0);
+
+  let gstCollected = 0;
+  if (settings.useMarginScheme) {
+    // GST is 1/11th of the Margin (Sales - LandBase)
+    const margin = Math.max(0, totalRevenueGross - landBaseForMargin);
+    gstCollected = margin / 11;
+  } else {
+    gstCollected = totalRevenueGross / 11;
+  }
+
+  const netRealisation = totalRevenueGross - gstCollected;
+
+  // 2. Cost Stats (Calculated Gross & ITC)
+  let totalItc = 0;
+  const grossCostsByCategory: Record<string, number> = {};
+  
+  // Initialize categories to 0
+  Object.values(CostCategory).forEach(cat => grossCostsByCategory[cat] = 0);
+
+  costs.forEach(item => {
+    // Calculate Net Amount (as per inputs)
+    const netAmount = calculateLineItemTotal(item, settings, fixedConstruction, totalRevenueGross);
+    
+    // Calculate GST component (10% or setting)
+    const gstRate = (settings.gstRate || 10) / 100;
+    const gst = item.isTaxable ? netAmount * gstRate : 0;
+    
+    // Report shows Gross Amount
+    const grossAmount = netAmount + gst;
+
+    if (item.isTaxable) {
+      totalItc += gst;
+    }
+
+    grossCostsByCategory[item.category] = (grossCostsByCategory[item.category] || 0) + grossAmount;
+  });
+
+  return {
+    totalRevenueGross,
+    gstCollected,
+    netRealisation,
+    grossCostsByCategory,
+    totalItc
+  };
 };
 
 const calculateNPV = (flows: number[], annualRate: number): number => {
@@ -346,6 +472,7 @@ const calculateIRR = (flows: number[]): number => {
 export const FinanceEngine = {
   calculateLineItemTotal,
   calculateMonthlyCashflow,
+  calculateReportStats,
   getMonthLabel,
   calculateNPV,
   calculateIRR

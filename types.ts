@@ -83,7 +83,9 @@ export interface RevenueItem {
 export interface CapitalTier {
   interestRate: number; // % p.a.
   establishmentFee: number; // % of peak limit or facility amount
-  limit?: number; // Optional hard limit for Mezzanine
+  lineFee?: number; // % p.a. on Limit (if limit set)
+  limit?: number; // Optional hard limit for Mezzanine or Senior
+  isInterestCapitalised?: boolean; // Default true. If false, interest is serviced monthly.
 }
 
 export interface CapitalStack {

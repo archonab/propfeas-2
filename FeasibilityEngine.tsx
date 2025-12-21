@@ -1,16 +1,17 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { INITIAL_COSTS, INITIAL_REVENUE, INITIAL_SETTINGS } from './constants';
-import { FeasibilitySettings, LineItem, RevenueItem, CostCategory, DistributionMethod, InputType, ScenarioStatus, GstTreatment, SiteLead, SmartRates } from './types';
+import { FeasibilitySettings, LineItem, RevenueItem, CostCategory, DistributionMethod, InputType, ScenarioStatus, GstTreatment, SiteLead, SmartRates, FeasibilityScenario } from './types';
 import { FinanceEngine } from './services/financeEngine';
 import { SolverService } from './services/solverService';
 import { SensitivityMatrix } from './SensitivityMatrix';
 import { FeasibilityInputGrid } from './FeasibilityInputGrid';
 import { RevenueInputGrid } from './RevenueInputGrid';
+import { HoldStrategySettings } from './components/HoldStrategySettings';
+import { InvestmentSettings } from './components/InvestmentSettings';
 import { FeasibilityReport } from './FeasibilityReport';
 import { ConsolidatedCashflowReport } from './ConsolidatedCashflowReport';
 import { FinanceSettings } from './FinanceSettings';
-import { SiteSetup } from './SiteSetup';
+import { SiteContext } from './components/SiteContext'; // Replaced SiteSetup
 import { AcquisitionManager } from './AcquisitionManager';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Legend } from 'recharts';
 
@@ -30,63 +31,77 @@ const ControlItem = ({ label, val }: { label: string, val: string }) => (
 );
 
 interface Props {
-  site: SiteLead; // Now accepts full site object for DNA Sidebar
+  site: SiteLead; 
+  activeScenario: FeasibilityScenario;
   isEditable?: boolean;
   onPromote?: () => void;
-  onChange?: (settings: FeasibilitySettings) => void;
+  onSaveScenario?: (updatedScenario: FeasibilityScenario) => void;
+  onRequestEditSite?: () => void; // New Callback
   smartRates?: SmartRates;
   libraryData?: LineItem[];
 }
 
-export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, onPromote, onChange, smartRates, libraryData }) => {
-  // Default to 'deal' if prospect, 'summary' if acquired
+export const FeasibilityEngine: React.FC<Props> = ({ 
+  site, 
+  activeScenario, 
+  isEditable = true, 
+  onPromote, 
+  onSaveScenario, 
+  onRequestEditSite,
+  smartRates, 
+  libraryData 
+}) => {
   const [activeTab, setActiveTab] = useState(site.status === 'Acquired' ? 'summary' : 'deal');
   const [reportSubTab, setReportSubTab] = useState<'pnl' | 'cashflow'>('pnl');
 
-  const [settings, setSettings] = useState<FeasibilitySettings>({ 
-    ...INITIAL_SETTINGS, 
-    projectName: site.name,
-    site: site.dna // Sync DNA from parent site
-  });
-  const [costs, setCosts] = useState<LineItem[]>(INITIAL_COSTS);
-  const [revenues, setRevenues] = useState<RevenueItem[]>(INITIAL_REVENUE);
+  // Initialize state from the passed scenario prop
+  const [settings, setSettings] = useState<FeasibilitySettings>(activeScenario.settings);
+  const [costs, setCosts] = useState<LineItem[]>(activeScenario.costs);
+  const [revenues, setRevenues] = useState<RevenueItem[]>(activeScenario.revenues);
   
-  // Mobile UI State
   const [showMobileDNA, setShowMobileDNA] = useState(false);
   
-  // Solver State
   const [solveTarget, setSolveTarget] = useState<number>(20);
   const [solveType, setSolveType] = useState<'margin' | 'irr'>('margin');
   const [isSolving, setIsSolving] = useState(false);
 
-  // Sync internal state changes to parent (if onChange provided)
+  // Sync back to parent when local state changes
   useEffect(() => {
-    if (onChange) {
-      onChange(settings);
+    if (onSaveScenario) {
+      onSaveScenario({
+        ...activeScenario,
+        settings,
+        costs,
+        revenues,
+        lastModified: new Date().toISOString()
+      });
     }
-  }, [settings, onChange]);
+  }, [settings, costs, revenues]);
 
-  const cashflow = useMemo(() => FinanceEngine.calculateMonthlyCashflow(settings, costs, revenues), [settings, costs, revenues]);
+  // Update local state if activeScenario changes from outside (e.g. switching scenarios)
+  useEffect(() => {
+    setSettings(activeScenario.settings);
+    setCosts(activeScenario.costs);
+    setRevenues(activeScenario.revenues);
+  }, [activeScenario.id]);
+
+  const cashflow = useMemo(() => FinanceEngine.calculateMonthlyCashflow(settings, site.dna, costs, revenues), [settings, site.dna, costs, revenues]);
 
   const stats = useMemo(() => {
-    // 1. Basic Profit Metrics
     const totalOut = cashflow.reduce((acc, curr) => acc + curr.developmentCosts + curr.interestSenior + curr.interestMezz, 0);
     const totalIn = cashflow.reduce((acc, curr) => acc + curr.netRevenue + curr.lendingInterestIncome, 0);
     const profit = totalIn - totalOut;
     const margin = totalOut > 0 ? (profit / totalOut) * 100 : 0;
     
-    // 2. IRR on Equity (Net Cashflow relative to developer)
     const equityFlows = cashflow.map(f => f.repayEquity - f.drawDownEquity);
     const irr = FinanceEngine.calculateIRR(equityFlows);
     const npv = FinanceEngine.calculateNPV(equityFlows, settings.discountRate);
 
-    // 3. Peak Debt & Covenants
     const peakSenior = Math.max(...cashflow.map(f => f.balanceSenior));
     const peakMezz = Math.max(...cashflow.map(f => f.balanceMezz));
     const peakTotalDebt = Math.max(...cashflow.map(f => f.balanceSenior + f.balanceMezz));
     const peakEquity = Math.max(...cashflow.map(f => f.balanceEquity));
     
-    // LTC & LVR
     const ltc = totalOut > 0 ? (peakTotalDebt / totalOut) * 100 : 0;
     const lvr = totalIn > 0 ? (peakTotalDebt / totalIn) * 100 : 0;
 
@@ -101,7 +116,6 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
     };
   }, [cashflow, costs, settings.discountRate]);
 
-  // Calculate Total Land Cost for SiteSetup display (Now from Settings)
   const totalLandCost = settings.acquisition.purchasePrice;
 
   const handleUpdateCost = (id: string, field: keyof LineItem, value: any) => {
@@ -139,13 +153,7 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
 
   const handleExecuteAcquisition = () => {
     if (window.confirm("EXECUTE ACQUISITION?\n\nThis will lock the current Feasibility Scenario as the Project Baseline and change status to 'Acquired'.\n\nThis action cannot be undone.")) {
-      // 1. Lock Settings
-      setSettings(prev => ({ ...prev, status: ScenarioStatus.LOCKED }));
-      
-      // 2. Trigger Parent Promotion (Changes Site Status in App)
       if (onPromote) onPromote();
-
-      // 3. Prompt for Next Action
       setTimeout(() => {
         alert("✅ SITE ACQUIRED\n\nFeasibility Baseline Locked.\n\nACTION REQUIRED: Please link Vendor Solicitor details in the Contracts Module.");
       }, 500);
@@ -163,10 +171,9 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
           solveType,
           settings,
           costs,
-          revenues
+          revenues,
+          site.dna
         );
-        
-        // Update Global Settings directly for Land
         setSettings(prev => ({
            ...prev,
            acquisition: {
@@ -174,7 +181,6 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
               purchasePrice: result.landValue
            }
         }));
-
         alert(`Solver Successful!\n\nResidual Land Value: $${(result.landValue/1e6).toFixed(2)}M`);
       } catch (e: any) {
         alert("Solver Error: " + e.message);
@@ -186,7 +192,7 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
 
   const navTabs = [
     { id: 'site', label: 'Context', icon: 'fa-map-location-dot' },
-    { id: 'deal', label: 'Deal & Land', icon: 'fa-handshake' }, // New Tab
+    { id: 'deal', label: 'Deal & Land', icon: 'fa-handshake' },
     { id: 'inputs', label: 'Inputs', icon: 'fa-sliders' },
     { id: 'summary', label: 'Dashboard', icon: 'fa-chart-simple' },
     { id: 'reports', label: 'Reports', icon: 'fa-file-pdf' }
@@ -199,7 +205,6 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
       <aside className="w-full lg:w-64 shrink-0">
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 lg:sticky lg:top-4 overflow-hidden">
            
-           {/* Mobile Header Toggle */}
            <div 
              className="p-4 lg:p-5 flex justify-between items-center cursor-pointer lg:cursor-default hover:bg-slate-50 lg:hover:bg-white transition-colors"
              onClick={() => setShowMobileDNA(!showMobileDNA)}
@@ -212,22 +217,21 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
              </div>
            </div>
 
-           {/* Content */}
            <div className={`px-5 pb-5 space-y-4 lg:space-y-6 lg:block ${showMobileDNA ? 'block' : 'hidden'}`}>
              <div className="grid grid-cols-2 lg:grid-cols-1 gap-4">
                <div>
                  <label className="text-[10px] font-bold uppercase text-slate-400">Land Area</label>
-                 <div className="text-lg font-black text-slate-800">{settings.site.landArea.toLocaleString()} <span className="text-xs text-slate-400 font-bold">sqm</span></div>
+                 <div className="text-lg font-black text-slate-800">{site.dna.landArea.toLocaleString()} <span className="text-xs text-slate-400 font-bold">sqm</span></div>
                </div>
                
                <div>
                  <label className="text-[10px] font-bold uppercase text-slate-400">Zoning</label>
-                 <div className="text-sm font-bold text-slate-800 leading-tight">{settings.site.zoning || "Pending"}</div>
+                 <div className="text-sm font-bold text-slate-800 leading-tight">{site.dna.zoning || "Pending"}</div>
                </div>
 
                <div>
                  <label className="text-[10px] font-bold uppercase text-slate-400">Council (LGA)</label>
-                 <div className="text-sm font-bold text-slate-800 leading-tight">{settings.site.lga || "Pending"}</div>
+                 <div className="text-sm font-bold text-slate-800 leading-tight">{site.dna.lga || "Pending"}</div>
                </div>
 
                <div className="pt-4 border-t border-slate-100 col-span-2 lg:col-span-1">
@@ -235,13 +239,12 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
                  <div className="flex items-center justify-between mt-1">
                    <span className="text-sm font-bold text-slate-700">{settings.totalUnits} Units</span>
                    <span className="text-xs bg-slate-100 px-2 py-1 rounded font-mono font-bold text-slate-600">
-                     {(settings.site.landArea / (settings.totalUnits || 1)).toFixed(0)}m²/u
+                     {(site.dna.landArea / (settings.totalUnits || 1)).toFixed(0)}m²/u
                    </span>
                  </div>
                </div>
              </div>
 
-             {/* Acquisition Action Area */}
              {site.status === 'Due Diligence' && isEditable && (
                <div className="mt-8 pt-6 border-t border-dashed border-slate-200">
                   <button 
@@ -285,7 +288,6 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
             ))}
           </nav>
           
-          {/* Status Badge */}
           <div className={`px-3 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-widest flex items-center self-end sm:self-auto ${
             site.status === 'Acquired' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 
             site.status === 'Due Diligence' ? 'bg-purple-50 border-purple-200 text-purple-700' : 'bg-slate-100 border-slate-200 text-slate-500'
@@ -300,10 +302,9 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
 
         <div className="flex-1 min-w-0">
           {activeTab === 'site' && (
-            <SiteSetup 
-              settings={settings} 
-              onUpdate={setSettings} 
-              landCost={totalLandCost}
+            <SiteContext 
+              site={site} 
+              onRequestEdit={onRequestEditSite || (() => {})}
             />
           )}
 
@@ -313,11 +314,10 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
 
           {activeTab === 'summary' && (
             <div className="space-y-6 animate-in fade-in duration-300">
-              {/* Header displaying canonical Address */}
               <div className="flex flex-col sm:flex-row sm:items-baseline justify-between border-b border-slate-200 pb-4 mb-4 gap-2">
                 <div>
-                    <h2 className="text-xl lg:text-2xl font-black text-slate-800 tracking-tight leading-tight">{settings.site.address || "New Site Feasibility"}</h2>
-                    <p className="text-sm text-slate-500 font-bold">Scenario: {settings.projectName}</p>
+                    <h2 className="text-xl lg:text-2xl font-black text-slate-800 tracking-tight leading-tight">{site.dna.address || "New Site Feasibility"}</h2>
+                    <p className="text-sm text-slate-500 font-bold">Scenario: {activeScenario.name}</p>
                 </div>
                 <div className="text-left sm:text-right">
                     <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${stats.margin > 15 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
@@ -328,7 +328,6 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="lg:col-span-2 space-y-6">
-                  {/* KPI Grid: 2 cols on mobile, 4 on desktop */}
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                       <KPITile label="Net Profit" val={`$${(stats.profit/1e6).toFixed(1)}M`} color="text-emerald-600" />
                       <KPITile label="Equity IRR" val={`${stats.irr.toFixed(1)}%`} color="text-indigo-600" />
@@ -336,7 +335,6 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
                       <KPITile label="Peak LVR" val={`${stats.lvr.toFixed(1)}%`} color={stats.lvr > 65 ? "text-amber-600" : "text-slate-700"} />
                   </div>
                   
-                  {/* Capital Stack Visualization */}
                   <div className="bg-white p-6 rounded-xl border border-slate-200 h-[320px] lg:h-[320px]">
                       <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-2">
                         <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Capital Stack Utilisation</h3>
@@ -395,7 +393,6 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
                     </div>
                   </div>
 
-                  {/* RLV Solver Panel */}
                   {isEditable && site.status !== 'Acquired' && (
                     <div className="bg-indigo-900 text-white p-6 rounded-xl shadow-lg border border-indigo-800 relative overflow-hidden">
                       <div className="absolute top-0 right-0 p-4 opacity-10">
@@ -407,44 +404,21 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
                         <div>
                           <label className="text-[10px] font-bold uppercase text-indigo-200 block mb-1">Target Metric</label>
                           <div className="flex bg-indigo-800/50 p-1 rounded-lg">
-                              <button 
-                                onClick={() => setSolveType('margin')}
-                                className={`flex-1 py-1 text-xs font-bold rounded ${solveType === 'margin' ? 'bg-white text-indigo-900' : 'text-indigo-300 hover:text-white'}`}
-                              >
-                                Margin %
-                              </button>
-                              <button 
-                                onClick={() => setSolveType('irr')}
-                                className={`flex-1 py-1 text-xs font-bold rounded ${solveType === 'irr' ? 'bg-white text-indigo-900' : 'text-indigo-300 hover:text-white'}`}
-                              >
-                                IRR %
-                              </button>
+                              <button onClick={() => setSolveType('margin')} className={`flex-1 py-1 text-xs font-bold rounded ${solveType === 'margin' ? 'bg-white text-indigo-900' : 'text-indigo-300 hover:text-white'}`}>Margin %</button>
+                              <button onClick={() => setSolveType('irr')} className={`flex-1 py-1 text-xs font-bold rounded ${solveType === 'irr' ? 'bg-white text-indigo-900' : 'text-indigo-300 hover:text-white'}`}>IRR %</button>
                           </div>
                         </div>
 
                         <div>
                           <label className="text-[10px] font-bold uppercase text-indigo-200 block mb-1">Target Return (%)</label>
                           <div className="relative">
-                            <input 
-                                type="number" 
-                                value={solveTarget}
-                                onChange={(e) => setSolveTarget(parseFloat(e.target.value))}
-                                className="w-full bg-indigo-950 border border-indigo-700 rounded-lg py-2 px-3 text-sm font-bold text-white focus:outline-none focus:border-indigo-500"
-                            />
+                            <input type="number" value={solveTarget} onChange={(e) => setSolveTarget(parseFloat(e.target.value))} className="w-full bg-indigo-950 border border-indigo-700 rounded-lg py-2 px-3 text-sm font-bold text-white focus:outline-none focus:border-indigo-500" />
                             <span className="absolute right-3 top-2 text-indigo-500 font-bold">%</span>
                           </div>
                         </div>
 
-                        <button 
-                          onClick={handleSolveRLV}
-                          disabled={isSolving}
-                          className="w-full py-2 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-400 hover:to-indigo-400 text-white font-bold rounded-lg text-xs uppercase tracking-wider shadow-lg flex justify-center items-center transition-all"
-                        >
-                          {isSolving ? (
-                            <><i className="fa-solid fa-circle-notch fa-spin mr-2"></i> Solving...</>
-                          ) : (
-                            <><i className="fa-solid fa-calculator mr-2"></i> Solve for Land Value</>
-                          )}
+                        <button onClick={handleSolveRLV} disabled={isSolving} className="w-full py-2 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-400 hover:to-indigo-400 text-white font-bold rounded-lg text-xs uppercase tracking-wider shadow-lg flex justify-center items-center transition-all">
+                          {isSolving ? <><i className="fa-solid fa-circle-notch fa-spin mr-2"></i> Solving...</> : <><i className="fa-solid fa-calculator mr-2"></i> Solve for Land Value</>}
                         </button>
                       </div>
                     </div>
@@ -452,21 +426,40 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
                 </div>
               </div>
               
-              {/* Sensitivity Matrix */}
-              <SensitivityMatrix settings={settings} costs={costs} revenues={revenues} />
+              <SensitivityMatrix settings={settings} costs={costs} revenues={revenues} siteDNA={site.dna} />
             </div>
           )}
 
           {activeTab === 'inputs' && (
             <div className="space-y-8 animate-in fade-in duration-300">
-              <FinanceSettings settings={settings} onUpdate={setSettings} peakEquityRequired={stats.peakEquity} />
-              
-              {/* Added Revenue Grid above Cost Grid */}
-              <RevenueInputGrid 
-                revenues={revenues} 
-                setRevenues={setRevenues} 
-                projectDuration={settings.durationMonths}
+              <FinanceSettings 
+                settings={settings} 
+                onUpdate={setSettings} 
+                peakEquityRequired={stats.peakEquity}
+                projectLocation={site.dna.address} // NEW: Pass address directly
               />
+              
+              <div>
+                <HoldStrategySettings 
+                  settings={settings} 
+                  revenues={revenues} 
+                  cashflow={cashflow}
+                  onUpdate={setSettings} 
+                />
+                
+                <InvestmentSettings 
+                  settings={settings} 
+                  revenues={revenues} 
+                  constructionTotal={stats.constructionTotal}
+                  onUpdate={setSettings} 
+                />
+
+                <RevenueInputGrid 
+                  revenues={revenues} 
+                  setRevenues={setRevenues} 
+                  projectDuration={settings.durationMonths}
+                />
+              </div>
 
               <FeasibilityInputGrid 
                 costs={costs} 
@@ -479,6 +472,7 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
                 onRemove={handleRemoveCost} 
                 smartRates={smartRates}
                 libraryData={libraryData}
+                landArea={site.dna.landArea} // NEW: Pass landArea directly
               />
             </div>
           )}
@@ -487,28 +481,14 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
             <div className="space-y-6">
                <div className="flex justify-center border-b border-slate-200 pb-1">
                   <nav className="flex space-x-4">
-                     <button 
-                       onClick={() => setReportSubTab('pnl')}
-                       className={`px-4 py-2 text-xs font-bold uppercase border-b-2 transition-colors ${reportSubTab === 'pnl' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
-                     >
-                       Profit & Loss
-                     </button>
-                     <button 
-                       onClick={() => setReportSubTab('cashflow')}
-                       className={`px-4 py-2 text-xs font-bold uppercase border-b-2 transition-colors ${reportSubTab === 'cashflow' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
-                     >
-                       Detailed Cashflow
-                     </button>
+                     <button onClick={() => setReportSubTab('pnl')} className={`px-4 py-2 text-xs font-bold uppercase border-b-2 transition-colors ${reportSubTab === 'pnl' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Profit & Loss</button>
+                     <button onClick={() => setReportSubTab('cashflow')} className={`px-4 py-2 text-xs font-bold uppercase border-b-2 transition-colors ${reportSubTab === 'cashflow' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Detailed Cashflow</button>
                   </nav>
                </div>
 
                <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  {reportSubTab === 'pnl' && (
-                    <FeasibilityReport settings={settings} costs={costs} revenues={revenues} stats={stats} />
-                  )}
-                  {reportSubTab === 'cashflow' && (
-                    <ConsolidatedCashflowReport cashflow={cashflow} settings={settings} />
-                  )}
+                  {reportSubTab === 'pnl' && <FeasibilityReport settings={settings} costs={costs} revenues={revenues} stats={stats} siteDNA={site.dna} />}
+                  {reportSubTab === 'cashflow' && <ConsolidatedCashflowReport cashflow={cashflow} settings={settings} />}
                </div>
             </div>
           )}

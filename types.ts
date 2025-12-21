@@ -45,14 +45,11 @@ export type RevenueItemTag = 'GROSS_SALES' | 'OTHER_INCOME' | 'NONE';
 
 // --- GLOBAL SETTINGS TYPES ---
 export interface SmartRates {
-  // Smart Logic Defaults
   architectPct: number;
   projectManagementPct: number;
   civilEngRatePerSqm: number;
   landscapeRatePerSqm: number;
   contingencyPct: number;
-  
-  // Global Drivers (New)
   defaultGstRate: number;
   defaultEscalationRate: number;
   defaultAgentFeePct: number;
@@ -83,7 +80,7 @@ export interface SiteMilestones {
 }
 
 export interface SiteDNA {
-  // Physical Attributes
+  // Physical Attributes (Immutable per Site)
   address: string;
   landArea: number; // in square meters
   lga: string; // Local Government Area (Council)
@@ -102,6 +99,19 @@ export interface SiteDNA {
   milestones: SiteMilestones;
 }
 
+export interface FeasibilityScenario {
+  id: string;
+  name: string; // e.g. "Base Case", "High Yield Option"
+  lastModified: string;
+  isBaseline: boolean;
+  status: ScenarioStatus;
+  
+  // The Financial Model
+  settings: FeasibilitySettings;
+  costs: LineItem[];
+  revenues: RevenueItem[];
+}
+
 export type LeadStatus = 'Prospect' | 'Due Diligence' | 'Acquired' | 'Archive';
 
 export interface SiteLead {
@@ -113,6 +123,9 @@ export interface SiteLead {
   
   // Embedded Site Data
   dna: SiteDNA;
+  
+  // Financial Scenarios (One Site -> Many Models)
+  scenarios: FeasibilityScenario[];
 
   // Management Stats (Mocked for dashboard)
   stage: 'Analysis' | 'Acquisition' | 'Planning' | 'Construction' | 'Sales';
@@ -137,12 +150,8 @@ export interface LineItem {
   method: DistributionMethod;
   escalationRate: number; // Annual %
   gstTreatment: GstTreatment;
-  
-  // Advanced Distribution Settings
-  sCurveSteepness?: number; // k-factor, default 10
-  milestones?: Record<number, number>; // Map of relative month -> percentage (0-100)
-  
-  // Special Logic
+  sCurveSteepness?: number; 
+  milestones?: Record<number, number>; 
   specialTag?: LineItemTag; 
 }
 
@@ -153,25 +162,19 @@ export interface RevenueItem {
   description: string;
   units: number;
   strategy: RevenueStrategy;
-  
-  // Sell Strategy Fields
   pricePerUnit: number;
-  exchangeDate: number; // Month index
-  settlementDate: number; // Month index (Revenue realization)
-  commissionRate: number; // %
+  offsetFromCompletion: number; 
+  settlementSpan: number; 
+  commissionRate: number; 
   isTaxable: boolean; 
-
-  // Hold Strategy Fields
   weeklyRent?: number;
-  opexRate?: number; // % of Gross Rent
-  capRate?: number; // %
-  leaseUpDuration?: number; // Months to stabilize
-
-  // Special Logic
+  opexRate?: number; 
+  capRate?: number; 
+  leaseUpDuration?: number; 
   specialTag?: RevenueItemTag;
 }
 
-// --- ADVANCED FINANCIAL TYPES (FEASTUDY 7.0) ---
+// --- ADVANCED FINANCIAL TYPES ---
 
 export enum DebtLimitMethod {
   FIXED = 'Fixed Amount',
@@ -199,28 +202,23 @@ export enum EquityMode {
 
 export interface DatedRate {
   id: string;
-  month: number; // Month index (0, 1, 2...)
-  rate: number; // Annual %
+  month: number;
+  rate: number;
 }
 
 export interface DatedAmount {
   id: string;
-  month: number; // Month index
+  month: number;
   amount: number;
 }
 
 export interface CapitalTier {
-  // Interest
   rateMode: InterestRateMode;
-  interestRate: number; // Single rate fallback
-  variableRates: DatedRate[]; // Schedule
-  
-  // Fees
+  interestRate: number;
+  variableRates: DatedRate[];
   establishmentFeeBase: FeeBase;
-  establishmentFee: number; // $ or %
-  lineFee?: number; // % p.a. on Limit
-  
-  // Limits & Timing
+  establishmentFee: number;
+  lineFee?: number;
   limitMethod?: DebtLimitMethod; 
   limit?: number; 
   activationMonth?: number; 
@@ -229,46 +227,61 @@ export interface CapitalTier {
 
 export interface EquityStructure {
   mode: EquityMode;
-  initialContribution: number; // Used for Sum of Money
-  instalments: DatedAmount[]; // Used for Lump Sum Instalments
-  percentageInput: number; // Used for % Land, % Total, % Monthly
+  initialContribution: number;
+  instalments: DatedAmount[];
+  percentageInput: number;
 }
 
 export interface CapitalStack {
   senior: CapitalTier;
   mezzanine: CapitalTier;
   equity: EquityStructure;
-  surplusInterestRate: number; // Interest earned on positive cash balance
+  surplusInterestRate: number;
 }
 
 export interface AcquisitionSettings {
   purchasePrice: number;
-  settlementPeriod: number; // Months from Day 0
-  depositPercent: number; // % (e.g. 10)
+  settlementPeriod: number;
+  depositPercent: number;
   stampDutyState: 'VIC' | 'NSW' | 'QLD';
   isForeignBuyer: boolean;
-  buyersAgentFee: number; // % of Price
-  legalFeeEstimate: number; // Fixed $
+  buyersAgentFee: number;
+  legalFeeEstimate: number;
+}
+
+export interface DepreciationSplit {
+  capitalWorksPct: number;
+  plantPct: number;
+}
+
+export interface HoldStrategy {
+  refinanceMonth: number;
+  refinanceLvr: number;
+  investmentRate: number;
+  holdPeriodYears: number;
+  annualCapitalGrowth: number;
+  terminalCapRate: number;
+  depreciationSplit: DepreciationSplit;
 }
 
 export interface FeasibilitySettings {
-  projectName: string; // The specific scenario name (e.g. "Option 1")
-  description: string;
-  
-  // Site Context
-  site: SiteDNA; // Replacing flat 'location' string with full DNA
+  // Scenario specifics (Site Data has moved to Parent)
+  description?: string;
+  projectName?: string; // Added to support project name
 
   // Deal Structure
   acquisition: AcquisitionSettings;
 
   // Calculation Settings
-  startDate: string; // Cashflow Start Date (might differ from acquisition date)
+  startDate: string;
   durationMonths: number;
-  constructionDelay: number; // Months between Settlement and Construction Start
+  constructionDelay: number;
+  
+  holdStrategy?: HoldStrategy;
+
   discountRate: number;
   gstRate: number;
   totalUnits: number;
-  status?: ScenarioStatus;
   useMarginScheme: boolean;
   
   capitalStack: CapitalStack;
@@ -277,12 +290,10 @@ export interface FeasibilitySettings {
 export interface MonthlyFlow {
   month: number;
   label: string;
-  
   developmentCosts: number; 
-  costBreakdown: Record<CostCategory, number>; // Breakdown by category
-
-  grossRevenue: number; // New field: Raw sales income before costs
-  netRevenue: number; // After Selling Costs and GST
+  costBreakdown: Record<CostCategory, number>;
+  grossRevenue: number;
+  netRevenue: number; 
   drawDownEquity: number;
   drawDownMezz: number;
   drawDownSenior: number;
@@ -298,6 +309,10 @@ export interface MonthlyFlow {
   interestMezz: number;
   netCashflow: number;
   cumulativeCashflow: number;
+  investmentBalance: number;
+  investmentInterest: number;
+  assetValue: number;
+  depreciation: number;
 }
 
 export interface BudgetLineItem extends LineItem {

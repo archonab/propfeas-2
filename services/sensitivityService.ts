@@ -1,5 +1,5 @@
 
-import { FeasibilitySettings, LineItem, RevenueItem, CostCategory, SensitivityVariable } from '../types';
+import { FeasibilitySettings, LineItem, RevenueItem, CostCategory, SensitivityVariable, SiteDNA } from '../types';
 import { FinanceEngine } from './financeEngine';
 
 export interface SensitivityCell {
@@ -75,12 +75,9 @@ const applyVariance = (
       });
 
       // 3. Shift Revenue Settlement
-      // If project is delayed, settlement is delayed
-      newRevenues = newRevenues.map(r => ({
-        ...r,
-        settlementDate: r.settlementDate + delay,
-        exchangeDate: r.exchangeDate + delay // Assuming presales exchange shifts too
-      }));
+      // Revenue items use `offsetFromCompletion` logic. 
+      // Since Construction span is extended above, the calculated Construction Completion Month increases.
+      // Therefore, Revenue items automatically shift out without needing modification here.
       break;
     }
 
@@ -107,7 +104,8 @@ export const SensitivityService = {
     xAxis: SensitivityVariable,
     yAxis: SensitivityVariable,
     stepsX: number[],
-    stepsY: number[]
+    stepsY: number[],
+    siteDNA: SiteDNA
   ): SensitivityCell[][] {
     
     const matrix: SensitivityCell[][] = [];
@@ -133,7 +131,8 @@ export const SensitivityService = {
 
         // 3. Run Engine
         const flows = FinanceEngine.calculateMonthlyCashflow(
-            finalScenario.settings, 
+            finalScenario.settings,
+            siteDNA,
             finalScenario.costs, 
             finalScenario.revenues
         );

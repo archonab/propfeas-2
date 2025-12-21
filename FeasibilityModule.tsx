@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { FeasibilityEngine } from './FeasibilityEngine';
 import { SiteLead } from './types';
@@ -8,6 +7,8 @@ interface Props {
 }
 
 export const FeasibilityModule: React.FC<Props> = ({ site }) => {
+  const activeScenario = site.scenarios.find(s => s.isBaseline) || site.scenarios[0];
+
   return (
     <div className="animate-in fade-in duration-500">
       <div className="mb-8">
@@ -16,6 +17,7 @@ export const FeasibilityModule: React.FC<Props> = ({ site }) => {
       </div>
       <FeasibilityEngine 
         site={site} 
+        activeScenario={activeScenario}
         isEditable={true} 
       />
     </div>

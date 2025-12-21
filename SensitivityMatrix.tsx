@@ -1,15 +1,16 @@
 
 import React, { useMemo, useState } from 'react';
-import { FeasibilitySettings, LineItem, RevenueItem, SensitivityVariable } from './types';
+import { FeasibilitySettings, LineItem, RevenueItem, SensitivityVariable, SiteDNA } from './types';
 import { SensitivityService, SensitivityCell } from './services/sensitivityService';
 
 interface Props {
   settings: FeasibilitySettings;
   costs: LineItem[];
   revenues: RevenueItem[];
+  siteDNA: SiteDNA;
 }
 
-export const SensitivityMatrix: React.FC<Props> = ({ settings, costs, revenues }) => {
+export const SensitivityMatrix: React.FC<Props> = ({ settings, costs, revenues, siteDNA }) => {
   const [metric, setMetric] = useState<'margin' | 'profit'>('margin');
   
   // Flexible Axes
@@ -35,8 +36,8 @@ export const SensitivityMatrix: React.FC<Props> = ({ settings, costs, revenues }
   const stepsY = getSteps(yAxis);
 
   const matrix = useMemo(() => {
-    return SensitivityService.generateMatrix(settings, costs, revenues, xAxis, yAxis, stepsX, stepsY);
-  }, [settings, costs, revenues, xAxis, yAxis]);
+    return SensitivityService.generateMatrix(settings, costs, revenues, xAxis, yAxis, stepsX, stepsY, siteDNA);
+  }, [settings, costs, revenues, xAxis, yAxis, siteDNA]);
 
   // Helper for Heatmap Colors
   const getCellColor = (val: number) => {

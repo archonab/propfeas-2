@@ -1,5 +1,5 @@
 
-import { FeasibilitySettings, LineItem, RevenueItem, CostCategory, DistributionMethod, InputType } from '../types';
+import { FeasibilitySettings, LineItem, RevenueItem, CostCategory, DistributionMethod, InputType, SiteDNA } from '../types';
 import { FinanceEngine } from './financeEngine';
 
 // Victorian Stamp Duty Calculator Helper
@@ -38,7 +38,8 @@ export const SolverService = {
     targetType: 'margin' | 'irr',
     settings: FeasibilitySettings,
     currentCosts: LineItem[],
-    revenues: RevenueItem[]
+    revenues: RevenueItem[],
+    siteDNA: SiteDNA
   ): SolveResult {
     
     // 1. Identification
@@ -88,7 +89,7 @@ export const SolverService = {
       }
 
       // B. Run Engine
-      const cashflow = FinanceEngine.calculateMonthlyCashflow(settings, simCosts, revenues);
+      const cashflow = FinanceEngine.calculateMonthlyCashflow(settings, siteDNA, simCosts, revenues);
 
       // C. Calculate Metrics
       const totalOut = cashflow.reduce((acc, curr) => acc + curr.developmentCosts + curr.interestSenior + curr.interestMezz, 0);

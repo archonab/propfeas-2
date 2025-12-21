@@ -5,7 +5,8 @@ import {
   CostCategory, 
   ProjectBudget, 
   BudgetLineItem, 
-  VendorPlaceholder
+  VendorPlaceholder,
+  SiteDNA
 } from '../types';
 import { FinanceEngine } from './financeEngine';
 
@@ -19,7 +20,8 @@ export const BudgetService = {
     settings: FeasibilitySettings,
     costs: LineItem[],
     constructionTotal: number,
-    totalRevenue: number
+    totalRevenue: number,
+    siteDNA: SiteDNA
   ): Promise<ProjectBudget> {
     console.log(`Promoting Scenario ${scenarioId} to Live Budget...`);
 
@@ -30,12 +32,12 @@ export const BudgetService = {
         id: `VEND-${c.id}`,
         role: c.description,
         category: c.category,
-        suggestedBudget: FinanceEngine.calculateLineItemTotal(c, settings, constructionTotal, totalRevenue)
+        suggestedBudget: FinanceEngine.calculateLineItemTotal(c, settings, siteDNA, constructionTotal, totalRevenue)
       }));
 
     // 2. Map Costs to Budget Line Items
     const budgetItems: BudgetLineItem[] = costs.map(c => {
-      const calculatedAmount = FinanceEngine.calculateLineItemTotal(c, settings, constructionTotal, totalRevenue);
+      const calculatedAmount = FinanceEngine.calculateLineItemTotal(c, settings, siteDNA, constructionTotal, totalRevenue);
       return {
         ...c,
         originalBudget: calculatedAmount,
@@ -49,7 +51,7 @@ export const BudgetService = {
     const projectBudget: ProjectBudget = {
       id: `PROJ-${Date.now()}`,
       sourceScenarioId: scenarioId,
-      projectName: settings.projectName,
+      projectName: settings.projectName || "Untitled Project",
       baselineDate: new Date().toISOString(),
       lineItems: budgetItems,
       vendors: vendors

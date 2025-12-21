@@ -1,13 +1,14 @@
-
 import React, { useState } from 'react';
 import { SiteLead, ProjectModule, LineItem, CostCategory, RevenueItem, SmartRates } from './types';
 import { FeasibilityEngine } from './FeasibilityEngine';
 import { ScenarioComparison, ScenarioData } from './ScenarioComparison';
 import { INITIAL_COSTS, INITIAL_REVENUE, INITIAL_SETTINGS } from './constants';
+import { SiteSettings } from './components/SiteSettings';
 
 interface Props {
   site: SiteLead;
   onBack: () => void;
+  onUpdateSite?: (site: SiteLead) => void;
   smartRates?: SmartRates;
   libraryData?: LineItem[];
 }
@@ -24,16 +25,17 @@ const ProjectSidebarItem: React.FC<{ active: boolean; onClick: () => void; icon:
   </button>
 );
 
-export const ProjectDashboard: React.FC<Props> = ({ site, onBack, smartRates, libraryData }) => {
-  const [activeModule, setActiveModule] = useState<ProjectModule | 'compare'>('overview');
+export const ProjectDashboard: React.FC<Props> = ({ site, onBack, onUpdateSite, smartRates, libraryData }) => {
+  const [activeModule, setActiveModule] = useState<ProjectModule | 'compare' | 'settings'>('overview');
 
-  const navItems: { id: ProjectModule | 'compare'; label: string; icon: string }[] = [
+  const navItems: { id: ProjectModule | 'compare' | 'settings'; label: string; icon: string }[] = [
     { id: 'overview', label: 'Overview', icon: 'fa-solid fa-chart-pie' },
     { id: 'feasibility', label: 'Feasibility (Baseline)', icon: 'fa-solid fa-calculator' },
     { id: 'compare', label: 'Scenario Compare', icon: 'fa-solid fa-scale-balanced' },
     { id: 'procurement', label: 'RFQs / Tenders', icon: 'fa-solid fa-file-contract' },
     { id: 'sales', label: 'Sales & Settlements', icon: 'fa-solid fa-dollar-sign' },
     { id: 'files', label: 'Documents', icon: 'fa-solid fa-folder' },
+    { id: 'settings', label: 'Site Settings', icon: 'fa-solid fa-sliders' },
   ];
 
   // Mock Data Construction for "Compare" view
@@ -64,6 +66,8 @@ export const ProjectDashboard: React.FC<Props> = ({ site, onBack, smartRates, li
   };
 
   const comparisonScenarios = [baselineScenario, optionBScenario];
+
+  const activeFeasibilityScenario = site.scenarios.find(s => s.isBaseline) || site.scenarios[0];
 
   return (
     <div className="h-full flex flex-col lg:flex-row overflow-hidden animate-in fade-in duration-300">
@@ -156,15 +160,21 @@ export const ProjectDashboard: React.FC<Props> = ({ site, onBack, smartRates, li
                </header>
                <FeasibilityEngine 
                   site={site} 
+                  activeScenario={activeFeasibilityScenario}
                   isEditable={false} 
                   smartRates={smartRates}
                   libraryData={libraryData}
+                  onRequestEditSite={() => setActiveModule('settings')}
                />
             </div>
           )}
           
           {activeModule === 'compare' && (
-            <ScenarioComparison scenarios={comparisonScenarios} />
+            <ScenarioComparison scenarios={comparisonScenarios} siteDNA={site.dna} />
+          )}
+
+          {activeModule === 'settings' && onUpdateSite && (
+             <SiteSettings site={site} onUpdate={onUpdateSite} />
           )}
 
           {['procurement', 'sales', 'files'].includes(activeModule as any) && (

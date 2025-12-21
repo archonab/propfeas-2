@@ -1,6 +1,6 @@
 
 import React, { useMemo } from 'react';
-import { FeasibilitySettings, LineItem, RevenueItem, CostCategory } from './types';
+import { FeasibilitySettings, LineItem, RevenueItem, CostCategory, SiteDNA } from './types';
 import { FinanceEngine } from './services/financeEngine';
 
 export interface ScenarioData {
@@ -14,6 +14,7 @@ export interface ScenarioData {
 
 interface Props {
   scenarios: ScenarioData[];
+  siteDNA: SiteDNA;
 }
 
 interface ScenarioMetrics {
@@ -25,13 +26,13 @@ interface ScenarioMetrics {
   equityMultiple: number;
 }
 
-export const ScenarioComparison: React.FC<Props> = ({ scenarios }) => {
+export const ScenarioComparison: React.FC<Props> = ({ scenarios, siteDNA }) => {
   
   // Calculate metrics for all scenarios
   const results = useMemo(() => {
     return scenarios.map(scenario => {
       // 1. Run Engine
-      const cashflow = FinanceEngine.calculateMonthlyCashflow(scenario.settings, scenario.costs, scenario.revenues);
+      const cashflow = FinanceEngine.calculateMonthlyCashflow(scenario.settings, siteDNA, scenario.costs, scenario.revenues);
       
       // 2. Extract Key Aggregates
       const totalOut = cashflow.reduce((acc, curr) => acc + curr.developmentCosts + curr.interestSenior + curr.interestMezz, 0);
@@ -64,7 +65,7 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios }) => {
         }
       };
     });
-  }, [scenarios]);
+  }, [scenarios, siteDNA]);
 
   const baselineResult = results.find(r => scenarios.find(s => s.id === r.id)?.isBaseline) || results[0];
 

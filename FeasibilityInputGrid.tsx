@@ -15,6 +15,7 @@ interface Props {
   estimatedRevenue?: number;
   smartRates?: any;
   libraryData?: LineItem[];
+  landArea: number; // Added to decouple from settings.site
 }
 
 // --- SUB-COMPONENT: COST SECTION ---
@@ -30,9 +31,10 @@ const CostSection: React.FC<{
   onRemove: (id: string) => void;
   constructionTotal: number;
   estimatedRevenue: number;
+  landArea: number;
 }> = ({ 
   title, icon, categories, costs, settings, defaultOpen = false, 
-  onUpdate, onAdd, onRemove, constructionTotal, estimatedRevenue 
+  onUpdate, onAdd, onRemove, constructionTotal, estimatedRevenue, landArea 
 }) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
@@ -43,7 +45,7 @@ const CostSection: React.FC<{
     let amount = item.amount;
     if (item.inputType === InputType.PCT_CONSTRUCTION) amount = (item.amount / 100) * constructionTotal;
     else if (item.inputType === InputType.PCT_REVENUE) amount = (item.amount / 100) * estimatedRevenue;
-    else if (item.inputType === InputType.RATE_PER_SQM) amount = item.amount * (settings.site.landArea || 0);
+    else if (item.inputType === InputType.RATE_PER_SQM) amount = item.amount * (landArea || 0);
     else if (item.inputType === InputType.RATE_PER_UNIT) amount = item.amount * (settings.totalUnits || 0);
     return acc + amount;
   }, 0);
@@ -90,7 +92,7 @@ const CostSection: React.FC<{
             showDriver = true;
             break;
         case InputType.RATE_PER_SQM:
-            driverValue = settings.site.landArea;
+            driverValue = landArea;
             driverLabel = `${(driverValue || 0).toLocaleString()} sqm Site`;
             showDriver = true;
             if (!driverValue || driverValue <= 0) warning = 'Missing Land Area';
@@ -357,7 +359,7 @@ const CostSection: React.FC<{
 
 export const FeasibilityInputGrid: React.FC<Props> = ({ 
   costs, settings, constructionTotal, estimatedRevenue = 0,
-  onUpdate, onAdd, onBulkAdd, onRemove, smartRates, libraryData 
+  onUpdate, onAdd, onBulkAdd, onRemove, smartRates, libraryData, landArea 
 }) => {
   const [showLibrary, setShowLibrary] = useState(false);
 
@@ -398,6 +400,7 @@ export const FeasibilityInputGrid: React.FC<Props> = ({
         defaultOpen={true}
         onUpdate={onUpdate} onAdd={onAdd} onRemove={onRemove}
         constructionTotal={constructionTotal} estimatedRevenue={estimatedRevenue}
+        landArea={landArea}
       />
 
       {/* 2. Professional Fees */}
@@ -408,6 +411,7 @@ export const FeasibilityInputGrid: React.FC<Props> = ({
         costs={costs} settings={settings}
         onUpdate={onUpdate} onAdd={onAdd} onRemove={onRemove}
         constructionTotal={constructionTotal} estimatedRevenue={estimatedRevenue}
+        landArea={landArea}
       />
 
       {/* 3. Statutory & General */}
@@ -418,6 +422,7 @@ export const FeasibilityInputGrid: React.FC<Props> = ({
         costs={costs} settings={settings}
         onUpdate={onUpdate} onAdd={onAdd} onRemove={onRemove}
         constructionTotal={constructionTotal} estimatedRevenue={estimatedRevenue}
+        landArea={landArea}
       />
 
       {/* 4. Selling Costs */}
@@ -428,6 +433,7 @@ export const FeasibilityInputGrid: React.FC<Props> = ({
         costs={costs} settings={settings}
         onUpdate={onUpdate} onAdd={onAdd} onRemove={onRemove}
         constructionTotal={constructionTotal} estimatedRevenue={estimatedRevenue}
+        landArea={landArea}
       />
 
     </div>

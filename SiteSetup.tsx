@@ -1,11 +1,12 @@
-
 import React, { useState } from 'react';
-import { FeasibilitySettings, SiteDNA } from './types';
+import { FeasibilitySettings, SiteDNA, SiteLead } from './types';
 
 interface Props {
   settings: FeasibilitySettings;
-  onUpdate: (settings: FeasibilitySettings) => void;
-  landCost?: number; // Optional prop to show land value metrics
+  siteLead: SiteLead;
+  onUpdateSettings: (settings: FeasibilitySettings) => void;
+  onUpdateSite: (site: SiteLead) => void;
+  landCost?: number;
 }
 
 // Simulated "Smart Data" Provider Database
@@ -35,11 +36,12 @@ const MOCK_ADDRESS_DATABASE = {
   }
 };
 
-export const SiteSetup: React.FC<Props> = ({ settings, onUpdate, landCost = 0 }) => {
+export const SiteSetup: React.FC<Props> = ({ settings, siteLead, onUpdateSettings, onUpdateSite, landCost = 0 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
-  const { site } = settings;
+  
+  const site = siteLead.dna;
 
   const handleSimulatedFetch = (query: string) => {
     setIsSearching(true);
@@ -56,7 +58,7 @@ export const SiteSetup: React.FC<Props> = ({ settings, onUpdate, landCost = 0 })
       }
       
       // Populate Global State
-      const newSite: SiteDNA = {
+      const newSiteDNA: SiteDNA = {
         ...site,
         address: match.address,
         landArea: match.dna.landArea,
@@ -67,10 +69,15 @@ export const SiteSetup: React.FC<Props> = ({ settings, onUpdate, landCost = 0 })
         vendor: { ...site.vendor, ...match.dna.vendor }
       };
 
-      onUpdate({
-        ...settings,
-        projectName: match.address.split(',')[0], // Auto-name project
-        site: newSite
+      onUpdateSite({
+        ...siteLead,
+        name: match.address.split(',')[0],
+        dna: newSiteDNA
+      });
+      
+      onUpdateSettings({
+          ...settings,
+          projectName: match.address.split(',')[0]
       });
       
       setSearchQuery(match.address);
@@ -88,13 +95,16 @@ export const SiteSetup: React.FC<Props> = ({ settings, onUpdate, landCost = 0 })
   };
 
   const updateSiteField = (field: keyof SiteDNA, value: any) => {
-    onUpdate({ ...settings, site: { ...site, [field]: value } });
+    onUpdateSite({ 
+        ...siteLead, 
+        dna: { ...site, [field]: value } 
+    });
   };
 
   const updateNestedField = (parent: 'agent' | 'vendor' | 'milestones', field: string, value: any) => {
-    onUpdate({
-      ...settings,
-      site: {
+    onUpdateSite({
+      ...siteLead,
+      dna: {
         ...site,
         [parent]: { ...site[parent], [field]: value }
       }
@@ -102,11 +112,11 @@ export const SiteSetup: React.FC<Props> = ({ settings, onUpdate, landCost = 0 })
   };
 
   const updateConstructionDelay = (months: number) => {
-    onUpdate({ ...settings, constructionDelay: months });
+    onUpdateSettings({ ...settings, constructionDelay: months });
   };
 
   const updateDuration = (months: number) => {
-    onUpdate({ ...settings, durationMonths: months });
+    onUpdateSettings({ ...settings, durationMonths: months });
   };
 
   // Timeline Visualization Helpers

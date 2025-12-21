@@ -1,5 +1,5 @@
 
-import { CostCategory, DistributionMethod, FeasibilitySettings, LineItem, RevenueItem, InputType, ScenarioStatus, SiteLead, EquityMode, InterestRateMode, FeeBase, DebtLimitMethod, GstTreatment, SmartRates } from './types';
+import { CostCategory, DistributionMethod, FeasibilitySettings, LineItem, RevenueItem, InputType, ScenarioStatus, SiteLead, EquityMode, InterestRateMode, FeeBase, DebtLimitMethod, GstTreatment, SmartRates, FeasibilityScenario } from './types';
 
 export const DEFAULT_RATES: SmartRates = {
   architectPct: 4.5,
@@ -7,148 +7,18 @@ export const DEFAULT_RATES: SmartRates = {
   civilEngRatePerSqm: 120,
   landscapeRatePerSqm: 50,
   contingencyPct: 5.0,
-  // New Global Drivers
   defaultGstRate: 10.0,
   defaultEscalationRate: 3.0,
   defaultAgentFeePct: 2.2
 };
 
-export const MOCK_SITES: SiteLead[] = [
-  // --- Active Portfolio (Acquired) ---
-  {
-    id: 'p1',
-    code: 'ACT-SYD-001',
-    name: "Kings Hill Development",
-    thumbnail: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=400&h=250&auto=format&fit=crop",
-    status: 'Acquired',
-    stage: 'Planning',
-    pm: 'Sarah Mitchell',
-    openTasks: 14,
-    openRFIs: 3,
-    conditions: 8,
-    dna: {
-      address: "Kings Hill, NSW",
-      landArea: 1250,
-      lga: "Sydney City Council",
-      zoning: "R4 High Density",
-      overlays: ["Heritage Facade"],
-      agent: { name: "Tom Ford", company: "Ray White Commercial" },
-      vendor: { name: "Private Holding Co." },
-      milestones: { acquisitionDate: "2023-01-15", settlementDate: "2023-06-30" }
-    }
-  },
-  {
-    id: 'p2',
-    code: 'ACT-MEL-042',
-    name: "Parkside Estate",
-    thumbnail: "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?q=80&w=400&h=250&auto=format&fit=crop",
-    status: 'Acquired',
-    stage: 'Construction',
-    pm: 'John Davis',
-    openTasks: 27,
-    openRFIs: 5,
-    conditions: 2,
-    dna: {
-      address: "St Kilda, VIC",
-      landArea: 840,
-      lga: "Port Phillip",
-      zoning: "Mixed Use",
-      overlays: [],
-      agent: { name: "Emily Blunt", company: "JLL" },
-      vendor: { name: "InvestCorp" },
-      milestones: { acquisitionDate: "2022-08-10" }
-    }
-  },
-  // --- Prospects (Pipeline) ---
-  {
-    id: 'prospect-1',
-    code: 'LEAD-089',
-    name: "142 O'Riordan St",
-    thumbnail: "https://images.unsplash.com/photo-1582407947304-fd86f028f716?q=80&w=400&h=250&auto=format&fit=crop",
-    status: 'Prospect',
-    stage: 'Analysis',
-    pm: 'Unassigned',
-    openTasks: 0,
-    openRFIs: 0,
-    conditions: 0,
-    dna: {
-      address: "Mascot, NSW",
-      landArea: 2100,
-      lga: "Bayside Council",
-      zoning: "B4 Mixed Use",
-      overlays: ["Airport Height Ops"],
-      agent: { name: "Pending", company: "CBRE" },
-      vendor: { name: "Logistics REIT" },
-      milestones: {}
-    }
-  },
-  {
-    id: 'prospect-2',
-    code: 'LEAD-092',
-    name: "The Old Mill Site",
-    thumbnail: "https://images.unsplash.com/photo-1516156008625-3a9d60da923c?q=80&w=400&h=250&auto=format&fit=crop",
-    status: 'Prospect',
-    stage: 'Analysis',
-    pm: 'Unassigned',
-    openTasks: 0,
-    openRFIs: 0,
-    conditions: 0,
-    dna: {
-      address: "Bowden, SA",
-      landArea: 4500,
-      lga: "Charles Sturt",
-      zoning: "Urban Corridor",
-      overlays: ["Contamination"],
-      agent: { name: "Local Agent", company: "Harris RE" },
-      vendor: { name: "State Govt" },
-      milestones: {}
-    }
-  },
-  {
-    id: 'prospect-3',
-    code: 'LEAD-104',
-    name: "Coastal Infill Opp",
-    thumbnail: "https://images.unsplash.com/photo-1497366216548-37526070297c?q=80&w=400&h=250&auto=format&fit=crop",
-    status: 'Due Diligence',
-    stage: 'Acquisition',
-    pm: 'Emma Wilson',
-    openTasks: 2,
-    openRFIs: 0,
-    conditions: 0,
-    dna: {
-      address: "Gold Coast, QLD",
-      landArea: 600,
-      lga: "Gold Coast City",
-      zoning: "High Density Res",
-      overlays: [],
-      agent: { name: "Mike Ross", company: "Colliers" },
-      vendor: { name: "Private" },
-      milestones: { acquisitionDate: "2024-05-01" }
-    }
-  }
-];
-
 export const INITIAL_SETTINGS: FeasibilitySettings = {
-  projectName: "Scenario A: Base Case",
   description: "Standard residential feasibility",
   
-  // Site DNA (Default)
-  site: {
-    address: "New Site, NSW",
-    landArea: 1000,
-    lga: "Pending",
-    zoning: "Pending",
-    overlays: [],
-    agent: { name: "", company: "" },
-    vendor: { name: "" },
-    milestones: {}
-  },
-
-  // Deal Structure (New)
   acquisition: {
     purchasePrice: 5000000,
-    settlementPeriod: 6, // 6 Months settlement
-    depositPercent: 10, // 10% Deposit
+    settlementPeriod: 6, 
+    depositPercent: 10,
     stampDutyState: 'VIC',
     isForeignBuyer: false,
     buyersAgentFee: 0,
@@ -157,11 +27,24 @@ export const INITIAL_SETTINGS: FeasibilitySettings = {
 
   startDate: "2024-06-01",
   durationMonths: 36,
-  constructionDelay: 3, // Default 3 months pre-construction
-  discountRate: 15, // Project Discount Rate
+  constructionDelay: 3, 
+  
+  holdStrategy: {
+    refinanceLvr: 65,
+    refinanceMonth: 30,
+    investmentRate: 5.5,
+    holdPeriodYears: 10,
+    annualCapitalGrowth: 3.0,
+    terminalCapRate: 5.5,
+    depreciationSplit: {
+      capitalWorksPct: 85,
+      plantPct: 15
+    }
+  },
+
+  discountRate: 15,
   gstRate: 10,
   totalUnits: 20,
-  status: ScenarioStatus.DRAFT,
   useMarginScheme: true,
   
   capitalStack: {
@@ -197,7 +80,6 @@ export const INITIAL_SETTINGS: FeasibilitySettings = {
 };
 
 export const INITIAL_COSTS: LineItem[] = [
-  // Removed Manual Land Cost. All Land logic is now driven by FeasibilitySettings.acquisition
   {
     id: '2',
     code: 'C002',
@@ -205,7 +87,7 @@ export const INITIAL_COSTS: LineItem[] = [
     description: 'Civils & Foundation',
     inputType: InputType.FIXED,
     amount: 2500000,
-    startDate: 0, // Relative to Construction Start
+    startDate: 0,
     span: 12,
     method: DistributionMethod.S_CURVE,
     escalationRate: 3,
@@ -220,9 +102,139 @@ export const INITIAL_REVENUE: RevenueItem[] = [
     units: 20,
     strategy: 'Sell',
     pricePerUnit: 850000,
-    exchangeDate: 12,
-    settlementDate: 30,
+    offsetFromCompletion: 1, 
+    settlementSpan: 4,
     commissionRate: 2.0,
     isTaxable: true
+  }
+];
+
+// Helper to generate a default scenario
+export const createDefaultScenario = (name: string = "Base Case"): FeasibilityScenario => ({
+  id: `scen-${Date.now()}`,
+  name,
+  lastModified: new Date().toISOString(),
+  isBaseline: true,
+  status: ScenarioStatus.DRAFT,
+  settings: { ...INITIAL_SETTINGS },
+  costs: [...INITIAL_COSTS],
+  revenues: [...INITIAL_REVENUE]
+});
+
+export const MOCK_SITES: SiteLead[] = [
+  {
+    id: 'p1',
+    code: 'ACT-SYD-001',
+    name: "Kings Hill Development",
+    thumbnail: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=400&h=250&auto=format&fit=crop",
+    status: 'Acquired',
+    stage: 'Planning',
+    pm: 'Sarah Mitchell',
+    openTasks: 14,
+    openRFIs: 3,
+    conditions: 8,
+    dna: {
+      address: "Kings Hill, NSW",
+      landArea: 1250,
+      lga: "Sydney City Council",
+      zoning: "R4 High Density",
+      overlays: ["Heritage Facade"],
+      agent: { name: "Tom Ford", company: "Ray White Commercial" },
+      vendor: { name: "Private Holding Co." },
+      milestones: { acquisitionDate: "2023-01-15", settlementDate: "2023-06-30" }
+    },
+    scenarios: [createDefaultScenario("Approved Baseline")]
+  },
+  {
+    id: 'p2',
+    code: 'ACT-MEL-042',
+    name: "Parkside Estate",
+    thumbnail: "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?q=80&w=400&h=250&auto=format&fit=crop",
+    status: 'Acquired',
+    stage: 'Construction',
+    pm: 'John Davis',
+    openTasks: 27,
+    openRFIs: 5,
+    conditions: 2,
+    dna: {
+      address: "St Kilda, VIC",
+      landArea: 840,
+      lga: "Port Phillip",
+      zoning: "Mixed Use",
+      overlays: [],
+      agent: { name: "Emily Blunt", company: "JLL" },
+      vendor: { name: "InvestCorp" },
+      milestones: { acquisitionDate: "2022-08-10" }
+    },
+    scenarios: [createDefaultScenario("Construction Budget")]
+  },
+  {
+    id: 'prospect-1',
+    code: 'LEAD-089',
+    name: "142 O'Riordan St",
+    thumbnail: "https://images.unsplash.com/photo-1582407947304-fd86f028f716?q=80&w=400&h=250&auto=format&fit=crop",
+    status: 'Prospect',
+    stage: 'Analysis',
+    pm: 'Unassigned',
+    openTasks: 0,
+    openRFIs: 0,
+    conditions: 0,
+    dna: {
+      address: "Mascot, NSW",
+      landArea: 2100,
+      lga: "Bayside Council",
+      zoning: "B4 Mixed Use",
+      overlays: ["Airport Height Ops"],
+      agent: { name: "Pending", company: "CBRE" },
+      vendor: { name: "Logistics REIT" },
+      milestones: {}
+    },
+    scenarios: [createDefaultScenario("Initial Feasibility")]
+  },
+  {
+    id: 'prospect-2',
+    code: 'LEAD-092',
+    name: "The Old Mill Site",
+    thumbnail: "https://images.unsplash.com/photo-1516156008625-3a9d60da923c?q=80&w=400&h=250&auto=format&fit=crop",
+    status: 'Prospect',
+    stage: 'Analysis',
+    pm: 'Unassigned',
+    openTasks: 0,
+    openRFIs: 0,
+    conditions: 0,
+    dna: {
+      address: "Bowden, SA",
+      landArea: 4500,
+      lga: "Charles Sturt",
+      zoning: "Urban Corridor",
+      overlays: ["Contamination"],
+      agent: { name: "Local Agent", company: "Harris RE" },
+      vendor: { name: "State Govt" },
+      milestones: {}
+    },
+    scenarios: []
+  },
+  {
+    id: 'prospect-3',
+    code: 'LEAD-104',
+    name: "Coastal Infill Opp",
+    thumbnail: "https://images.unsplash.com/photo-1497366216548-37526070297c?q=80&w=400&h=250&auto=format&fit=crop",
+    status: 'Due Diligence',
+    stage: 'Acquisition',
+    pm: 'Emma Wilson',
+    openTasks: 2,
+    openRFIs: 0,
+    conditions: 0,
+    dna: {
+      address: "Gold Coast, QLD",
+      landArea: 600,
+      lga: "Gold Coast City",
+      zoning: "High Density Res",
+      overlays: [],
+      agent: { name: "Mike Ross", company: "Colliers" },
+      vendor: { name: "Private" },
+      milestones: { acquisitionDate: "2024-05-01" }
+    },
+    scenarios: [createDefaultScenario("Option A: 20 Units"), createDefaultScenario("Option B: 24 Units")]
   }
 ];

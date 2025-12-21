@@ -9,6 +9,7 @@ interface Props {
   settings: FeasibilitySettings;
   onUpdate: (newSettings: FeasibilitySettings) => void;
   peakEquityRequired?: number;
+  projectLocation?: string; // Replaces usage of settings.site which was removed
 }
 
 // --- Extracted Components ---
@@ -268,7 +269,7 @@ const DebtTab = ({
 
 // --- Main Component ---
 
-export const FinanceSettings: React.FC<Props> = ({ settings, onUpdate, peakEquityRequired = 0 }) => {
+export const FinanceSettings: React.FC<Props> = ({ settings, onUpdate, peakEquityRequired = 0, projectLocation }) => {
   const [activeTab, setActiveTab] = useState<'senior' | 'mezz' | 'equity'>('senior');
   const { capitalStack } = settings;
 
@@ -307,7 +308,7 @@ export const FinanceSettings: React.FC<Props> = ({ settings, onUpdate, peakEquit
          <div>
             <h3 className="font-bold text-slate-800">Finance & Capital Stack</h3>
             <p className="text-xs text-slate-500">
-               <span className="font-bold">{settings.site.address}</span> • Configure debt facilities, interest rates and equity injection.
+               <span className="font-bold">{projectLocation || settings.projectName}</span> • Configure debt facilities, interest rates and equity injection.
             </p>
          </div>
          <div className="flex items-center space-x-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm">

@@ -1,5 +1,5 @@
 
-import { FeasibilitySettings, LineItem, RevenueItem, SiteDNA } from '../types';
+import { FeasibilitySettings, LineItem, RevenueItem, SiteDNA, FeasibilityScenario, ScenarioStatus } from '../types';
 import { FinanceEngine } from './financeEngine';
 
 interface SolveResult {
@@ -47,11 +47,24 @@ export const SolverService = {
         }
       };
 
-      // B. Run Engine
-      // The engine automatically calculates Stamp Duty, Buyer's Agent Fee, and Loan Establishment Fees based on the new price
-      const cashflow = FinanceEngine.calculateMonthlyCashflow(simSettings, siteDNA, costs, revenues);
+      // B. Construct Temp Scenario
+      const simScenario: FeasibilityScenario = {
+        id: 'sim',
+        name: 'Simulation',
+        lastModified: new Date().toISOString(),
+        isBaseline: false,
+        status: ScenarioStatus.DRAFT,
+        strategy: 'SELL', // Defaulting to SELL for RLV solver
+        settings: simSettings,
+        costs: costs,
+        revenues: revenues
+      };
 
-      // C. Calculate Metrics
+      // C. Run Engine
+      // The engine automatically calculates Stamp Duty, Buyer's Agent Fee, and Loan Establishment Fees based on the new price
+      const cashflow = FinanceEngine.calculateMonthlyCashflow(simScenario, siteDNA);
+
+      // D. Calculate Metrics
       const totalOut = cashflow.reduce((acc, curr) => acc + curr.developmentCosts + curr.interestSenior + curr.interestMezz, 0);
       const totalIn = cashflow.reduce((acc, curr) => acc + curr.netRevenue, 0);
       const profit = totalIn - totalOut;
@@ -66,7 +79,7 @@ export const SolverService = {
         achieved = FinanceEngine.calculateIRR(equityFlows);
       }
 
-      // D. Check & Adjust
+      // E. Check & Adjust
       // As Land Price INCREASES -> Profit/Margin/IRR DECREASES.
       if (achieved > targetValue) {
         // We are making MORE than target, so we can afford to pay MORE for land.

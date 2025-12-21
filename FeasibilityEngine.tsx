@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { FeasibilitySettings, LineItem, RevenueItem, CostCategory, DistributionMethod, InputType, ScenarioStatus, GstTreatment, SiteLead, SmartRates, FeasibilityScenario } from './types';
+import { FeasibilitySettings, LineItem, RevenueItem, CostCategory, DistributionMethod, InputType, ScenarioStatus, GstTreatment, Site, SmartRates, FeasibilityScenario } from './types';
 import { FinanceEngine } from './services/financeEngine';
 import { SolverService } from './services/solverService';
 import { SensitivityMatrix } from './SensitivityMatrix';
@@ -31,7 +31,7 @@ const ControlItem = ({ label, val }: { label: string, val: string }) => (
 );
 
 interface Props {
-  site: SiteLead; 
+  site: Site; 
   activeScenario: FeasibilityScenario;
   isEditable?: boolean;
   onPromote?: () => void;
@@ -65,16 +65,19 @@ export const FeasibilityEngine: React.FC<Props> = ({
   const [solveType, setSolveType] = useState<'margin' | 'irr'>('margin');
   const [isSolving, setIsSolving] = useState(false);
 
+  // Helper: Construct Current State as Scenario Object
+  const currentScenarioState: FeasibilityScenario = useMemo(() => ({
+    ...activeScenario,
+    settings,
+    costs,
+    revenues,
+    lastModified: new Date().toISOString()
+  }), [activeScenario, settings, costs, revenues]);
+
   // Sync back to parent when local state changes
   useEffect(() => {
     if (onSaveScenario) {
-      onSaveScenario({
-        ...activeScenario,
-        settings,
-        costs,
-        revenues,
-        lastModified: new Date().toISOString()
-      });
+      onSaveScenario(currentScenarioState);
     }
   }, [settings, costs, revenues]);
 
@@ -85,7 +88,7 @@ export const FeasibilityEngine: React.FC<Props> = ({
     setRevenues(activeScenario.revenues);
   }, [activeScenario.id]);
 
-  const cashflow = useMemo(() => FinanceEngine.calculateMonthlyCashflow(settings, site.dna, costs, revenues), [settings, site.dna, costs, revenues]);
+  const cashflow = useMemo(() => FinanceEngine.calculateMonthlyCashflow(currentScenarioState, site.dna), [currentScenarioState, site.dna]);
 
   const stats = useMemo(() => {
     const totalOut = cashflow.reduce((acc, curr) => acc + curr.developmentCosts + curr.interestSenior + curr.interestMezz, 0);
@@ -493,7 +496,7 @@ export const FeasibilityEngine: React.FC<Props> = ({
                </div>
 
                <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  {reportSubTab === 'pnl' && <FeasibilityReport settings={settings} costs={costs} revenues={revenues} stats={stats} siteDNA={site.dna} />}
+                  {reportSubTab === 'pnl' && <FeasibilityReport scenario={currentScenarioState} siteDNA={site.dna} stats={stats} />}
                   {reportSubTab === 'cashflow' && <ConsolidatedCashflowReport cashflow={cashflow} settings={settings} />}
                </div>
             </div>

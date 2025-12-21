@@ -2,7 +2,7 @@
 import Decimal from 'decimal.js';
 import { 
   LineItem, RevenueItem, FeasibilitySettings, MonthlyFlow, DistributionMethod, 
-  InputType, CostCategory, DebtLimitMethod, EquityMode, InterestRateMode, FeeBase, CapitalTier, GstTreatment, SiteDNA
+  InputType, CostCategory, DebtLimitMethod, EquityMode, InterestRateMode, FeeBase, CapitalTier, GstTreatment, SiteDNA, FeasibilityScenario
 } from '../types';
 
 // Helper: Error Function for Bell Curve
@@ -57,7 +57,6 @@ const calculateStampDuty = (price: number, state: 'VIC' | 'NSW' | 'QLD', isForei
 
 // --- EXPORTED HELPERS ---
 
-// Updated: Requires SiteDNA separately
 export const calculateLineItemTotal = (
   item: LineItem, 
   settings: FeasibilitySettings, 
@@ -169,13 +168,12 @@ const calculateConstructionCompletionMonth = (costs: LineItem[], constructionPha
   return maxMonth;
 };
 
-// Updated: Accepts SiteDNA
+// Main Cashflow Engine
 const calculateMonthlyCashflow = (
-  settings: FeasibilitySettings,
-  siteDNA: SiteDNA,
-  costs: LineItem[],
-  revenues: RevenueItem[]
+  scenario: FeasibilityScenario,
+  siteDNA: SiteDNA
 ): MonthlyFlow[] => {
+  const { settings, costs, revenues } = scenario;
   const flows: MonthlyFlow[] = [];
 
   const totalRevenue = revenues.reduce((acc, rev) => {
@@ -659,8 +657,9 @@ const calculateMonthlyCashflow = (
   return flows;
 };
 
-// Updated: Accepts SiteDNA
-const calculateReportStats = (settings: FeasibilitySettings, siteDNA: SiteDNA, costs: LineItem[], revenues: RevenueItem[]) => {
+// Report Stats Aggregator
+const calculateReportStats = (scenario: FeasibilityScenario, siteDNA: SiteDNA) => {
+  const { settings, costs, revenues } = scenario;
   const totalRevenueGross = revenues.reduce((acc, rev) => {
       if (rev.strategy === 'Hold') {
           const grossAnnualRent = (rev.weeklyRent || 0) * 52 * rev.units;

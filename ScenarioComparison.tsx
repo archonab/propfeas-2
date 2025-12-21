@@ -1,19 +1,10 @@
 
 import React, { useMemo } from 'react';
-import { FeasibilitySettings, LineItem, RevenueItem, CostCategory, SiteDNA } from './types';
+import { FeasibilityScenario, CostCategory, SiteDNA } from './types';
 import { FinanceEngine } from './services/financeEngine';
 
-export interface ScenarioData {
-  id: string;
-  name: string;
-  isBaseline: boolean;
-  settings: FeasibilitySettings;
-  costs: LineItem[];
-  revenues: RevenueItem[];
-}
-
 interface Props {
-  scenarios: ScenarioData[];
+  scenarios: FeasibilityScenario[];
   siteDNA: SiteDNA;
 }
 
@@ -32,7 +23,7 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios, siteDNA }) => {
   const results = useMemo(() => {
     return scenarios.map(scenario => {
       // 1. Run Engine
-      const cashflow = FinanceEngine.calculateMonthlyCashflow(scenario.settings, siteDNA, scenario.costs, scenario.revenues);
+      const cashflow = FinanceEngine.calculateMonthlyCashflow(scenario, siteDNA);
       
       // 2. Extract Key Aggregates
       const totalOut = cashflow.reduce((acc, curr) => acc + curr.developmentCosts + curr.interestSenior + curr.interestMezz, 0);

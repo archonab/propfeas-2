@@ -1,19 +1,17 @@
 
 import React, { useMemo } from 'react';
-import { FeasibilitySettings, LineItem, RevenueItem, CostCategory, SiteDNA } from './types';
+import { FeasibilityScenario, CostCategory, SiteDNA } from './types';
 import { FinanceEngine } from './services/financeEngine';
 
 interface Props {
-  settings: FeasibilitySettings;
-  costs: LineItem[];
-  revenues: RevenueItem[];
+  scenario: FeasibilityScenario;
+  siteDNA: SiteDNA; 
   stats: {
     profit: number;
     margin: number;
     irr: number;
     interestTotal: number;
   };
-  siteDNA: SiteDNA; // New Prop
 }
 
 const formatCurrency = (val: number) => {
@@ -22,10 +20,12 @@ const formatCurrency = (val: number) => {
   return isNeg ? `-${absVal}` : `${absVal}`;
 };
 
-export const FeasibilityReport: React.FC<Props> = ({ settings, costs, revenues, stats, siteDNA }) => {
+export const FeasibilityReport: React.FC<Props> = ({ scenario, siteDNA, stats }) => {
+  const { settings } = scenario;
+  
   const reportStats = useMemo(() => 
-    FinanceEngine.calculateReportStats(settings, siteDNA, costs, revenues), 
-    [settings, siteDNA, costs, revenues]
+    FinanceEngine.calculateReportStats(scenario, siteDNA), 
+    [scenario, siteDNA]
   );
 
   const totalGrossCosts = (Object.values(reportStats.grossCostsByCategory) as number[]).reduce((a, b) => a + b, 0);

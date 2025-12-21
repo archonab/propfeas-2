@@ -1,5 +1,5 @@
 
-import { CostCategory, DistributionMethod, FeasibilitySettings, LineItem, RevenueItem, InputType, ScenarioStatus, SiteLead, EquityMode, InterestRateMode, FeeBase, DebtLimitMethod, GstTreatment, SmartRates, FeasibilityScenario } from './types';
+import { CostCategory, DistributionMethod, FeasibilitySettings, LineItem, RevenueItem, InputType, ScenarioStatus, Site, EquityMode, InterestRateMode, FeeBase, DebtLimitMethod, GstTreatment, SmartRates, FeasibilityScenario } from './types';
 
 export const DEFAULT_RATES: SmartRates = {
   architectPct: 4.5,
@@ -110,18 +110,22 @@ export const INITIAL_REVENUE: RevenueItem[] = [
 ];
 
 // Helper to generate a default scenario
-export const createDefaultScenario = (name: string = "Base Case"): FeasibilityScenario => ({
-  id: `scen-${Date.now()}`,
+export const createDefaultScenario = (name: string = "Base Case", strategy: 'SELL' | 'HOLD' = 'SELL'): FeasibilityScenario => ({
+  id: `scen-${Date.now()}-${Math.floor(Math.random()*1000)}`,
   name,
   lastModified: new Date().toISOString(),
   isBaseline: true,
   status: ScenarioStatus.DRAFT,
+  strategy,
   settings: { ...INITIAL_SETTINGS },
   costs: [...INITIAL_COSTS],
   revenues: [...INITIAL_REVENUE]
 });
 
-export const MOCK_SITES: SiteLead[] = [
+export const BASE_SELL_TEMPLATE = createDefaultScenario("Develop to Sell", 'SELL');
+export const BASE_HOLD_TEMPLATE = createDefaultScenario("Build to Rent", 'HOLD');
+
+export const MOCK_SITES: Site[] = [
   {
     id: 'p1',
     code: 'ACT-SYD-001',

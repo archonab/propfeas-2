@@ -1,9 +1,10 @@
+
 import React from 'react';
 import { FeasibilityEngine } from './FeasibilityEngine';
-import { SiteLead } from './types';
+import { Site } from './types';
 
 interface Props {
-  site: SiteLead;
+  site: Site;
 }
 
 export const FeasibilityModule: React.FC<Props> = ({ site }) => {

@@ -1,9 +1,9 @@
 
 import React from 'react';
-import { SiteLead } from '../types';
+import { Site } from '../types';
 
 interface Props {
-  site: SiteLead;
+  site: Site;
   onRequestEdit: () => void;
 }
 

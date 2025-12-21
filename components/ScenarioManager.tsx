@@ -1,19 +1,20 @@
+
 import React, { useMemo, useState } from 'react';
-import { SiteLead, FeasibilityScenario, ScenarioStatus } from '../types';
+import { Site, FeasibilityScenario, ScenarioStatus } from '../types';
 import { FinanceEngine } from '../services/financeEngine';
-import { createDefaultScenario } from '../constants';
 import { ScenarioComparison } from '../ScenarioComparison';
+import { ScenarioWizard } from './ScenarioWizard';
 
 interface Props {
-  site: SiteLead;
-  onUpdateSite: (updatedSite: SiteLead) => void;
+  site: Site;
+  onUpdateSite: (updatedSite: Site) => void;
   onSelectScenario: (scenarioId: string) => void;
   onBack: () => void;
 }
 
 interface ScenarioCardProps {
   scenario: FeasibilityScenario;
-  site: SiteLead;
+  site: Site;
   isSelected: boolean;
   onToggleSelect: () => void;
   onOpen: () => void;
@@ -34,7 +35,7 @@ const ScenarioCard: React.FC<ScenarioCardProps> = ({
   
   // Calculate "Quick Look" Metrics on the fly
   const metrics = useMemo(() => {
-    const cashflow = FinanceEngine.calculateMonthlyCashflow(scenario.settings, site.dna, scenario.costs, scenario.revenues);
+    const cashflow = FinanceEngine.calculateMonthlyCashflow(scenario, site.dna);
     
     const totalOut = cashflow.reduce((acc, curr) => acc + curr.developmentCosts + curr.interestSenior + curr.interestMezz, 0);
     const totalIn = cashflow.reduce((acc, curr) => acc + curr.netRevenue, 0);
@@ -45,16 +46,10 @@ const ScenarioCard: React.FC<ScenarioCardProps> = ({
     const irr = FinanceEngine.calculateIRR(equityFlows);
 
     // Determine Strategy Label
-    const hasHold = scenario.revenues.some(r => r.strategy === 'Hold');
-    const hasSell = scenario.revenues.some(r => r.strategy === 'Sell');
-    let strategyLabel = 'Sell';
+    const strategyLabel = scenario.strategy === 'HOLD' ? 'Hold' : 'Sell';
     let strategyColor = 'bg-blue-100 text-blue-700';
     
-    if (hasHold && hasSell) {
-        strategyLabel = 'Mixed';
-        strategyColor = 'bg-purple-100 text-purple-700';
-    } else if (hasHold) {
-        strategyLabel = 'Hold';
+    if (scenario.strategy === 'HOLD') {
         strategyColor = 'bg-indigo-100 text-indigo-700';
     }
 
@@ -116,16 +111,22 @@ const ScenarioCard: React.FC<ScenarioCardProps> = ({
          <span className="text-[10px] font-bold text-blue-600 uppercase tracking-widest flex items-center">
             Open Model <i className="fa-solid fa-arrow-right ml-2"></i>
          </span>
-         <div className="flex space-x-2" onClick={(e) => e.stopPropagation()}>
+         <div className="flex space-x-2">
             <button 
-                onClick={onDuplicate}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDuplicate();
+                }}
                 className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-white rounded transition-colors shadow-sm" 
                 title="Duplicate"
             >
                 <i className="fa-solid fa-copy"></i>
             </button>
             <button 
-                onClick={onDelete}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete();
+                }}
                 className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-white rounded transition-colors shadow-sm" 
                 title="Delete"
             >
@@ -142,6 +143,10 @@ const ScenarioCard: React.FC<ScenarioCardProps> = ({
 export const ScenarioManager: React.FC<Props> = ({ site, onUpdateSite, onSelectScenario, onBack }) => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isComparing, setIsComparing] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  
+  // Wizard State
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
 
   // --- Handlers ---
 
@@ -152,12 +157,11 @@ export const ScenarioManager: React.FC<Props> = ({ site, onUpdateSite, onSelectS
     setSelectedIds(newSet);
   };
 
-  const handleCreate = () => {
-    const newName = `Scenario ${site.scenarios.length + 1}`;
-    const newScenario = createDefaultScenario(newName);
-    // Inherit Site Project Name to Scenario Settings
-    newScenario.settings.projectName = site.name; 
-    
+  const handleCreateClick = () => {
+    setIsWizardOpen(true);
+  };
+
+  const handleWizardCreate = (newScenario: FeasibilityScenario) => {
     onUpdateSite({
         ...site,
         scenarios: [...site.scenarios, newScenario]
@@ -178,33 +182,29 @@ export const ScenarioManager: React.FC<Props> = ({ site, onUpdateSite, onSelectS
     });
   };
 
-  const handleDelete = (id: string) => {
-    if (window.confirm("Are you sure you want to delete this scenario?")) {
-        const newScenarios = site.scenarios.filter(s => s.id !== id);
-        onUpdateSite({
-            ...site,
-            scenarios: newScenarios
-        });
-        // Remove from selection if deleted
-        if (selectedIds.has(id)) {
-            const newSet = new Set(selectedIds);
-            newSet.delete(id);
-            setSelectedIds(newSet);
-        }
+  const handleDeleteClick = (id: string) => {
+    setDeleteId(id);
+  };
+
+  const confirmDelete = () => {
+    if (!deleteId) return;
+    const newScenarios = site.scenarios.filter(s => s.id !== deleteId);
+    onUpdateSite({
+        ...site,
+        scenarios: newScenarios
+    });
+    // Remove from selection if deleted
+    if (selectedIds.has(deleteId)) {
+        const newSet = new Set(selectedIds);
+        newSet.delete(deleteId);
+        setSelectedIds(newSet);
     }
+    setDeleteId(null);
   };
 
   // Comparison Data
   const scenariosToCompare = site.scenarios
-    .filter(s => selectedIds.has(s.id))
-    .map(s => ({
-        id: s.id,
-        name: s.name,
-        isBaseline: s.isBaseline,
-        settings: s.settings,
-        costs: s.costs,
-        revenues: s.revenues
-    }));
+    .filter(s => selectedIds.has(s.id));
 
   // --- View: Comparison Mode ---
   if (isComparing) {
@@ -230,8 +230,44 @@ export const ScenarioManager: React.FC<Props> = ({ site, onUpdateSite, onSelectS
 
   // --- View: Grid Mode ---
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 animate-in fade-in duration-300">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 animate-in fade-in duration-300 relative">
       
+      <ScenarioWizard 
+        isOpen={isWizardOpen} 
+        onClose={() => setIsWizardOpen(false)}
+        onCreate={handleWizardCreate}
+        projectName={site.name}
+      />
+
+      {/* Delete Confirmation Modal */}
+      {deleteId && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 border border-slate-200 animate-in zoom-in-95">
+                <div className="flex items-center justify-center w-12 h-12 rounded-full bg-red-100 text-red-600 mb-4 mx-auto">
+                    <i className="fa-solid fa-triangle-exclamation text-xl"></i>
+                </div>
+                <h3 className="text-lg font-bold text-slate-800 text-center mb-2">Delete Scenario?</h3>
+                <p className="text-sm text-slate-500 text-center mb-6 leading-relaxed">
+                    Are you sure you want to permanently delete this feasibility scenario?<br/><strong className="text-slate-700">This action cannot be undone.</strong>
+                </p>
+                <div className="flex space-x-3">
+                    <button 
+                        onClick={() => setDeleteId(null)}
+                        className="flex-1 py-2.5 bg-slate-100 text-slate-700 font-bold rounded-lg hover:bg-slate-200 transition-colors text-xs uppercase tracking-wider"
+                    >
+                        Cancel
+                    </button>
+                    <button 
+                        onClick={confirmDelete}
+                        className="flex-1 py-2.5 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition-colors text-xs uppercase tracking-wider shadow-md"
+                    >
+                        Delete Forever
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
       {/* 1. Site DNA Header (Permanent) */}
       <div className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shrink-0 shadow-sm z-10">
          <div>
@@ -267,7 +303,7 @@ export const ScenarioManager: React.FC<Props> = ({ site, onUpdateSite, onSelectS
                 <i className="fa-solid fa-scale-balanced mr-2"></i> Compare ({selectedIds.size})
             </button>
             <button 
-                onClick={handleCreate}
+                onClick={handleCreateClick}
                 className="flex-1 md:flex-none px-4 py-2.5 bg-blue-600 text-white rounded-lg text-xs font-bold uppercase tracking-wider hover:bg-blue-700 shadow-lg shadow-blue-200 flex items-center justify-center transition-all"
             >
                 <i className="fa-solid fa-plus mr-2"></i> New Scenario
@@ -286,7 +322,7 @@ export const ScenarioManager: React.FC<Props> = ({ site, onUpdateSite, onSelectS
                     </div>
                     <h3 className="text-lg font-bold text-slate-700">No Financial Models Yet</h3>
                     <p className="text-slate-500 text-sm mb-6">Create a scenario to start analyzing feasibility.</p>
-                    <button onClick={handleCreate} className="text-blue-600 font-bold text-sm hover:underline">
+                    <button onClick={handleCreateClick} className="text-blue-600 font-bold text-sm hover:underline">
                         Create First Scenario
                     </button>
                 </div>
@@ -307,13 +343,13 @@ export const ScenarioManager: React.FC<Props> = ({ site, onUpdateSite, onSelectS
                                 onToggleSelect={() => handleToggleSelect(scen.id)}
                                 onOpen={() => onSelectScenario(scen.id)}
                                 onDuplicate={() => handleDuplicate(scen)}
-                                onDelete={() => handleDelete(scen.id)}
+                                onDelete={() => handleDeleteClick(scen.id)}
                             />
                         ))}
                         
                         {/* "Add New" Ghost Card */}
                         <button 
-                            onClick={handleCreate}
+                            onClick={handleCreateClick}
                             className="group flex flex-col items-center justify-center border-2 border-dashed border-slate-300 rounded-xl p-6 hover:border-blue-400 hover:bg-blue-50/50 transition-all min-h-[280px]"
                         >
                             <div className="w-12 h-12 rounded-full bg-slate-100 group-hover:bg-blue-100 flex items-center justify-center text-slate-400 group-hover:text-blue-600 transition-colors mb-3">

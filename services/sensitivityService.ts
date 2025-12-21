@@ -1,5 +1,4 @@
-
-import { FeasibilitySettings, LineItem, RevenueItem, CostCategory, SensitivityVariable, SiteDNA } from '../types';
+import { FeasibilitySettings, LineItem, RevenueItem, CostCategory, SensitivityVariable, SiteDNA, FeasibilityScenario, ScenarioStatus } from '../types';
 import { FinanceEngine } from './financeEngine';
 
 export interface SensitivityCell {
@@ -121,7 +120,7 @@ export const SensitivityService = {
       for (const xVal of stepsX) {
         // 2. Apply X-Axis Variance to the Y-Scenario Data
         // This ensures compound effect (e.g. Higher Cost AND Delayed Time)
-        const finalScenario = applyVariance(
+        const finalScenarioParts = applyVariance(
             xAxis, 
             xVal, 
             yScenario.settings, 
@@ -129,12 +128,23 @@ export const SensitivityService = {
             yScenario.revenues
         );
 
+        // Construct a temporary scenario object for the engine
+        const tempScenario: FeasibilityScenario = {
+          id: 'temp-sensitivity',
+          name: 'Sensitivity Run',
+          lastModified: new Date().toISOString(),
+          isBaseline: false,
+          status: ScenarioStatus.DRAFT,
+          strategy: 'SELL', // Default assumption for matrix, though could be inferred
+          settings: finalScenarioParts.settings,
+          costs: finalScenarioParts.costs,
+          revenues: finalScenarioParts.revenues
+        };
+
         // 3. Run Engine
         const flows = FinanceEngine.calculateMonthlyCashflow(
-            finalScenario.settings,
-            siteDNA,
-            finalScenario.costs, 
-            finalScenario.revenues
+            tempScenario,
+            siteDNA
         );
 
         // 4. Extract Metrics

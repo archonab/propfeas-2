@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { GlobalView, SiteLead, FeasibilityScenario, SmartRates, LineItem, CostCategory, ScenarioStatus } from './types';
+import { GlobalView, Site, FeasibilityScenario, SmartRates, LineItem, CostCategory, ScenarioStatus } from './types';
 import { MOCK_SITES, DEFAULT_RATES, createDefaultScenario } from './constants';
 import { STANDARD_LIBRARY } from './costLibrary';
 import { FeasibilityEngine } from './FeasibilityEngine';
@@ -14,7 +14,7 @@ const flattenLibrary = (lib: Record<CostCategory, LineItem[]>): LineItem[] => {
 
 export default function App() {
   const [view, setView] = useState<GlobalView>('pipeline');
-  const [sites, setSites] = useState<SiteLead[]>(MOCK_SITES);
+  const [sites, setSites] = useState<Site[]>(MOCK_SITES);
   
   // Selection State
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
@@ -62,7 +62,7 @@ export default function App() {
     setView('portfolio');
   };
 
-  const handleUpdateSite = (updatedSite: SiteLead) => {
+  const handleUpdateSite = (updatedSite: Site) => {
     setSites(prev => prev.map(s => s.id === updatedSite.id ? updatedSite : s));
   };
 
@@ -81,7 +81,7 @@ export default function App() {
 
   const handleCreateNewSite = () => {
     const newId = `lead-${Date.now()}`;
-    const newSite: SiteLead = {
+    const newSite: Site = {
       id: newId,
       code: `PROS-${Math.floor(Math.random() * 1000)}`,
       name: "New Acquisition Opportunity",

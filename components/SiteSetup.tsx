@@ -1,5 +1,6 @@
+
 import React, { useState } from 'react';
-import { FeasibilitySettings, SiteDNA, Site } from './types';
+import { FeasibilitySettings, SiteDNA, Site } from '../types';
 
 interface Props {
   settings: FeasibilitySettings;

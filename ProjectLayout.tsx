@@ -1,10 +1,10 @@
 
 import React, { useState } from 'react';
-import { SiteLead, ProjectModule } from './types';
+import { Site, ProjectModule } from './types';
 import { FeasibilityModule } from './FeasibilityModule';
 
 interface Props {
-  site: SiteLead;
+  site: Site;
   onBack: () => void;
 }
 

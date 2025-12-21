@@ -105,6 +105,7 @@ export interface FeasibilityScenario {
   lastModified: string;
   isBaseline: boolean;
   status: ScenarioStatus;
+  strategy: 'SELL' | 'HOLD'; // High-level strategy intent
   
   // The Financial Model
   settings: FeasibilitySettings;
@@ -114,7 +115,7 @@ export interface FeasibilityScenario {
 
 export type LeadStatus = 'Prospect' | 'Due Diligence' | 'Acquired' | 'Archive';
 
-export interface SiteLead {
+export interface Site {
   id: string;
   code: string;
   name: string; // Project Title / Name
@@ -267,7 +268,7 @@ export interface HoldStrategy {
 export interface FeasibilitySettings {
   // Scenario specifics (Site Data has moved to Parent)
   description?: string;
-  projectName?: string; // Added to support project name
+  projectName?: string; // Optional override for report titles
 
   // Deal Structure
   acquisition: AcquisitionSettings;

@@ -1,10 +1,10 @@
 
 import React, { useState } from 'react';
-import { SiteLead, SiteDNA } from '../types';
+import { Site, SiteDNA } from '../types';
 
 interface Props {
-  site: SiteLead;
-  onUpdate: (updatedSite: SiteLead) => void;
+  site: Site;
+  onUpdate: (updatedSite: Site) => void;
 }
 
 // Simulated "Smart Data" Provider Database

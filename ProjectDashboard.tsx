@@ -1,14 +1,15 @@
+
 import React, { useState } from 'react';
-import { SiteLead, ProjectModule, LineItem, CostCategory, RevenueItem, SmartRates } from './types';
+import { Site, ProjectModule, LineItem, CostCategory, RevenueItem, SmartRates, FeasibilityScenario } from './types';
 import { FeasibilityEngine } from './FeasibilityEngine';
-import { ScenarioComparison, ScenarioData } from './ScenarioComparison';
-import { INITIAL_COSTS, INITIAL_REVENUE, INITIAL_SETTINGS } from './constants';
+import { ScenarioComparison } from './ScenarioComparison';
+import { INITIAL_COSTS, INITIAL_REVENUE, INITIAL_SETTINGS, createDefaultScenario } from './constants';
 import { SiteSettings } from './components/SiteSettings';
 
 interface Props {
-  site: SiteLead;
+  site: Site;
   onBack: () => void;
-  onUpdateSite?: (site: SiteLead) => void;
+  onUpdateSite?: (site: Site) => void;
   smartRates?: SmartRates;
   libraryData?: LineItem[];
 }
@@ -38,32 +39,24 @@ export const ProjectDashboard: React.FC<Props> = ({ site, onBack, onUpdateSite, 
     { id: 'settings', label: 'Site Settings', icon: 'fa-solid fa-sliders' },
   ];
 
-  // Mock Data Construction for "Compare" view
-  const baselineScenario: ScenarioData = {
-    id: 'base',
-    name: 'Approved Baseline',
-    isBaseline: true,
-    settings: { ...INITIAL_SETTINGS, projectName: site.name },
-    costs: INITIAL_COSTS,
-    revenues: INITIAL_REVENUE
-  };
+  // Mock Data Construction for "Compare" view using new Type
+  // Note: For a real dashboard, we'd pull from site.scenarios
+  const baselineScenario: FeasibilityScenario = createDefaultScenario('Approved Baseline');
+  baselineScenario.isBaseline = true;
+  baselineScenario.settings.projectName = site.name;
 
-  const optionBScenario: ScenarioData = {
-    id: 'opt-b',
-    name: 'High Spec Option',
-    isBaseline: false,
-    settings: { ...INITIAL_SETTINGS, projectName: site.name },
-    costs: INITIAL_COSTS.map(c => {
+  const optionBScenario: FeasibilityScenario = createDefaultScenario('High Spec Option');
+  optionBScenario.costs = INITIAL_COSTS.map(c => {
        if (c.category === CostCategory.CONSTRUCTION) {
          return { ...c, amount: c.amount * 1.15 }; // +15% Construction Cost
        }
        return c;
-    }),
-    revenues: INITIAL_REVENUE.map(r => ({
+  });
+  optionBScenario.revenues = INITIAL_REVENUE.map(r => ({
        ...r,
        pricePerUnit: r.pricePerUnit * 1.20 // +20% Sales Price
-    }))
-  };
+  }));
+  optionBScenario.settings.projectName = site.name;
 
   const comparisonScenarios = [baselineScenario, optionBScenario];
 

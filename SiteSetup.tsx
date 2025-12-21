@@ -176,8 +176,8 @@ export const SiteSetup: React.FC<Props> = ({ settings, onUpdate }) => {
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
-                 {/* Map Placeholder */}
-                 <div className="bg-slate-100 min-h-[250px] relative group overflow-hidden border-r border-slate-200">
+                 {/* Map Placeholder - Reduced height on mobile */}
+                 <div className="bg-slate-100 min-h-[150px] md:min-h-[250px] relative group overflow-hidden border-r md:border-r border-b md:border-b-0 border-slate-200">
                     <img 
                        src="https://images.unsplash.com/photo-1524813686514-a5756c97759e?q=80&w=600&auto=format&fit=crop" 
                        className="w-full h-full object-cover opacity-60 group-hover:opacity-40 transition-opacity"
@@ -235,7 +235,7 @@ export const SiteSetup: React.FC<Props> = ({ settings, onUpdate }) => {
            </div>
 
            {/* Section B: Deal Team */}
-           <div className="grid grid-cols-2 gap-6">
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
                   <h4 className="text-xs font-bold text-slate-800 uppercase mb-4 flex items-center">
                      <i className="fa-solid fa-circle-user mr-2 text-blue-500"></i> Selling Agent

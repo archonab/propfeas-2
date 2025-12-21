@@ -83,7 +83,7 @@ export const ProjectLayout: React.FC<Props> = ({ site, onBack }) => {
           </div>
         </header>
 
-        {activeModule === 'feasibility' && <FeasibilityModule projectName={site.name} />}
+        {activeModule === 'feasibility' && <FeasibilityModule site={site} />}
         
         {activeModule === 'overview' && (
           <div className="bg-white p-12 rounded-2xl border border-dashed border-slate-300 text-center animate-in zoom-in-95 duration-500">

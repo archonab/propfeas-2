@@ -1,11 +1,13 @@
+
 import React from 'react';
 import { FeasibilityEngine } from './FeasibilityEngine';
+import { SiteLead } from './types';
 
 interface Props {
-  projectName: string;
+  site: SiteLead;
 }
 
-export const FeasibilityModule: React.FC<Props> = ({ projectName }) => {
+export const FeasibilityModule: React.FC<Props> = ({ site }) => {
   return (
     <div className="animate-in fade-in duration-500">
       <div className="mb-8">
@@ -13,7 +15,7 @@ export const FeasibilityModule: React.FC<Props> = ({ projectName }) => {
         <p className="text-sm text-slate-500">Manage financial models and assumptions.</p>
       </div>
       <FeasibilityEngine 
-        projectName={projectName} 
+        site={site} 
         isEditable={true} 
       />
     </div>

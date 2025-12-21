@@ -1,7 +1,7 @@
 
 import React, { useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line } from 'recharts';
-import { LineItem, FeasibilitySettings } from './types';
+import { LineItem, FeasibilitySettings, CostCategory } from './types';
 import { distributeValue, getMonthLabel } from './services/financeEngine';
 import Decimal from 'decimal.js';
 
@@ -16,25 +16,27 @@ export const PhasingChart: React.FC<Props> = ({ item, settings, constructionTota
   
   const data = useMemo(() => {
     const chartData = [];
-    const totalAmount = new Decimal(item.amount); // Simplification: Visualizing strictly the fixed amount for shape, or we calculate total.
-    
-    // We need the actual nominal value to make the chart scale meaningful
-    // However, for the input grid, usually visualizing the shape (0-100 or relative $) is useful.
-    // Let's assume a normalized base of 1000 for shape, OR calculate actual if possible.
-    // Given we have constructionTotal/Revenue passed in:
+    // Calculate approximate nominal value for the chart Y-axis scale
     let baseTotal = item.amount;
-    // Simple logic to get an approximate base total for visualization if it's percentage based
-    // (Replicating calculateLineItemTotal logic locally or we could import it if needed, but simple math here works)
     if (item.inputType.includes('Revenue')) baseTotal = (item.amount/100) * totalRevenue;
     if (item.inputType.includes('Construction')) baseTotal = (item.amount/100) * constructionTotal;
+
+    // Determine the effective start date based on category
+    let effectiveStart = item.startDate;
+    if (item.category === CostCategory.CONSTRUCTION) {
+       const settlement = settings.acquisition.settlementPeriod || 0;
+       const delay = settings.constructionDelay || 0;
+       effectiveStart += (settlement + delay);
+    }
 
     for (let m = 0; m <= settings.durationMonths; m++) {
       let baseVal = 0;
       let escalatedVal = 0;
 
-      if (m >= item.startDate && m < item.startDate + item.span) {
+      if (m >= effectiveStart && m < effectiveStart + item.span) {
         // Calculate Base
-        const monthlyBase = distributeValue(baseTotal, m - item.startDate, item);
+        // Note: distributeValue expects relative month index (0 to span)
+        const monthlyBase = distributeValue(baseTotal, m - effectiveStart, item);
         baseVal = monthlyBase.toNumber();
 
         // Calculate Escalated
@@ -55,7 +57,7 @@ export const PhasingChart: React.FC<Props> = ({ item, settings, constructionTota
       });
     }
     return chartData;
-  }, [item, settings.durationMonths, settings.startDate, constructionTotal, totalRevenue]);
+  }, [item, settings.durationMonths, settings.startDate, settings.acquisition.settlementPeriod, settings.constructionDelay, constructionTotal, totalRevenue]);
 
   if (item.span <= 0) return <div className="h-full flex items-center justify-center text-xs text-slate-400">Invalid Duration</div>;
 

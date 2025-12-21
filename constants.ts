@@ -197,7 +197,7 @@ export const INITIAL_SETTINGS: FeasibilitySettings = {
 };
 
 export const INITIAL_COSTS: LineItem[] = [
-  // Removed Manual Land Cost
+  // Removed Manual Land Cost. All Land logic is now driven by FeasibilitySettings.acquisition
   {
     id: '2',
     code: 'C002',

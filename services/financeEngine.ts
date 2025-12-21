@@ -193,9 +193,9 @@ const calculateMonthlyCashflow = (
 
   // Smart Deal Structure Calculations
   const { purchasePrice, depositPercent, settlementPeriod, legalFeeEstimate, buyersAgentFee, stampDutyState, isForeignBuyer } = settings.acquisition;
-  const constructionDelay = settings.constructionDelay || 0; // Default to 0 if undefined
+  const constructionDelay = settings.constructionDelay || 0; 
   
-  // Phase Start Months
+  // Phase Start Months: Construction items start AFTER Settlement + Pre-Const Gap
   const constructionPhaseStart = settlementPeriod + constructionDelay;
 
   const depositAmount = new Decimal(purchasePrice).times(depositPercent).dividedBy(100);
@@ -204,17 +204,16 @@ const calculateMonthlyCashflow = (
   const buyersAgentAmount = new Decimal(purchasePrice).times(buyersAgentFee || 0).dividedBy(100);
   const legalFeeAmount = new Decimal(legalFeeEstimate);
 
-  // Total Development Cost Calculation (Adjusted to include new Acquisition items + Generic items)
-  let totalDevCostPreInterest = new Decimal(0);
-  
+  // Total Development Cost Calculation 
   // Add Generic Costs (Excluding LAND, as we handle it via Deal Structure)
+  let totalDevCostPreInterest = new Decimal(0);
   costs.forEach(c => {
     if (c.category !== CostCategory.LAND) {
       totalDevCostPreInterest = totalDevCostPreInterest.plus(calculateLineItemTotal(c, settings, constructionSum, totalRevenue));
     }
   });
 
-  // Add Deal Structure Costs
+  // Add Deal Structure Costs (Acquisition specific)
   totalDevCostPreInterest = totalDevCostPreInterest.plus(purchasePrice).plus(stampDutyAmount).plus(buyersAgentAmount).plus(legalFeeAmount);
 
   // Margin Land Base (For GST)
@@ -293,30 +292,26 @@ const calculateMonthlyCashflow = (
     };
 
     revenues.forEach(rev => {
+      // (Simplified logic for brevity - matches previous implementations)
       if (rev.strategy === 'Hold') {
+         // ... Hold logic ...
          const settlementStart = rev.settlementDate; 
          if (m >= settlementStart) {
             const grossAnnualRent = new Decimal(rev.weeklyRent || 0).times(52).times(rev.units);
             const monthlyGross = grossAnnualRent.dividedBy(12);
-            
             const monthsSinceOpen = m - settlementStart;
             let occupancyRate = 1;
             if (rev.leaseUpDuration && rev.leaseUpDuration > 0) {
                 occupancyRate = Math.min(1, monthsSinceOpen / rev.leaseUpDuration);
             }
-            
             const realizedGross = monthlyGross.times(occupancyRate);
             monthlyGrossRevenue = monthlyGrossRevenue.plus(realizedGross);
-
             const opex = realizedGross.times((rev.opexRate || 0) / 100);
             const netRent = realizedGross.minus(opex);
-            
             let gstLiability = new Decimal(0);
             if (rev.isTaxable) gstLiability = realizedGross.dividedBy(11);
-
             monthlyNetRevenue = monthlyNetRevenue.plus(netRent).minus(gstLiability);
          }
-         // Terminal Value
          if (m === settings.durationMonths) {
              const grossAnnualRent = new Decimal(rev.weeklyRent || 0).times(52).times(rev.units);
              const netAnnualRent = grossAnnualRent.times(1 - (rev.opexRate || 0) / 100);
@@ -331,7 +326,6 @@ const calculateMonthlyCashflow = (
             monthlyGrossRevenue = monthlyGrossRevenue.plus(revTotal);
             const commission = revTotal.times(rev.commissionRate).dividedBy(100);
             monthlyBreakdown[CostCategory.SELLING] += commission.toNumber();
-
             let gstLiability = new Decimal(0);
             if (rev.isTaxable) {
                 if (settings.useMarginScheme) {
@@ -352,12 +346,18 @@ const calculateMonthlyCashflow = (
     let monthlyNetCost = new Decimal(0);
     let monthlyGSTPaid = new Decimal(0);
     
+    // Explicit Deal Flow Tracking for Funding Enforcement
+    let periodDeposit = new Decimal(0);
+    let periodSettlementDebt = new Decimal(0); // Balance + Duty
+
     // 1. Inject Deal Flows
     // Month 0: Deposit + Legal
     if (m === 0) {
-       monthlyNetCost = monthlyNetCost.plus(depositAmount).plus(legalFeeAmount);
-       monthlyBreakdown[CostCategory.LAND] += depositAmount.toNumber();
-       monthlyBreakdown[CostCategory.CONSULTANTS] += legalFeeAmount.toNumber(); // Legal is consultant
+       periodDeposit = depositAmount;
+       
+       monthlyNetCost = monthlyNetCost.plus(periodDeposit).plus(legalFeeAmount);
+       monthlyBreakdown[CostCategory.LAND] += periodDeposit.toNumber();
+       monthlyBreakdown[CostCategory.CONSULTANTS] += legalFeeAmount.toNumber(); 
        
        // Legal usually Taxable
        monthlyGSTPaid = monthlyGSTPaid.plus(legalFeeAmount.times(0.1));
@@ -365,11 +365,14 @@ const calculateMonthlyCashflow = (
 
     // Month X: Settlement Balance + Duty + Agent
     if (m === settlementPeriod) {
-       monthlyNetCost = monthlyNetCost.plus(settlementAmount).plus(stampDutyAmount).plus(buyersAgentAmount);
+       // Explicitly identifying debt-funded portion (Land + Duty)
+       periodSettlementDebt = settlementAmount.plus(stampDutyAmount);
+       
+       monthlyNetCost = monthlyNetCost.plus(periodSettlementDebt).plus(buyersAgentAmount);
        
        monthlyBreakdown[CostCategory.LAND] += settlementAmount.toNumber();
-       monthlyBreakdown[CostCategory.STATUTORY] += stampDutyAmount.toNumber(); // Duty
-       monthlyBreakdown[CostCategory.CONSULTANTS] += buyersAgentAmount.toNumber(); // Buyers Agent
+       monthlyBreakdown[CostCategory.STATUTORY] += stampDutyAmount.toNumber(); 
+       monthlyBreakdown[CostCategory.CONSULTANTS] += buyersAgentAmount.toNumber(); 
 
        // Duty is GST Free. Buyers Agent is Taxable.
        monthlyGSTPaid = monthlyGSTPaid.plus(buyersAgentAmount.times(0.1));
@@ -377,15 +380,13 @@ const calculateMonthlyCashflow = (
 
     // 2. Generic Costs (Skipping LAND category)
     costs.forEach(cost => {
-      if (cost.category === CostCategory.LAND) return; // Skip old Land items
+      if (cost.category === CostCategory.LAND) return; // Strict skip
 
       let monthlyBaseValue = new Decimal(0);
       const isDynamicAgentFee = (cost.specialTag === 'AGENT_FEE' || cost.specialTag === 'LEGAL_SALES') && cost.inputType === InputType.PCT_REVENUE;
 
-      // Logic to Shift Construction Items based on Phasing
       let effectiveStartMonth = cost.startDate;
-      
-      // If it's a construction cost, add the Settlement Period + Construction Delay to the start date
+      // TIMELINE LINK: Shift all construction costs by Settlement + Delay
       if (cost.category === CostCategory.CONSTRUCTION) {
          effectiveStartMonth += constructionPhaseStart;
       }
@@ -396,7 +397,6 @@ const calculateMonthlyCashflow = (
          }
       } else if (m >= effectiveStartMonth && m < effectiveStartMonth + cost.span) {
          const totalAmount = calculateLineItemTotal(cost, settings, constructionSum, totalRevenue);
-         // Distribute based on the item's internal timeline (0 to span)
          monthlyBaseValue = distributeValue(totalAmount, m - effectiveStartMonth, cost);
       }
 
@@ -429,8 +429,6 @@ const calculateMonthlyCashflow = (
     const seniorRate = getMonthlyInterestRate(settings.capitalStack.senior, m);
     const mezzRate = getMonthlyInterestRate(settings.capitalStack.mezzanine, m);
     
-    // Line Fees activate at Settlement (Land is secured)?
-    // Usually line fees start when facility is activated. We'll stick to activationMonth input.
     const seniorLineFeeRate = new Decimal(settings.capitalStack.senior.lineFee || 0).dividedBy(100).dividedBy(12);
     const seniorActive = m >= (settings.capitalStack.senior.activationMonth || 0);
     const seniorLineFee = (seniorActive && seniorLimit.lt(9999999999)) ? seniorLimit.times(seniorLineFeeRate) : new Decimal(0);
@@ -467,12 +465,54 @@ const calculateMonthlyCashflow = (
     const netPeriodCashflow = totalInflow.minus(totalOutflow);
     runningCumulativeCashflow = runningCumulativeCashflow.plus(netPeriodCashflow);
     
+    // --- FUNDING WATERFALL (With Explicit Intervention) ---
+    
     let fundingNeed = new Decimal(0);
     let repaymentCapacity = new Decimal(0);
 
+    let drawEquity = new Decimal(0);
+    let drawMezz = new Decimal(0);
+    let drawSenior = new Decimal(0);
+
     if (netPeriodCashflow.lt(0)) {
        fundingNeed = netPeriodCashflow.abs();
-       if (surplusBalance.gt(0)) {
+       
+       // 1. Mandatory Equity Draw (Deposit)
+       if (periodDeposit.gt(0)) {
+          drawEquity = drawEquity.plus(periodDeposit);
+          cumulativeEquityUsed = cumulativeEquityUsed.plus(periodDeposit);
+          
+          // If the project had revenue, reduce the 'need', otherwise just consider it funded.
+          if (fundingNeed.gt(0)) {
+             const usedForDeficit = Decimal.min(fundingNeed, periodDeposit);
+             fundingNeed = fundingNeed.minus(usedForDeficit);
+             // Any excess deposit injection goes to surplus (unlikely if cost is high, but strictly accounting)
+             const excessInjection = periodDeposit.minus(usedForDeficit);
+             surplusBalance = surplusBalance.plus(excessInjection);
+          } else {
+             // Revenue covered cost, but we injected equity anyway? 
+             // In Deal Structure, yes, Deposit is Equity Injection.
+             surplusBalance = surplusBalance.plus(periodDeposit);
+          }
+       }
+
+       // 2. Mandatory Senior Draw (Settlement + Duty)
+       if (periodSettlementDebt.gt(0)) {
+          drawSenior = drawSenior.plus(periodSettlementDebt);
+          seniorBalance = seniorBalance.plus(periodSettlementDebt);
+          
+          if (fundingNeed.gt(0)) {
+             const usedForDeficit = Decimal.min(fundingNeed, periodSettlementDebt);
+             fundingNeed = fundingNeed.minus(usedForDeficit);
+             const excessDraw = periodSettlementDebt.minus(usedForDeficit);
+             surplusBalance = surplusBalance.plus(excessDraw);
+          } else {
+             surplusBalance = surplusBalance.plus(periodSettlementDebt);
+          }
+       }
+
+       // 3. Use Surplus for Remaining Need
+       if (fundingNeed.gt(0) && surplusBalance.gt(0)) {
          const fromSurplus = Decimal.min(surplusBalance, fundingNeed);
          surplusBalance = surplusBalance.minus(fromSurplus);
          fundingNeed = fundingNeed.minus(fromSurplus);
@@ -481,23 +521,20 @@ const calculateMonthlyCashflow = (
        repaymentCapacity = netPeriodCashflow;
     }
 
-    let drawEquity = new Decimal(0);
-    let drawMezz = new Decimal(0);
-    let drawSenior = new Decimal(0);
-
+    // 4. Standard Waterfall for Remaining Need
     if (fundingNeed.gt(0)) {
         if (equityConfig.mode === EquityMode.PCT_MONTHLY) {
             const pariPassuPct = new Decimal(equityConfig.percentageInput).dividedBy(100);
             const targetEquityDraw = fundingNeed.times(pariPassuPct);
-            drawEquity = targetEquityDraw;
-            cumulativeEquityUsed = cumulativeEquityUsed.plus(drawEquity);
-            fundingNeed = fundingNeed.minus(drawEquity);
+            drawEquity = drawEquity.plus(targetEquityDraw);
+            cumulativeEquityUsed = cumulativeEquityUsed.plus(targetEquityDraw);
+            fundingNeed = fundingNeed.minus(targetEquityDraw);
 
         } else if (equityConfig.mode === EquityMode.INSTALMENTS) {
              const injection = equityConfig.instalments.find(i => i.month === m);
              if (injection) {
                  const amount = new Decimal(injection.amount);
-                 drawEquity = amount; 
+                 drawEquity = drawEquity.plus(amount); 
                  cumulativeEquityUsed = cumulativeEquityUsed.plus(amount);
                  if (amount.gte(fundingNeed)) {
                      const excess = amount.minus(fundingNeed);
@@ -508,11 +545,13 @@ const calculateMonthlyCashflow = (
                  }
              }
         } else {
+            // Sum of Money / % Land / % Total Cost all act as a pool cap
             const available = totalEquityCommitted.minus(cumulativeEquityUsed);
             if (available.gt(0)) {
-                drawEquity = Decimal.min(available, fundingNeed);
-                fundingNeed = fundingNeed.minus(drawEquity);
-                cumulativeEquityUsed = cumulativeEquityUsed.plus(drawEquity);
+                const amount = Decimal.min(available, fundingNeed);
+                drawEquity = drawEquity.plus(amount);
+                cumulativeEquityUsed = cumulativeEquityUsed.plus(amount);
+                fundingNeed = fundingNeed.minus(amount);
             }
         }
     }
@@ -526,11 +565,12 @@ const calculateMonthlyCashflow = (
     }
 
     if (fundingNeed.gt(0)) {
-      drawSenior = fundingNeed;
-      seniorBalance = seniorBalance.plus(drawSenior);
+      drawSenior = drawSenior.plus(fundingNeed);
+      seniorBalance = seniorBalance.plus(fundingNeed);
       fundingNeed = new Decimal(0);
     }
 
+    // Repayment Logic
     let repaySenior = new Decimal(0);
     let repayMezz = new Decimal(0);
     let repayEquity = new Decimal(0);
@@ -582,7 +622,6 @@ const calculateMonthlyCashflow = (
 };
 
 // ... keep existing stats/report functions ...
-// Note: calculateReportStats needs small tweak to account for separate land calculation
 const calculateReportStats = (settings: FeasibilitySettings, costs: LineItem[], revenues: RevenueItem[]) => {
   const totalRevenueGross = revenues.reduce((acc, rev) => {
       if (rev.strategy === 'Hold') {

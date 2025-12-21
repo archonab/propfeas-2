@@ -1,15 +1,24 @@
 
-import React, { useMemo } from 'react';
-import { FeasibilitySettings, AcquisitionSettings } from './types';
+import React, { useMemo, useState } from 'react';
+import { FeasibilitySettings, AcquisitionSettings, LineItem, RevenueItem, SiteDNA } from './types';
 import { FinanceEngine } from './services/financeEngine';
+import { SolverService } from './services/solverService';
 
 interface Props {
   settings: FeasibilitySettings;
   onUpdate: (settings: FeasibilitySettings) => void;
+  // New props required for Solver
+  costs?: LineItem[];
+  revenues?: RevenueItem[];
+  siteDNA?: SiteDNA;
 }
 
-export const AcquisitionManager: React.FC<Props> = ({ settings, onUpdate }) => {
+export const AcquisitionManager: React.FC<Props> = ({ settings, onUpdate, costs = [], revenues = [], siteDNA }) => {
   const { acquisition } = settings;
+  const [showSolver, setShowSolver] = useState(false);
+  const [solverTarget, setSolverTarget] = useState(20); // Default 20%
+  const [solverMetric, setSolverMetric] = useState<'margin' | 'irr'>('margin');
+  const [isSolving, setIsSolving] = useState(false);
 
   const updateField = (field: keyof AcquisitionSettings, value: any) => {
     onUpdate({
@@ -32,15 +41,110 @@ export const AcquisitionManager: React.FC<Props> = ({ settings, onUpdate }) => {
     return { depositAmount, loanBalance, duty, agentFee, totalAcqCosts };
   }, [acquisition]);
 
+  const handleSolve = () => {
+    if (!siteDNA) {
+        alert("Site DNA data missing. Cannot solve.");
+        return;
+    }
+    setIsSolving(true);
+    // Allow UI to render loading state
+    setTimeout(() => {
+        try {
+            const result = SolverService.solveForResidualLandValue(
+                solverTarget,
+                solverMetric,
+                settings,
+                costs,
+                revenues,
+                siteDNA
+            );
+            
+            if (result.success) {
+                updateField('purchasePrice', result.landValue);
+                setShowSolver(false);
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Solver failed. Please check inputs.");
+        } finally {
+            setIsSolving(false);
+        }
+    }, 100);
+  };
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in duration-300">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in duration-300 relative">
       
+      {/* SOLVER MODAL OVERLAY */}
+      {showSolver && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-white/80 backdrop-blur-sm rounded-xl">
+            <div className="bg-white border border-slate-200 shadow-2xl rounded-xl p-6 w-full max-w-sm animate-in zoom-in-95 duration-200">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wide flex items-center">
+                        <i className="fa-solid fa-wand-magic-sparkles mr-2 text-indigo-500"></i>
+                        Solve for Land Price
+                    </h3>
+                    <button onClick={() => setShowSolver(false)} className="text-slate-400 hover:text-slate-600">
+                        <i className="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Target Metric</label>
+                        <div className="flex bg-slate-100 p-1 rounded-lg">
+                            <button 
+                                onClick={() => setSolverMetric('margin')}
+                                className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${solverMetric === 'margin' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}
+                            >Margin %</button>
+                            <button 
+                                onClick={() => setSolverMetric('irr')}
+                                className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${solverMetric === 'irr' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}
+                            >IRR %</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Target Return</label>
+                        <div className="relative">
+                            <input 
+                                type="number" 
+                                value={solverTarget}
+                                onChange={(e) => setSolverTarget(parseFloat(e.target.value))}
+                                className="w-full border-slate-200 rounded-lg py-2 px-3 text-lg font-bold text-slate-800 focus:ring-blue-500"
+                            />
+                            <span className="absolute right-3 top-3 text-xs font-bold text-slate-400">%</span>
+                        </div>
+                    </div>
+                    <button 
+                        onClick={handleSolve}
+                        disabled={isSolving}
+                        className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-sm shadow-md transition-all flex justify-center items-center"
+                    >
+                        {isSolving ? (
+                            <><i className="fa-solid fa-circle-notch fa-spin mr-2"></i> Solving...</>
+                        ) : (
+                            <><i className="fa-solid fa-calculator mr-2"></i> Calculate Max Price</>
+                        )}
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
       {/* Left: Deal Inputs */}
       <div className="space-y-6">
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-           <div className="bg-slate-50 px-6 py-4 border-b border-slate-200">
-              <h3 className="font-bold text-slate-800">Deal Terms</h3>
-              <p className="text-xs text-slate-500">Purchase price and settlement timeline</p>
+           <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+              <div>
+                <h3 className="font-bold text-slate-800">Deal Terms</h3>
+                <p className="text-xs text-slate-500">Purchase price and settlement timeline</p>
+              </div>
+              <button 
+                onClick={() => setShowSolver(true)}
+                className="text-[10px] font-bold bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg border border-indigo-100 hover:bg-indigo-100 transition-colors flex items-center"
+              >
+                <i className="fa-solid fa-wand-magic-sparkles mr-1.5"></i> Solve Price
+              </button>
            </div>
            
            <div className="p-6 space-y-5">

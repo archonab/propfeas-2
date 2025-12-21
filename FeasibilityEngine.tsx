@@ -309,7 +309,13 @@ export const FeasibilityEngine: React.FC<Props> = ({
           )}
 
           {activeTab === 'deal' && (
-            <AcquisitionManager settings={settings} onUpdate={setSettings} />
+            <AcquisitionManager 
+              settings={settings} 
+              onUpdate={setSettings} 
+              costs={costs}
+              revenues={revenues}
+              siteDNA={site.dna}
+            />
           )}
 
           {activeTab === 'summary' && (

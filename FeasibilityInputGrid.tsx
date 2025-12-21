@@ -80,7 +80,7 @@ export const FeasibilityInputGrid: React.FC<Props> = ({ costs, settings, onUpdat
           <tbody className="divide-y divide-slate-100">
             {costs.map((item) => {
               const isOverProject = (item.startDate + item.span) > settings.durationMonths;
-              const isCalculated = item.inputType === InputType.PCT_CONSTRUCTION || item.inputType === InputType.PCT_REVENUE;
+              const isCalculated = item.inputType === InputType.PCT_CONSTRUCTION || item.inputType === InputType.PCT_REVENUE || item.inputType === InputType.RATE_PER_SQM;
               
               return (
                 <React.Fragment key={item.id}>
@@ -135,8 +135,12 @@ export const FeasibilityInputGrid: React.FC<Props> = ({ costs, settings, onUpdat
                           onChange={e => onUpdate(item.id, 'amount', parseFloat(e.target.value))}
                           className={`w-24 bg-transparent text-right mono text-xs font-bold border-none focus:ring-0 ${isCalculated ? 'text-indigo-600' : 'text-slate-900'}`}
                         />
+                        {/* Dynamic Yield Badges */}
                         {item.inputType === InputType.PCT_CONSTRUCTION && (
                           <span className="text-[9px] text-slate-400">Yield: ${(constructionTotal * (item.amount/100)).toLocaleString()}</span>
+                        )}
+                        {item.inputType === InputType.RATE_PER_SQM && (
+                          <span className="text-[9px] text-blue-500 bg-blue-50 px-1.5 rounded font-bold">Based on {settings.site.landArea.toLocaleString()} sqm</span>
                         )}
                       </div>
                     </td>

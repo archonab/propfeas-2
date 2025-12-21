@@ -5,94 +5,86 @@ import { FeasibilitySettings, SiteDNA } from './types';
 interface Props {
   settings: FeasibilitySettings;
   onUpdate: (settings: FeasibilitySettings) => void;
+  landCost?: number; // Optional prop to show land value metrics
 }
 
-// Simulated "Smart Data" Provider
-const MOCK_ADDRESS_RESULTS = [
-  {
-    address: "49 King St, Dandenong VIC 3175",
+// Simulated "Smart Data" Provider Database
+const MOCK_ADDRESS_DATABASE = {
+  "49 King St": {
+    address: "49 King Street, Dandenong VIC 3175",
     dna: {
-      landArea: 1250,
+      landArea: 1240,
       zoning: "GRZ1 (General Residential)",
       lga: "City of Greater Dandenong",
-      overlays: ["Heritage Overlay (HO102)", "Vegetation Protection (VPO1)"]
-    }
+      overlays: ["Heritage Overlay (HO102)", "Vegetation Protection (VPO1)"],
+      agent: { name: "John Smith", company: "Ray White Commercial" },
+      vendor: { name: "Private Holding Co" }
+    },
+    geometry: { lat: -37.9875, lng: 145.2146 }
   },
-  {
-    address: "120 Collins St, Melbourne VIC 3000",
+  "Default": {
+    address: "New Site Scenario",
     dna: {
-      landArea: 2400,
-      zoning: "C1Z (Commercial 1 Zone)",
-      lga: "City of Melbourne",
-      overlays: ["Design and Development (DDO10)"]
-    }
-  },
-  {
-    address: "88 O'Riordan St, Mascot NSW 2020",
-    dna: {
-      landArea: 3100,
-      zoning: "B4 Mixed Use",
-      lga: "Bayside Council",
-      overlays: ["Airport Operating Height"]
-    }
-  },
-  {
-    address: "1 Martin Pl, Sydney NSW 2000",
-    dna: {
-      landArea: 1850,
-      zoning: "B8 Metropolitan Centre",
-      lga: "City of Sydney",
-      overlays: ["Heritage (State)", "Rail Infrastructure"]
-    }
-  },
-  {
-    address: "1 Queen St, Brisbane City QLD 4000",
-    dna: {
-      landArea: 950,
-      zoning: "PC1 Principal Centre",
-      lga: "Brisbane City Council",
-      overlays: ["Biodiversity Areas", "Flood Planning"]
+      landArea: 1000,
+      zoning: "Pending",
+      lga: "Pending",
+      overlays: [],
+      agent: { name: "", company: "" },
+      vendor: { name: "" }
     }
   }
-];
+};
 
-export const SiteSetup: React.FC<Props> = ({ settings, onUpdate }) => {
+export const SiteSetup: React.FC<Props> = ({ settings, onUpdate, landCost = 0 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const { site } = settings;
 
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setSearchQuery(val);
-    setShowResults(true);
+  const handleSimulatedFetch = (query: string) => {
+    setIsSearching(true);
+    setShowResults(false);
     
-    // Enable manual entry persistence:
-    // Update the site address AND Project Name in real-time
-    onUpdate({
-      ...settings,
-      projectName: val.split(',')[0], // Sync Title to Address
-      site: { ...site, address: val }
-    });
+    // Simulate API Latency (800ms)
+    setTimeout(() => {
+      setIsSearching(false);
+      
+      // Simple matching logic for the demo
+      let match = MOCK_ADDRESS_DATABASE["Default"];
+      if (query.toLowerCase().includes("49 king")) {
+        match = MOCK_ADDRESS_DATABASE["49 King St"];
+      }
+      
+      // Populate Global State
+      const newSite: SiteDNA = {
+        ...site,
+        address: match.address,
+        landArea: match.dna.landArea,
+        zoning: match.dna.zoning,
+        lga: match.dna.lga,
+        overlays: match.dna.overlays,
+        agent: { ...site.agent, ...match.dna.agent },
+        vendor: { ...site.vendor, ...match.dna.vendor }
+      };
+
+      onUpdate({
+        ...settings,
+        projectName: match.address.split(',')[0], // Auto-name project
+        site: newSite
+      });
+      
+      setSearchQuery(match.address);
+    }, 800);
   };
 
-  const selectAddress = (result: typeof MOCK_ADDRESS_RESULTS[0]) => {
-    const newSite: SiteDNA = {
-      ...site,
-      address: result.address,
-      landArea: result.dna.landArea,
-      zoning: result.dna.zoning,
-      lga: result.dna.lga,
-      overlays: result.dna.overlays
-    };
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(e.target.value);
+  };
 
-    onUpdate({
-      ...settings,
-      projectName: result.address.split(',')[0], // Set Project Name to Address automatically
-      site: newSite
-    });
-
-    setSearchQuery(result.address);
-    setShowResults(false);
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSimulatedFetch(searchQuery);
+    }
   };
 
   const updateSiteField = (field: keyof SiteDNA, value: any) => {
@@ -117,46 +109,23 @@ export const SiteSetup: React.FC<Props> = ({ settings, onUpdate }) => {
         <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Search Property Address</label>
         <div className="relative">
           <div className="absolute left-4 top-3.5 text-slate-400">
-            <i className="fa-solid fa-magnifying-glass text-lg"></i>
+            {isSearching ? (
+              <i className="fa-solid fa-circle-notch fa-spin text-blue-500 text-lg"></i>
+            ) : (
+              <i className="fa-solid fa-magnifying-glass text-lg"></i>
+            )}
           </div>
           <input 
             type="text" 
             value={searchQuery || site.address}
             onChange={handleSearchChange}
-            onFocus={() => setShowResults(true)}
+            onKeyDown={handleKeyDown}
             placeholder="Start typing address (e.g. 49 King St)..."
             className="w-full pl-12 pr-4 py-3 bg-white border border-slate-300 rounded-xl shadow-sm text-base font-semibold focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
           />
-          {showResults && searchQuery.length > 1 && (
-            <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden">
-               <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                 CoreLogic / Title Suggestions
-               </div>
-               {MOCK_ADDRESS_RESULTS.filter(r => r.address.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
-                 <div className="p-4 text-sm text-slate-500 italic">
-                    No exact match in database. Manual entry enabled.
-                 </div>
-               ) : (
-                 MOCK_ADDRESS_RESULTS.filter(r => r.address.toLowerCase().includes(searchQuery.toLowerCase())).map((result, idx) => (
-                    <button 
-                      key={idx}
-                      onClick={() => selectAddress(result)}
-                      className="w-full text-left px-4 py-3 hover:bg-blue-50 flex items-center group transition-colors border-b border-slate-50 last:border-0"
-                    >
-                       <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 group-hover:bg-blue-200 group-hover:text-blue-600 mr-3">
-                          <i className="fa-solid fa-map-pin"></i>
-                       </div>
-                       <div>
-                          <div className="text-sm font-bold text-slate-800 group-hover:text-blue-700">{result.address}</div>
-                          <div className="text-xs text-slate-500 flex items-center mt-0.5">
-                             <span className="mr-2">Lot {idx + 10} PS402</span>
-                             <span className="w-1 h-1 rounded-full bg-slate-300 mx-2"></span>
-                             <span>{result.dna.zoning}</span>
-                          </div>
-                       </div>
-                    </button>
-                 ))
-               )}
+          {isSearching && (
+            <div className="absolute right-4 top-3.5 text-xs font-bold text-blue-500 animate-pulse">
+              Fetching Planning Data...
             </div>
           )}
         </div>
@@ -200,6 +169,12 @@ export const SiteSetup: React.FC<Props> = ({ settings, onUpdate }) => {
                          onChange={(e) => updateSiteField('landArea', parseFloat(e.target.value))}
                          className="w-full border-slate-200 rounded-lg font-mono font-bold text-slate-800 focus:ring-blue-500"
                        />
+                       {landCost > 0 && site.landArea > 0 && (
+                          <div className="mt-2 inline-flex items-center px-2 py-1 bg-blue-50 border border-blue-100 rounded text-[10px] font-bold text-blue-700">
+                             <i className="fa-solid fa-calculator mr-1.5 opacity-50"></i>
+                             ${(landCost / site.landArea).toFixed(0)} / sqm
+                          </div>
+                       )}
                     </div>
                     <div>
                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Local Government Area (LGA)</label>

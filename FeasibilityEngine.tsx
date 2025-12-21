@@ -94,6 +94,13 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
     };
   }, [cashflow, costs, settings.discountRate]);
 
+  // Calculate Total Land Cost for SiteSetup display
+  const totalLandCost = useMemo(() => {
+    return costs
+      .filter(c => c.category === CostCategory.LAND)
+      .reduce((acc, c) => acc + c.amount, 0);
+  }, [costs]);
+
   const handleUpdateCost = (id: string, field: keyof LineItem, value: any) => {
     if (!isEditable) return;
     setCosts(prev => prev.map(c => c.id === id ? { ...c, [field]: value } : c));
@@ -292,7 +299,11 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
 
         <div className="flex-1 min-w-0">
           {activeTab === 'site' && (
-            <SiteSetup settings={settings} onUpdate={setSettings} />
+            <SiteSetup 
+              settings={settings} 
+              onUpdate={setSettings} 
+              landCost={totalLandCost} // Pass derived total land cost
+            />
           )}
 
           {activeTab === 'summary' && (

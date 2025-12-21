@@ -12,7 +12,8 @@ export enum InputType {
   FIXED = 'Fixed Amount',
   PCT_REVENUE = '% of Revenue',
   PCT_CONSTRUCTION = '% of Construction',
-  RATE_PER_UNIT = 'Rate per Unit'
+  RATE_PER_UNIT = 'Rate per Unit',
+  RATE_PER_SQM = 'Rate per sqm'
 }
 
 export enum CostCategory {
@@ -66,6 +67,10 @@ export interface SiteDNA {
   lga: string; // Local Government Area (Council)
   zoning: string;
   overlays: string[]; // e.g., "Heritage", "Flood"
+  
+  // Geolocation & Enrichment
+  geometry?: { lat: number, lng: number };
+  propertyId?: string;
 
   // CRM / Deal Attributes
   agent: AgentContact;

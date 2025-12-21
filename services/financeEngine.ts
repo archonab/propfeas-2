@@ -27,6 +27,8 @@ export const calculateLineItemTotal = (item: LineItem, settings: FeasibilitySett
       return val.dividedBy(100).times(constructionSum).toNumber();
     case InputType.RATE_PER_UNIT:
       return val.times(settings.totalUnits).toNumber();
+    case InputType.RATE_PER_SQM:
+      return val.times(settings.site.landArea || 0).toNumber();
     case InputType.FIXED:
     default:
       return item.amount;

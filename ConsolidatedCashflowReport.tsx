@@ -8,7 +8,7 @@ interface Props {
 }
 
 const formatAccounting = (val: number, isCurrency = true) => {
-  if (val === 0) return <span className="text-slate-300">-</span>;
+  if (Math.abs(val) < 1) return <span className="text-slate-300">-</span>;
   
   const absVal = Math.abs(val);
   const str = absVal.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -16,17 +16,28 @@ const formatAccounting = (val: number, isCurrency = true) => {
   const formatted = isCurrency ? `$${str}` : str;
   
   if (val < 0) {
-    return <span className="text-red-600 font-medium">({formatted})</span>;
+    return <span className="text-red-600 font-medium font-mono">({formatted})</span>;
   }
-  return <span className="text-slate-700 tabular-nums">{formatted}</span>;
+  return <span className="text-slate-700 tabular-nums font-mono">{formatted}</span>;
 };
 
 export const ConsolidatedCashflowReport: React.FC<Props> = ({ cashflow, settings }) => {
   
-  const data = useMemo(() => {
-    // Logic for Quarterly grouping could go here if implemented, currently defaulting to monthly
-    return cashflow;
-  }, [cashflow]);
+  // Calculate Header Data Rows
+  const headerData = useMemo(() => {
+    return cashflow.map((flow, index) => {
+        // 1. Inflation Factor
+        // Formula: (1 + monthlyRate) ^ monthIndex
+        const annualEsc = settings.defaultEscalationRate || 3.0; // Default to 3% if not set
+        const monthlyEsc = Math.pow(1 + (annualEsc / 100), 1/12) - 1;
+        const factor = Math.pow(1 + monthlyEsc, index);
+
+        // 2. Asset Value
+        const assetVal = flow.assetValue;
+
+        return { factor, assetVal };
+    });
+  }, [cashflow, settings.defaultEscalationRate]);
 
   const totals = useMemo(() => {
     const t = {
@@ -34,8 +45,6 @@ export const ConsolidatedCashflowReport: React.FC<Props> = ({ cashflow, settings
        sellingCosts: 0,
        netRevenue: 0,
        costs: {} as Record<CostCategory, number>,
-       totalDevCosts: 0,
-       operatingCashflow: 0,
        finance: 0,
        netProfit: 0,
        equityIn: 0,
@@ -53,8 +62,6 @@ export const ConsolidatedCashflowReport: React.FC<Props> = ({ cashflow, settings
            t.costs[c] += (f.costBreakdown[c] || 0);
        });
        
-       // Finance total (Interest + Fees + Line Fees)
-       // Note: Establishment fees were added to CostCategory.FINANCE in the engine
        const financePeriod = f.interestSenior + f.interestMezz + (f.costBreakdown[CostCategory.FINANCE] || 0);
        t.finance += financePeriod;
 
@@ -62,68 +69,13 @@ export const ConsolidatedCashflowReport: React.FC<Props> = ({ cashflow, settings
        t.equityOut += f.repayEquity;
     });
 
-    // Total Dev Costs (excluding Selling & Finance for the "Less Dev Costs" section)
-    t.totalDevCosts = Object.entries(t.costs)
-      .filter(([k]) => k !== CostCategory.SELLING && k !== CostCategory.FINANCE)
-      .reduce((a, b) => a + b[1], 0);
-
-    t.operatingCashflow = t.netRevenue - t.totalDevCosts;
-    t.netProfit = t.operatingCashflow - t.finance; // Simplified Operating - Finance
+    // Calc Net Profit
+    // Net Revenue (Gross - Selling - GST) - Dev Costs - Finance
+    const totalDevCosts = Object.values(t.costs).reduce((a,b) => a+b, 0) - t.costs[CostCategory.SELLING] - t.costs[CostCategory.FINANCE];
+    t.netProfit = t.netRevenue - totalDevCosts - t.finance;
 
     return t;
   }, [cashflow]);
-
-  const downloadCSV = () => {
-    const headers = ['Item', ...data.map(d => d.label), 'Total'];
-    const rows: string[][] = [];
-
-    const addRow = (label: string, getter: (d: MonthlyFlow) => number, total: number) => {
-        rows.push([
-            label, 
-            ...data.map(d => getter(d).toFixed(2)), 
-            total.toFixed(2)
-        ]);
-    };
-
-    addRow('GROSS REALISATION', d => d.grossRevenue, totals.grossRevenue);
-    addRow('Less Selling Costs', d => -(d.costBreakdown[CostCategory.SELLING] || 0), -totals.sellingCosts);
-    addRow('NET REALISATION', d => d.netRevenue, totals.netRevenue); // Net revenue already accounts for selling costs/GST in engine? Actually engine does: net = gross - comm - gst.
-    
-    // We need to be careful with the engine logic vs this display logic.
-    // Engine: netRevenue = Gross - Commission - GST.
-    // Report: Gross -> Less Selling -> Net.
-    // If we simply subtract selling from Gross in the report, we might miss GST. 
-    // Ideally, for the report: Net Realisation = Gross - Selling - GST.
-    // Let's rely on the engine's netRevenue for the 'Net' line, as it handles GST correctly.
-
-    // Dev Costs
-    [CostCategory.LAND, CostCategory.CONSTRUCTION, CostCategory.CONSULTANTS, CostCategory.STATUTORY, CostCategory.MISCELLANEOUS].forEach(cat => {
-        addRow(cat, d => -(d.costBreakdown[cat] || 0), -totals.costs[cat]);
-    });
-
-    // Finance
-    addRow('Finance Costs', d => -(d.interestSenior + d.interestMezz + (d.costBreakdown[CostCategory.FINANCE] || 0)), -totals.finance);
-    
-    // Equity
-    addRow('Equity Injection', d => d.drawDownEquity, totals.equityIn);
-    addRow('Equity Repayment', d => -d.repayEquity, -totals.equityOut);
-
-    const csvContent = "data:text/csv;charset=utf-8," 
-        + headers.join(",") + "\n"
-        + rows.map(e => e.join(",")).join("\n");
-
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `cashflow_${settings.projectName.replace(/\s+/g, '_')}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handlePrint = () => {
-    window.print();
-  };
 
   // Row Component
   const Row = ({ 
@@ -147,7 +99,7 @@ export const ConsolidatedCashflowReport: React.FC<Props> = ({ cashflow, settings
       <td className={`sticky left-0 z-10 py-2 px-4 text-xs whitespace-nowrap bg-white border-r border-slate-200 ${bgClass} ${isBold ? 'font-bold text-slate-900' : 'text-slate-600'} ${isIndent ? 'pl-8' : ''}`}>
         {label}
       </td>
-      {data.map((d, i) => {
+      {cashflow.map((d, i) => {
          let val = getter(d);
          if (negative) val = -val;
          return (
@@ -156,7 +108,7 @@ export const ConsolidatedCashflowReport: React.FC<Props> = ({ cashflow, settings
             </td>
          );
       })}
-      <td className={`py-2 px-3 text-right text-xs whitespace-nowrap font-bold bg-slate-50 border-l border-slate-200 ${isBold ? 'text-slate-900' : 'text-slate-700'}`}>
+      <td className={`py-2 px-3 text-right text-xs whitespace-nowrap font-bold font-mono bg-slate-50 border-l border-slate-200 ${isBold ? 'text-slate-900' : 'text-slate-700'}`}>
          {formatAccounting(negative ? -total : total)}
       </td>
     </tr>
@@ -165,133 +117,116 @@ export const ConsolidatedCashflowReport: React.FC<Props> = ({ cashflow, settings
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-[700px] animate-in fade-in duration-300 print:shadow-none print:border-none print:h-auto">
       
-      {/* Controls Header */}
       <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/50 print:hidden">
         <div className="flex items-center space-x-2">
-           <div className="w-8 h-8 bg-blue-100 rounded flex items-center justify-center text-blue-600">
-              <i className="fa-solid fa-table-cells"></i>
+           <div className="w-8 h-8 bg-slate-800 rounded flex items-center justify-center text-white">
+              <i className="fa-solid fa-table-list"></i>
            </div>
            <div>
               <h3 className="text-sm font-bold text-slate-800">Consolidated Cashflow</h3>
-              <p className="text-[10px] text-slate-500 uppercase tracking-wider">Landscape Report</p>
+              <p className="text-[10px] text-slate-500 uppercase tracking-wider">Feastudy Format</p>
            </div>
         </div>
-        
-        <div className="flex space-x-2">
-            <button 
-            onClick={handlePrint}
-            className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-50 hover:text-slate-900 transition-all flex items-center shadow-sm"
-            >
-            <i className="fa-solid fa-print mr-2 text-slate-400"></i> Print / Save PDF
-            </button>
-            <button 
-            onClick={downloadCSV}
-            className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-50 hover:text-slate-900 transition-all flex items-center shadow-sm"
-            >
-            <i className="fa-solid fa-file-csv mr-2 text-emerald-500"></i> CSV
-            </button>
-        </div>
+        <button onClick={() => window.print()} className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-50">
+            <i className="fa-solid fa-print mr-2"></i> Print
+        </button>
       </div>
 
-      {/* Scrollable Table Area */}
       <div className="flex-1 overflow-auto relative print:overflow-visible">
         <table className="w-full text-left border-collapse min-w-max">
-           <thead className="bg-slate-100 sticky top-0 z-20 shadow-sm text-[10px] font-bold text-slate-500 uppercase tracking-wider print:static">
+           <thead className="bg-slate-50 sticky top-0 z-20 shadow-sm text-[10px] font-black text-slate-900 uppercase tracking-wider print:static">
               <tr>
-                 <th className="py-3 px-4 sticky left-0 bg-slate-100 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] w-64 border-r border-slate-200">Item / Period</th>
-                 {data.map((d, i) => (
+                 <th className="py-3 px-4 sticky left-0 bg-slate-50 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] w-64 border-r border-slate-200">Period</th>
+                 {cashflow.map((d, i) => (
                     <th key={i} className="py-3 px-3 text-right min-w-[100px]">{d.label}</th>
                  ))}
-                 <th className="py-3 px-3 text-right bg-slate-200 text-slate-700 border-l border-slate-200 min-w-[120px]">Total</th>
+                 <th className="py-3 px-3 text-right bg-slate-100 border-l border-slate-200 min-w-[120px]">Total</th>
               </tr>
            </thead>
            <tbody>
               
-              {/* 1. GROSS REALISATION */}
-              <Row label="Gross Realisation" getter={d => d.grossRevenue} total={totals.grossRevenue} isBold bgClass="bg-emerald-50/30" />
-              
-              <Row label="Other Income" getter={() => 0} total={0} isIndent />
-
-              {/* 2. SELLING COSTS */}
-              <Row label="Less: Selling Costs" getter={d => d.costBreakdown[CostCategory.SELLING] || 0} total={totals.sellingCosts} isIndent negative />
-              
-              {/* 3. NET REALISATION */}
-              <Row label="NET REALISATION" getter={d => d.netRevenue} total={totals.netRevenue} isBold bgClass="bg-emerald-100/50" />
+              {/* --- HEADER DATA ROWS (Feastudy Style) --- */}
+              <tr className="bg-slate-50/50 border-b border-slate-200">
+                  <td className="sticky left-0 bg-slate-50 z-10 py-2 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-r border-slate-200">Inflation Factor</td>
+                  {headerData.map((d, i) => <td key={i} className="py-2 px-3 text-right text-xs text-slate-400 font-mono">{d.factor.toFixed(4)}</td>)}
+                  <td className="bg-slate-100"></td>
+              </tr>
+              <tr className="bg-slate-50/50 border-b-2 border-slate-300">
+                  <td className="sticky left-0 bg-slate-50 z-10 py-2 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-r border-slate-200">Asset Value (AUV)</td>
+                  {headerData.map((d, i) => <td key={i} className="py-2 px-3 text-right text-xs text-blue-600 font-mono font-bold">{formatAccounting(d.assetVal)}</td>)}
+                  <td className="bg-slate-100"></td>
+              </tr>
 
               {/* Spacer */}
-              <tr className="h-4 bg-slate-50/50"><td className="sticky left-0 bg-slate-50/50 border-r border-slate-200"></td><td colSpan={data.length + 1}></td></tr>
+              <tr className="h-4 bg-white"><td className="sticky left-0 bg-white border-r border-slate-200"></td><td colSpan={cashflow.length + 1}></td></tr>
 
-              {/* 4. DEVELOPMENT COSTS */}
+              {/* INCOME */}
               <tr className="bg-slate-100 border-y border-slate-200">
-                  <td className="sticky left-0 bg-slate-100 z-10 py-2 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-r border-slate-200">Less Development Costs</td>
-                  <td colSpan={data.length + 1}></td>
+                  <td className="sticky left-0 bg-slate-100 z-10 py-2 px-4 text-[10px] font-bold text-slate-900 uppercase tracking-widest border-r border-slate-200">Income</td>
+                  <td colSpan={cashflow.length + 1}></td>
               </tr>
+              <Row label="Gross Sales Revenue" getter={d => d.grossRevenue} total={totals.grossRevenue} />
+              <Row label="Other Income" getter={() => 0} total={0} />
+              <Row label="Less Selling Costs" getter={d => d.costBreakdown[CostCategory.SELLING] || 0} total={totals.sellingCosts} negative />
+              <Row label="NET REALISATION" getter={d => d.netRevenue} total={totals.netRevenue} isBold bgClass="bg-emerald-50/50" />
 
-              <Row label="Land & Acquisition" getter={d => d.costBreakdown[CostCategory.LAND] || 0} total={totals.costs[CostCategory.LAND]} isIndent negative />
-              <Row label="Construction" getter={d => d.costBreakdown[CostCategory.CONSTRUCTION] || 0} total={totals.costs[CostCategory.CONSTRUCTION]} isIndent negative />
-              <Row label="Consultants" getter={d => d.costBreakdown[CostCategory.CONSULTANTS] || 0} total={totals.costs[CostCategory.CONSULTANTS]} isIndent negative />
-              <Row label="Statutory / Council" getter={d => d.costBreakdown[CostCategory.STATUTORY] || 0} total={totals.costs[CostCategory.STATUTORY]} isIndent negative />
-              <Row label="Contingency / Misc" getter={d => d.costBreakdown[CostCategory.MISCELLANEOUS] || 0} total={totals.costs[CostCategory.MISCELLANEOUS]} isIndent negative />
-
-              {/* 5. OPERATING CASHFLOW */}
-              <Row 
-                label="OPERATING CASHFLOW" 
-                getter={d => {
-                    const devCosts = Object.entries(d.costBreakdown)
-                        .filter(([k]) => k !== CostCategory.SELLING && k !== CostCategory.FINANCE)
-                        .reduce((a, b) => a + b[1], 0);
-                    return d.netRevenue - devCosts;
-                }}
-                total={totals.operatingCashflow}
-                isBold
-                bgClass="bg-blue-50/50 border-t-2 border-blue-100"
-              />
-
-              {/* 6. FINANCE */}
+              {/* DEVELOPMENT COSTS */}
               <tr className="bg-slate-100 border-y border-slate-200">
-                  <td className="sticky left-0 bg-slate-100 z-10 py-2 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-r border-slate-200">Finance & Fees</td>
-                  <td colSpan={data.length + 1}></td>
+                  <td className="sticky left-0 bg-slate-100 z-10 py-2 px-4 text-[10px] font-bold text-slate-900 uppercase tracking-widest border-r border-slate-200">Development Costs</td>
+                  <td colSpan={cashflow.length + 1}></td>
               </tr>
-              
-              <Row 
-                label="Interest & Line Fees" 
-                getter={d => d.interestSenior + d.interestMezz + (d.costBreakdown[CostCategory.FINANCE] || 0)} 
-                total={totals.finance} 
-                isIndent 
-                negative 
-              />
+              <Row label="Land Purchase" getter={d => d.costBreakdown[CostCategory.LAND] || 0} total={totals.costs[CostCategory.LAND]} negative />
+              <Row label="Construction" getter={d => d.costBreakdown[CostCategory.CONSTRUCTION] || 0} total={totals.costs[CostCategory.CONSTRUCTION]} negative />
+              <Row label="Consultants" getter={d => d.costBreakdown[CostCategory.CONSULTANTS] || 0} total={totals.costs[CostCategory.CONSULTANTS]} negative />
+              <Row label="Statutory Fees" getter={d => d.costBreakdown[CostCategory.STATUTORY] || 0} total={totals.costs[CostCategory.STATUTORY]} negative />
+              <Row label="Miscellaneous" getter={d => d.costBreakdown[CostCategory.MISCELLANEOUS] || 0} total={totals.costs[CostCategory.MISCELLANEOUS]} negative />
 
-              {/* 7. NET PROFIT */}
+              {/* CASHFLOW BOTTOM LINE */}
               <Row 
-                label="NET DEVELOPMENT PROFIT" 
-                getter={d => d.netCashflow} 
-                total={totals.netProfit} 
+                label="NET FLOW (Pre-Finance)" 
+                getter={d => d.netCashflow + d.interestSenior + d.interestMezz} 
+                total={totals.netProfit + totals.finance} 
                 isBold 
-                bgClass="bg-indigo-50 border-y-2 border-indigo-100 text-indigo-900" 
+                bgClass="bg-indigo-50 border-t-2 border-indigo-200 text-indigo-900" 
               />
 
-              {/* Spacer */}
-              <tr className="h-6 bg-white"><td className="sticky left-0 bg-white border-r border-slate-200"></td><td colSpan={data.length + 1}></td></tr>
+              <tr className="h-6 bg-white"><td className="sticky left-0 bg-white border-r border-slate-200"></td><td colSpan={cashflow.length + 1}></td></tr>
 
-              {/* 8. EQUITY */}
+              {/* FINANCE & DEBT TRACKING */}
               <tr className="bg-slate-100 border-y border-slate-200">
-                  <td className="sticky left-0 bg-slate-100 z-10 py-2 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-r border-slate-200">Equity Position</td>
-                  <td colSpan={data.length + 1}></td>
+                  <td className="sticky left-0 bg-slate-100 z-10 py-2 px-4 text-[10px] font-bold text-slate-900 uppercase tracking-widest border-r border-slate-200">Debt & Equity Analysis</td>
+                  <td colSpan={cashflow.length + 1}></td>
               </tr>
-              <Row label="Equity Contribution" getter={d => d.drawDownEquity} total={totals.equityIn} isIndent />
-              <Row label="Equity Repayment" getter={d => d.repayEquity} total={totals.equityOut} isIndent negative />
+              
+              <Row label="Net Outlay (Net Flow)" getter={d => d.netCashflow} total={totals.netProfit} isBold />
+              <Row label="Equity Input" getter={d => d.drawDownEquity} total={totals.equityIn} negative />
+              
+              {/* Debt Before Interest = Closing - Interest - NetDrawdown(Draw - Repay) -> Approximation: Previous Balance */}
+              <tr className="border-b border-slate-100 hover:bg-blue-50/10 transition-colors">
+                  <td className="sticky left-0 z-10 py-2 px-4 text-xs whitespace-nowrap bg-white border-r border-slate-200 text-slate-600 pl-8">
+                    Cum. Debt B4 Int.
+                  </td>
+                  {cashflow.map((d, i) => {
+                     const prevBalance = i > 0 ? (cashflow[i-1].balanceSenior + cashflow[i-1].balanceMezz) : 0;
+                     // Add current drawdowns to get the balance on which interest is charged (if paid in arrears) or simple opening
+                     return (
+                        <td key={i} className="py-2 px-3 text-right text-xs whitespace-nowrap">
+                            {formatAccounting(prevBalance)}
+                        </td>
+                     );
+                  })}
+                  <td className="bg-slate-50 border-l border-slate-200"></td>
+              </tr>
 
-              {/* 9. CUMULATIVE BALANCE */}
+              <Row label="Interest Charged" getter={d => d.interestSenior + d.interestMezz} total={totals.finance} />
+              
               <tr className="bg-slate-900 text-white border-t-4 border-double border-slate-600">
                   <td className="sticky left-0 bg-slate-900 z-10 py-3 px-4 text-xs font-bold uppercase tracking-wider border-r border-slate-700 shadow-[2px_0_10px_rgba(0,0,0,0.5)]">
-                    Cumulative Cash Position
+                    Closing Debt Balance
                   </td>
-                  {data.map((d, i) => (
-                     <td key={i} className="py-3 px-3 text-right text-xs font-mono font-bold whitespace-nowrap">
-                        {d.cumulativeCashflow < 0 
-                            ? <span className="text-red-400">({Math.abs(d.cumulativeCashflow).toLocaleString(undefined, {maximumFractionDigits: 0})})</span> 
-                            : <span className="text-emerald-400">{d.cumulativeCashflow.toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
-                        }
+                  {cashflow.map((d, i) => (
+                     <td key={i} className="py-3 px-3 text-right text-xs font-mono font-bold whitespace-nowrap text-red-400">
+                        {formatAccounting(d.balanceSenior + d.balanceMezz)}
                      </td>
                   ))}
                   <td className="bg-slate-800"></td>

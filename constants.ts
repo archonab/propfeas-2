@@ -46,6 +46,7 @@ export const INITIAL_SETTINGS: FeasibilitySettings = {
   gstRate: 10,
   totalUnits: 20,
   useMarginScheme: true,
+  defaultEscalationRate: 3.0,
   
   capitalStack: {
     surplusInterestRate: 2.5,

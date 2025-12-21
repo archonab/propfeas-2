@@ -284,6 +284,7 @@ export interface FeasibilitySettings {
   gstRate: number;
   totalUnits: number;
   useMarginScheme: boolean;
+  defaultEscalationRate?: number;
   
   capitalStack: CapitalStack;
 }

@@ -6,6 +6,7 @@ import { FinanceEngine } from './services/financeEngine';
 import { SolverService } from './services/solverService';
 import { SensitivityMatrix } from './SensitivityMatrix';
 import { FeasibilityInputGrid } from './FeasibilityInputGrid';
+import { RevenueInputGrid } from './RevenueInputGrid';
 import { FeasibilityReport } from './FeasibilityReport';
 import { ConsolidatedCashflowReport } from './ConsolidatedCashflowReport';
 import { FinanceSettings } from './FinanceSettings';
@@ -458,6 +459,14 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
           {activeTab === 'inputs' && (
             <div className="space-y-8 animate-in fade-in duration-300">
               <FinanceSettings settings={settings} onUpdate={setSettings} peakEquityRequired={stats.peakEquity} />
+              
+              {/* Added Revenue Grid above Cost Grid */}
+              <RevenueInputGrid 
+                revenues={revenues} 
+                setRevenues={setRevenues} 
+                projectDuration={settings.durationMonths}
+              />
+
               <FeasibilityInputGrid 
                 costs={costs} 
                 settings={settings} 

@@ -121,7 +121,7 @@ const getMonthlyInterestRate = (tier: CapitalTier, currentMonth: number): Decima
 
 /**
  * CORE CASHFLOW ENGINE
- * Updated for Feastudy 7.0 parity
+ * Updated for Feastudy 7.0 parity + Build to Rent Logic
  */
 const calculateMonthlyCashflow = (
   settings: FeasibilitySettings,
@@ -131,8 +131,23 @@ const calculateMonthlyCashflow = (
   const flows: MonthlyFlow[] = [];
 
   // --- 1. Pre-Calculation & Totals ---
+  // Note: For revenue items with 'Hold' strategy, pricePerUnit might be 0 or N/A.
+  // We use estimated sales value for input calculation if strategy is sell,
+  // or (AnnualRent / CapRate) for hold strategy estimation for fees.
+  
   const totalRevenue = revenues.reduce((acc, rev) => {
-    return acc.plus(new Decimal(rev.units).times(rev.pricePerUnit));
+    let itemValue = new Decimal(0);
+    if (rev.strategy === 'Hold') {
+       // Estimate Terminal Value for Input calculations
+       const grossRent = (rev.weeklyRent || 0) * 52;
+       const netRent = grossRent * (1 - (rev.opexRate || 0) / 100);
+       const capRate = (rev.capRate || 5) / 100;
+       const terminalValue = capRate > 0 ? netRent / capRate : 0;
+       itemValue = new Decimal(terminalValue).times(rev.units);
+    } else {
+       itemValue = new Decimal(rev.units).times(rev.pricePerUnit);
+    }
+    return acc.plus(itemValue);
   }, new Decimal(0)).toNumber();
 
   const constructionSum = costs
@@ -268,29 +283,84 @@ const calculateMonthlyCashflow = (
     let monthlyGrossRevenue = new Decimal(0); // Track Gross Sales
 
     revenues.forEach(rev => {
-      if (m === rev.settlementDate) {
-        const revTotal = new Decimal(rev.units).times(rev.pricePerUnit);
-        monthlyGrossRevenue = monthlyGrossRevenue.plus(revTotal);
+      // Logic split for Sell vs Hold
+      if (rev.strategy === 'Hold') {
+         const settlementStart = rev.settlementDate; // Or we can use a separate 'operationStartDate'
+         if (m >= settlementStart) {
+            // Calculate Monthly Rent
+            // Gross Annual = Weekly * 52 * Units
+            const grossAnnualRent = new Decimal(rev.weeklyRent || 0).times(52).times(rev.units);
+            const monthlyGross = grossAnnualRent.dividedBy(12);
+            
+            // Lease Up Ramp Up
+            // e.g. if leaseUpDuration is 6 months, scale from 0 to 100% over 6 months from settlement
+            const monthsSinceOpen = m - settlementStart;
+            let occupancyRate = 1;
+            if (rev.leaseUpDuration && rev.leaseUpDuration > 0) {
+                occupancyRate = Math.min(1, monthsSinceOpen / rev.leaseUpDuration);
+            }
+            
+            const realizedGross = monthlyGross.times(occupancyRate);
+            monthlyGrossRevenue = monthlyGrossRevenue.plus(realizedGross);
 
-        const commission = revTotal.times(rev.commissionRate).dividedBy(100);
-        
-        // Add Commission to Selling Costs breakdown
-        monthlyBreakdown[CostCategory.SELLING] += commission.toNumber();
+            // Opex
+            const opex = realizedGross.times((rev.opexRate || 0) / 100);
+            
+            // Net Rent
+            // Note: Rent is usually Input Taxed (Residential) or Taxable (Commercial). 
+            // Simplified here to Net + GST logic if taxable.
+            const netRent = realizedGross.minus(opex);
+            
+            // GST on Rent? Assuming Residential (Input Taxed) for now so no GST on income.
+            // If commercial, we'd need a flag on the revenue item. rev.isTaxable handles this.
+            let gstLiability = new Decimal(0);
+            if (rev.isTaxable) {
+                gstLiability = realizedGross.dividedBy(11);
+            }
 
-        let gstLiability = new Decimal(0);
-        
-        // Revenue GST Logic
-        if (rev.isTaxable) {
-          if (settings.useMarginScheme) {
-            const totalUnits = settings.totalUnits || 1;
-            const allocatedLandBase = marginLandBase.times(rev.units).dividedBy(totalUnits);
-            const margin = revTotal.minus(allocatedLandBase);
-            if (margin.gt(0)) gstLiability = margin.dividedBy(11);
-          } else {
-            gstLiability = revTotal.dividedBy(11);
-          }
+            monthlyNetRevenue = monthlyNetRevenue.plus(netRent).minus(gstLiability);
+         }
+
+         // Terminal Value (Deemed Sale) at end of project
+         if (m === settings.durationMonths) {
+             const grossAnnualRent = new Decimal(rev.weeklyRent || 0).times(52).times(rev.units);
+             const netAnnualRent = grossAnnualRent.times(1 - (rev.opexRate || 0) / 100);
+             const capRate = (rev.capRate || 5) / 100;
+             const terminalValue = capRate > 0 ? netAnnualRent.dividedBy(capRate) : new Decimal(0);
+             
+             // Treat as a large inflow
+             monthlyGrossRevenue = monthlyGrossRevenue.plus(terminalValue);
+             // Assume selling costs apply? For Deemed Sale usually no agency fees if just valuation, 
+             // but if simulating exit, yes. Let's assume net proceeds.
+             monthlyNetRevenue = monthlyNetRevenue.plus(terminalValue);
+         }
+
+      } else {
+        // 'Sell' Strategy (Standard)
+        if (m === rev.settlementDate) {
+            const revTotal = new Decimal(rev.units).times(rev.pricePerUnit);
+            monthlyGrossRevenue = monthlyGrossRevenue.plus(revTotal);
+
+            const commission = revTotal.times(rev.commissionRate).dividedBy(100);
+            
+            // Add Commission to Selling Costs breakdown
+            monthlyBreakdown[CostCategory.SELLING] += commission.toNumber();
+
+            let gstLiability = new Decimal(0);
+            
+            // Revenue GST Logic
+            if (rev.isTaxable) {
+            if (settings.useMarginScheme) {
+                const totalUnits = settings.totalUnits || 1;
+                const allocatedLandBase = marginLandBase.times(rev.units).dividedBy(totalUnits);
+                const margin = revTotal.minus(allocatedLandBase);
+                if (margin.gt(0)) gstLiability = margin.dividedBy(11);
+            } else {
+                gstLiability = revTotal.dividedBy(11);
+            }
+            }
+            monthlyNetRevenue = monthlyNetRevenue.plus(revTotal.minus(commission).minus(gstLiability));
         }
-        monthlyNetRevenue = monthlyNetRevenue.plus(revTotal.minus(commission).minus(gstLiability));
       }
     });
 
@@ -477,7 +547,26 @@ const calculateMonthlyCashflow = (
 
 // ... keep existing stats/report functions ...
 const calculateReportStats = (settings: FeasibilitySettings, costs: LineItem[], revenues: RevenueItem[]) => {
-  const totalRevenueGross = revenues.reduce((acc, rev) => acc + (rev.units * rev.pricePerUnit), 0);
+  const totalRevenueGross = revenues.reduce((acc, rev) => {
+      // Note: for reports, we might want to distinguish Rental Income vs Sales Income.
+      // For now, aggregating strictly based on standard metrics.
+      if (rev.strategy === 'Hold') {
+          // Estimate total held value + rent collected for report stats
+          const grossAnnualRent = (rev.weeklyRent || 0) * 52 * rev.units;
+          // Approximate total rent collected over project duration (simple)
+          // This is a rough estimation for static report. Accurate flow is in monthly array.
+          const durationYears = (settings.durationMonths - rev.settlementDate) / 12;
+          const totalRent = durationYears > 0 ? grossAnnualRent * durationYears : 0;
+          
+          const netAnnualRent = grossAnnualRent * (1 - (rev.opexRate || 0) / 100);
+          const capRate = (rev.capRate || 5) / 100;
+          const terminalValue = capRate > 0 ? netAnnualRent / capRate : 0;
+          
+          return acc + totalRent + terminalValue;
+      }
+      return acc + (rev.units * rev.pricePerUnit);
+  }, 0);
+
   const fixedConstruction = costs.filter(c => c.category === CostCategory.CONSTRUCTION && c.inputType === InputType.FIXED).reduce((acc, c) => acc + c.amount, 0);
   const landBaseForMargin = costs.filter(c => c.category === CostCategory.LAND && (c.gstTreatment === GstTreatment.GST_FREE || c.gstTreatment === GstTreatment.MARGIN_SCHEME)).reduce((acc, c) => acc + calculateLineItemTotal(c, settings, fixedConstruction, totalRevenueGross), 0);
 

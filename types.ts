@@ -124,15 +124,26 @@ export interface LineItem {
   milestones?: Record<number, number>; // Map of relative month -> percentage (0-100)
 }
 
+export type RevenueStrategy = 'Sell' | 'Hold';
+
 export interface RevenueItem {
   id: string;
   description: string;
   units: number;
+  strategy: RevenueStrategy;
+  
+  // Sell Strategy Fields
   pricePerUnit: number;
-  exchangeDate: number;
-  settlementDate: number;
-  commissionRate: number;
+  exchangeDate: number; // Month index
+  settlementDate: number; // Month index (Revenue realization)
+  commissionRate: number; // %
   isTaxable: boolean; 
+
+  // Hold Strategy Fields
+  weeklyRent?: number;
+  opexRate?: number; // % of Gross Rent
+  capRate?: number; // %
+  leaseUpDuration?: number; // Months to stabilize
 }
 
 // --- ADVANCED FINANCIAL TYPES (FEASTUDY 7.0) ---

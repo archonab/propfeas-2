@@ -206,6 +206,7 @@ export const INITIAL_REVENUE: RevenueItem[] = [
     id: 'r1',
     description: 'Standard Sales',
     units: 20,
+    strategy: 'Sell',
     pricePerUnit: 850000,
     exchangeDate: 12,
     settlementDate: 24,

@@ -2,9 +2,8 @@
 import React, { useState } from 'react';
 import { 
   FeasibilitySettings, DebtLimitMethod, InterestRateMode, FeeBase, EquityMode, 
-  CapitalTier, DatedRate, DatedAmount, CapitalStack
+  CapitalTier, DatedRate, DatedAmount
 } from './types';
-import { Landmark, Coins, Layers, Info, Plus, Trash2, Calendar } from 'lucide-react';
 
 interface Props {
   settings: FeasibilitySettings;
@@ -34,7 +33,7 @@ const VariableRateTable = ({ rates, onChange }: { rates: DatedRate[], onChange: 
       <div className="bg-slate-50 px-3 py-2 flex justify-between items-center border-b border-slate-200">
         <span className="text-[10px] font-bold text-slate-500 uppercase">Rate Schedule</span>
         <button onClick={addRate} className="text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded hover:bg-blue-700 flex items-center">
-          <Plus size={10} className="mr-1"/> Add Change
+          <i className="fa-solid fa-plus mr-1"></i> Add Change
         </button>
       </div>
       <table className="w-full text-xs text-left">
@@ -53,7 +52,7 @@ const VariableRateTable = ({ rates, onChange }: { rates: DatedRate[], onChange: 
             <tr key={r.id}>
               <td className="px-3 py-1">
                 <div className="flex items-center">
-                  <Calendar size={12} className="text-slate-400 mr-2"/>
+                  <i className="fa-solid fa-calendar text-slate-400 mr-2 text-xs"></i>
                   <input type="number" min="0" value={r.month} onChange={e => updateRow(r.id, 'month', parseInt(e.target.value))} className="w-16 border-slate-200 rounded text-xs font-mono"/>
                 </div>
               </td>
@@ -61,7 +60,7 @@ const VariableRateTable = ({ rates, onChange }: { rates: DatedRate[], onChange: 
                 <input type="number" step="0.1" value={r.rate} onChange={e => updateRow(r.id, 'rate', parseFloat(e.target.value))} className="w-16 border-slate-200 rounded text-xs font-bold text-slate-700"/>
               </td>
               <td className="px-1 py-1 text-right">
-                 <button onClick={() => removeRow(r.id)} className="text-slate-300 hover:text-red-500 p-1"><Trash2 size={12}/></button>
+                 <button onClick={() => removeRow(r.id)} className="text-slate-300 hover:text-red-500 p-1"><i className="fa-solid fa-trash text-xs"></i></button>
               </td>
             </tr>
           ))}
@@ -88,7 +87,7 @@ const InstalmentsTable = ({ instalments, onChange }: { instalments: DatedAmount[
        <div className="bg-emerald-50/50 px-3 py-2 flex justify-between items-center border-b border-emerald-100">
          <span className="text-[10px] font-bold text-emerald-600 uppercase">Injection Schedule</span>
          <button onClick={addRow} className="text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded hover:bg-emerald-700 flex items-center">
-           <Plus size={10} className="mr-1"/> Add Instalment
+           <i className="fa-solid fa-plus mr-1"></i> Add Instalment
          </button>
        </div>
        <table className="w-full text-xs text-left">
@@ -109,7 +108,7 @@ const InstalmentsTable = ({ instalments, onChange }: { instalments: DatedAmount[
                  <input type="number" value={item.amount} onChange={e => updateRow(item.id, 'amount', parseFloat(e.target.value))} className="w-28 border-slate-200 rounded text-xs font-mono"/>
                </td>
                <td className="px-1 py-1 text-right">
-                 <button onClick={() => removeRow(item.id)} className="text-slate-300 hover:text-red-500 p-1"><Trash2 size={12}/></button>
+                 <button onClick={() => removeRow(item.id)} className="text-slate-300 hover:text-red-500 p-1"><i className="fa-solid fa-trash text-xs"></i></button>
                </td>
              </tr>
            ))}
@@ -130,13 +129,14 @@ const DebtTab = ({
 }) => {
    const color = type === 'senior' ? 'blue' : 'indigo';
    const label = type === 'senior' ? 'Senior Debt' : 'Mezzanine Debt';
+   const iconClass = type === 'senior' ? 'fa-building-columns' : 'fa-layer-group';
    
    return (
      <div className="animate-in fade-in slide-in-from-right-4 duration-300">
         <div className={`p-4 rounded-lg bg-${color}-50 border border-${color}-100 mb-6 flex items-center justify-between`}>
            <div className="flex items-center space-x-3 text-slate-700">
               <div className={`w-8 h-8 rounded bg-white flex items-center justify-center text-${color}-600 shadow-sm`}>
-                 {type === 'senior' ? <Landmark size={18} /> : <Layers size={18} />}
+                 <i className={`fa-solid ${iconClass} text-lg`}></i>
               </div>
               <div>
                  <h3 className="font-bold text-sm">{label}</h3>
@@ -363,7 +363,7 @@ export const FinanceSettings: React.FC<Props> = ({ settings, onUpdate, peakEquit
               <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-100 mb-6 flex items-start justify-between">
                  <div className="flex items-center space-x-3 text-slate-700">
                     <div className="w-8 h-8 rounded bg-white flex items-center justify-center text-emerald-600 shadow-sm">
-                       <Coins size={18} />
+                       <i className="fa-solid fa-coins text-lg"></i>
                     </div>
                     <div>
                        <h3 className="font-bold text-sm">Developer Equity</h3>

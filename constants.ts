@@ -102,7 +102,9 @@ export const INITIAL_SETTINGS: FeasibilitySettings = {
       variableRates: [],
       establishmentFeeBase: FeeBase.PERCENT,
       establishmentFee: 1.0,
-      limitMethod: DebtLimitMethod.FIXED
+      limitMethod: DebtLimitMethod.FIXED,
+      isInterestCapitalised: true,
+      activationMonth: 0
     },
     mezzanine: {
       rateMode: InterestRateMode.SINGLE,
@@ -111,7 +113,9 @@ export const INITIAL_SETTINGS: FeasibilitySettings = {
       establishmentFeeBase: FeeBase.PERCENT,
       establishmentFee: 2.0,
       limit: 1500000,
-      limitMethod: DebtLimitMethod.FIXED
+      limitMethod: DebtLimitMethod.FIXED,
+      isInterestCapitalised: true,
+      activationMonth: 0
     }
   }
 };

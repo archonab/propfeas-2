@@ -241,6 +241,16 @@ export interface CapitalStack {
   surplusInterestRate: number; // Interest earned on positive cash balance
 }
 
+export interface AcquisitionSettings {
+  purchasePrice: number;
+  settlementPeriod: number; // Months from Day 0
+  depositPercent: number; // % (e.g. 10)
+  stampDutyState: 'VIC' | 'NSW' | 'QLD';
+  isForeignBuyer: boolean;
+  buyersAgentFee: number; // % of Price
+  legalFeeEstimate: number; // Fixed $
+}
+
 export interface FeasibilitySettings {
   projectName: string; // The specific scenario name (e.g. "Option 1")
   description: string;
@@ -248,9 +258,13 @@ export interface FeasibilitySettings {
   // Site Context
   site: SiteDNA; // Replacing flat 'location' string with full DNA
 
+  // Deal Structure
+  acquisition: AcquisitionSettings;
+
   // Calculation Settings
   startDate: string; // Cashflow Start Date (might differ from acquisition date)
   durationMonths: number;
+  constructionDelay: number; // Months between Settlement and Construction Start
   discountRate: number;
   gstRate: number;
   totalUnits: number;

@@ -101,6 +101,23 @@ export const SiteSetup: React.FC<Props> = ({ settings, onUpdate, landCost = 0 })
     });
   };
 
+  const updateConstructionDelay = (months: number) => {
+    onUpdate({ ...settings, constructionDelay: months });
+  };
+
+  const updateDuration = (months: number) => {
+    onUpdate({ ...settings, durationMonths: months });
+  };
+
+  // Timeline Visualization Helpers
+  const settlementPeriod = settings.acquisition.settlementPeriod;
+  const constDelay = settings.constructionDelay || 0;
+  const constStart = settlementPeriod + constDelay;
+  const totalDuration = settings.durationMonths;
+  const constDuration = Math.max(0, totalDuration - constStart);
+
+  const getPercent = (months: number) => (months / totalDuration) * 100;
+
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       
@@ -266,63 +283,66 @@ export const SiteSetup: React.FC<Props> = ({ settings, onUpdate, landCost = 0 })
                  <i className="fa-solid fa-calendar text-8xl"></i>
               </div>
               
-              <h3 className="text-lg font-bold mb-1 relative z-10">Critical Path</h3>
-              <p className="text-xs text-slate-400 mb-6 relative z-10">Key Dates & Milestones</p>
+              <h3 className="text-lg font-bold mb-1 relative z-10">Project Phasing</h3>
+              <p className="text-xs text-slate-400 mb-6 relative z-10">Timeline & Delays</p>
 
-              <div className="space-y-8 relative z-10 flex-1">
-                 {/* Acquisition */}
-                 <div className="relative pl-6 border-l-2 border-slate-700">
-                    <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-blue-500 border-4 border-slate-900"></div>
-                    <label className="block text-[10px] font-bold text-blue-400 uppercase mb-1">Acquisition / Exchange</label>
-                    <input 
-                       type="date" 
-                       value={site.milestones.acquisitionDate || ''}
-                       onChange={(e) => updateNestedField('milestones', 'acquisitionDate', e.target.value)}
-                       className="bg-slate-800 border-slate-700 text-white text-xs rounded px-2 py-1 w-full focus:ring-1 focus:ring-blue-500"
-                    />
+              <div className="space-y-6 relative z-10 flex-1">
+                 
+                 {/* Timeline Visualizer */}
+                 <div className="w-full h-4 bg-slate-800 rounded-full overflow-hidden flex mb-6">
+                    {/* 1. Acquisition (Blue) */}
+                    <div className="bg-blue-500 h-full relative group" style={{ width: `${getPercent(settlementPeriod)}%` }}>
+                       <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 bg-slate-700 text-white text-[9px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                          Acquisition ({settlementPeriod}m)
+                       </div>
+                    </div>
+                    {/* 2. Pre-Const (Gray/Stripe) */}
+                    <div className="bg-slate-500 h-full relative group" style={{ width: `${getPercent(constDelay)}%` }}>
+                       <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 bg-slate-700 text-white text-[9px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                          Gap ({constDelay}m)
+                       </div>
+                    </div>
+                    {/* 3. Construction (Orange) */}
+                    <div className="bg-amber-500 h-full relative group" style={{ width: `${getPercent(constDuration)}%` }}>
+                       <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 bg-slate-700 text-white text-[9px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                          Construction ({constDuration}m)
+                       </div>
+                    </div>
                  </div>
 
-                 {/* Settlement */}
-                 <div className="relative pl-6 border-l-2 border-slate-700">
-                    <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-slate-700 border-4 border-slate-900"></div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Land Settlement</label>
-                    <input 
-                       type="date" 
-                       value={site.milestones.settlementDate || ''}
-                       onChange={(e) => updateNestedField('milestones', 'settlementDate', e.target.value)}
-                       className="bg-slate-800 border-slate-700 text-white text-xs rounded px-2 py-1 w-full focus:ring-1 focus:ring-slate-500"
-                    />
+                 {/* Inputs */}
+                 <div className="space-y-4">
+                    <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Total Duration (Months)</label>
+                        <input 
+                           type="number" 
+                           value={settings.durationMonths}
+                           onChange={(e) => updateDuration(parseInt(e.target.value))}
+                           className="bg-slate-800 border-slate-700 text-white text-sm rounded px-3 py-2 w-full focus:ring-1 focus:ring-slate-500 font-bold"
+                        />
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-700">
+                        <div className="flex items-center mb-1">
+                           <label className="block text-[10px] font-bold text-slate-400 uppercase">Pre-Construction Delay</label>
+                           <div className="ml-2 px-1.5 py-0.5 bg-slate-700 rounded text-[9px] text-slate-300">Permits & Design</div>
+                        </div>
+                        <input 
+                           type="number" 
+                           value={constDelay}
+                           onChange={(e) => updateConstructionDelay(parseInt(e.target.value))}
+                           className="bg-slate-800 border-slate-700 text-white text-sm rounded px-3 py-2 w-full focus:ring-1 focus:ring-slate-500 font-bold"
+                        />
+                        <p className="text-[10px] text-slate-500 mt-1 italic">Gap between Settlement and Site Start. Interest accrues on Land.</p>
+                    </div>
                  </div>
 
-                 {/* Construction Start */}
-                 <div className="relative pl-6 border-l-2 border-slate-700">
-                    <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-slate-700 border-4 border-slate-900"></div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Construction Commences</label>
-                    <input 
-                       type="date" 
-                       value={site.milestones.constructionStartDate || ''}
-                       onChange={(e) => updateNestedField('milestones', 'constructionStartDate', e.target.value)}
-                       className="bg-slate-800 border-slate-700 text-white text-xs rounded px-2 py-1 w-full focus:ring-1 focus:ring-slate-500"
-                    />
-                 </div>
-
-                 {/* Practical Completion */}
-                 <div className="relative pl-6 border-l-2 border-transparent">
-                    <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-emerald-500 border-4 border-slate-900"></div>
-                    <label className="block text-[10px] font-bold text-emerald-400 uppercase mb-1">Practical Completion</label>
-                    <input 
-                       type="date" 
-                       value={site.milestones.completionDate || ''}
-                       onChange={(e) => updateNestedField('milestones', 'completionDate', e.target.value)}
-                       className="bg-slate-800 border-slate-700 text-white text-xs rounded px-2 py-1 w-full focus:ring-1 focus:ring-emerald-500"
-                    />
-                 </div>
               </div>
 
               <div className="mt-8 pt-4 border-t border-slate-800">
                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-slate-500">Duration</span>
-                    <span className="font-mono font-bold text-white">{settings.durationMonths} Months</span>
+                    <span className="text-slate-500">Construction Start</span>
+                    <span className="font-mono font-bold text-amber-400">Month {constStart}</span>
                  </div>
               </div>
            </div>

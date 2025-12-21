@@ -144,8 +144,20 @@ export const INITIAL_SETTINGS: FeasibilitySettings = {
     milestones: {}
   },
 
+  // Deal Structure (New)
+  acquisition: {
+    purchasePrice: 5000000,
+    settlementPeriod: 6, // 6 Months settlement
+    depositPercent: 10, // 10% Deposit
+    stampDutyState: 'VIC',
+    isForeignBuyer: false,
+    buyersAgentFee: 0,
+    legalFeeEstimate: 5000
+  },
+
   startDate: "2024-06-01",
-  durationMonths: 24,
+  durationMonths: 36,
+  constructionDelay: 3, // Default 3 months pre-construction
   discountRate: 15, // Project Discount Rate
   gstRate: 10,
   totalUnits: 20,
@@ -185,19 +197,7 @@ export const INITIAL_SETTINGS: FeasibilitySettings = {
 };
 
 export const INITIAL_COSTS: LineItem[] = [
-  {
-    id: '1',
-    code: 'C001',
-    category: CostCategory.LAND,
-    description: 'Land Purchase Price',
-    inputType: InputType.FIXED,
-    amount: 5000000,
-    startDate: 0,
-    span: 1,
-    method: DistributionMethod.UPFRONT,
-    escalationRate: 0,
-    gstTreatment: GstTreatment.MARGIN_SCHEME
-  },
+  // Removed Manual Land Cost
   {
     id: '2',
     code: 'C002',
@@ -205,7 +205,7 @@ export const INITIAL_COSTS: LineItem[] = [
     description: 'Civils & Foundation',
     inputType: InputType.FIXED,
     amount: 2500000,
-    startDate: 3,
+    startDate: 0, // Relative to Construction Start
     span: 12,
     method: DistributionMethod.S_CURVE,
     escalationRate: 3,
@@ -221,7 +221,7 @@ export const INITIAL_REVENUE: RevenueItem[] = [
     strategy: 'Sell',
     pricePerUnit: 850000,
     exchangeDate: 12,
-    settlementDate: 24,
+    settlementDate: 30,
     commissionRate: 2.0,
     isTaxable: true
   }

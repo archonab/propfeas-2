@@ -11,6 +11,7 @@ import { FeasibilityReport } from './FeasibilityReport';
 import { ConsolidatedCashflowReport } from './ConsolidatedCashflowReport';
 import { FinanceSettings } from './FinanceSettings';
 import { SiteSetup } from './SiteSetup';
+import { AcquisitionManager } from './AcquisitionManager';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Legend } from 'recharts';
 
 // Local Components
@@ -38,8 +39,8 @@ interface Props {
 }
 
 export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, onPromote, onChange, smartRates, libraryData }) => {
-  // Default to 'summary' if acquired, otherwise 'site'
-  const [activeTab, setActiveTab] = useState(site.status === 'Acquired' ? 'summary' : 'site');
+  // Default to 'deal' if prospect, 'summary' if acquired
+  const [activeTab, setActiveTab] = useState(site.status === 'Acquired' ? 'summary' : 'deal');
   const [reportSubTab, setReportSubTab] = useState<'pnl' | 'cashflow'>('pnl');
 
   const [settings, setSettings] = useState<FeasibilitySettings>({ 
@@ -100,12 +101,8 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
     };
   }, [cashflow, costs, settings.discountRate]);
 
-  // Calculate Total Land Cost for SiteSetup display
-  const totalLandCost = useMemo(() => {
-    return costs
-      .filter(c => c.category === CostCategory.LAND)
-      .reduce((acc, c) => acc + c.amount, 0);
-  }, [costs]);
+  // Calculate Total Land Cost for SiteSetup display (Now from Settings)
+  const totalLandCost = settings.acquisition.purchasePrice;
 
   const handleUpdateCost = (id: string, field: keyof LineItem, value: any) => {
     if (!isEditable) return;
@@ -169,24 +166,16 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
           revenues
         );
         
-        let newCosts = costs.map(c => {
-          if (c.category === CostCategory.LAND) {
-            return { ...c, amount: result.landValue };
-          }
-          return c;
-        });
+        // Update Global Settings directly for Land
+        setSettings(prev => ({
+           ...prev,
+           acquisition: {
+              ...prev.acquisition,
+              purchasePrice: result.landValue
+           }
+        }));
 
-        const dutyIndex = newCosts.findIndex(c => 
-          c.category === CostCategory.STATUTORY && 
-          (c.description.toLowerCase().includes('duty') || c.description.toLowerCase().includes('stamp'))
-        );
-
-        if (dutyIndex !== -1) {
-          newCosts[dutyIndex] = { ...newCosts[dutyIndex], amount: result.stampDuty };
-        }
-
-        setCosts(newCosts);
-        alert(`Solver Successful!\n\nResidual Land Value: $${(result.landValue/1e6).toFixed(2)}M\nStamp Duty Adjusted: $${(result.stampDuty/1e3).toFixed(0)}k`);
+        alert(`Solver Successful!\n\nResidual Land Value: $${(result.landValue/1e6).toFixed(2)}M`);
       } catch (e: any) {
         alert("Solver Error: " + e.message);
       } finally {
@@ -196,17 +185,17 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
   };
 
   const navTabs = [
-    { id: 'site', label: 'Site Context', icon: 'fa-map-location-dot' },
+    { id: 'site', label: 'Context', icon: 'fa-map-location-dot' },
+    { id: 'deal', label: 'Deal & Land', icon: 'fa-handshake' }, // New Tab
+    { id: 'inputs', label: 'Inputs', icon: 'fa-sliders' },
     { id: 'summary', label: 'Dashboard', icon: 'fa-chart-simple' },
-    { id: 'inputs', label: 'Inputs & Assumptions', icon: 'fa-sliders' },
-    { id: 'reports', label: 'Formal Reports', icon: 'fa-file-pdf' }
+    { id: 'reports', label: 'Reports', icon: 'fa-file-pdf' }
   ];
 
   return (
     <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
       
       {/* LEFT: Persistent Site DNA Sidebar */}
-      {/* Mobile: Collapsible Accordion, Desktop: Sticky Sidebar */}
       <aside className="w-full lg:w-64 shrink-0">
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 lg:sticky lg:top-4 overflow-hidden">
            
@@ -280,17 +269,18 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
       {/* RIGHT: Main Content Area */}
       <div className="flex-1 min-w-0 flex flex-col space-y-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center no-print gap-4 sm:gap-0">
-          <nav className="grid grid-cols-2 gap-1 sm:flex sm:space-x-1 bg-slate-100 p-1 rounded-lg w-full sm:w-auto">
+          <nav className="grid grid-cols-5 gap-1 sm:flex sm:space-x-1 bg-slate-100 p-1 rounded-lg w-full sm:w-auto">
             {navTabs.map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-2 sm:px-4 py-2 rounded-md text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center sm:justify-start space-x-2 whitespace-nowrap ${
+                className={`px-1 sm:px-4 py-2 rounded-md text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center sm:justify-start space-x-1 sm:space-x-2 whitespace-nowrap ${
                   activeTab === tab.id ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
-                <i className={`fa-solid ${tab.icon}`}></i>
-                <span>{tab.label}</span>
+                <i className={`fa-solid ${tab.icon} sm:mr-1`}></i>
+                <span className="hidden sm:inline">{tab.label}</span>
+                <span className="sm:hidden">{tab.label.split(' ')[0]}</span>
               </button>
             ))}
           </nav>
@@ -313,8 +303,12 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
             <SiteSetup 
               settings={settings} 
               onUpdate={setSettings} 
-              landCost={totalLandCost} // Pass derived total land cost
+              landCost={totalLandCost}
             />
+          )}
+
+          {activeTab === 'deal' && (
+            <AcquisitionManager settings={settings} onUpdate={setSettings} />
           )}
 
           {activeTab === 'summary' && (
@@ -477,7 +471,8 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
               <FeasibilityInputGrid 
                 costs={costs} 
                 settings={settings} 
-                constructionTotal={stats.constructionTotal} 
+                constructionTotal={stats.constructionTotal}
+                estimatedRevenue={stats.totalIn}
                 onUpdate={handleUpdateCost} 
                 onAdd={handleAddCost} 
                 onBulkAdd={handleBulkAddCosts}

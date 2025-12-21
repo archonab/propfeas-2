@@ -213,11 +213,22 @@ const calculateMonthlyCashflow = (
   let unpaidMezzFee = mezzEstabFee;
 
   // --- 4. Monthly Loop ---
+  let runningCumulativeCashflow = new Decimal(0);
+
   for (let m = 0; m <= settings.durationMonths; m++) {
     
     // A. Operational Cashflows
     let monthlyNetCost = new Decimal(0);
     let monthlyGSTPaid = new Decimal(0);
+    const monthlyBreakdown: Record<CostCategory, number> = {
+        [CostCategory.LAND]: 0,
+        [CostCategory.CONSULTANTS]: 0,
+        [CostCategory.CONSTRUCTION]: 0,
+        [CostCategory.STATUTORY]: 0,
+        [CostCategory.MISCELLANEOUS]: 0,
+        [CostCategory.SELLING]: 0,
+        [CostCategory.FINANCE]: 0
+    };
     
     // Process Costs
     costs.forEach(cost => {
@@ -234,6 +245,7 @@ const calculateMonthlyCashflow = (
         }
         
         monthlyNetCost = monthlyNetCost.plus(monthlyEscalated);
+        monthlyBreakdown[cost.category] = (monthlyBreakdown[cost.category] || 0) + monthlyEscalated.toNumber();
 
         // GST Logic: Only add GST if TAXABLE. 
         // GST Free, Input Taxed, Margin Scheme on cost side implies NO GST to pay/claim on the cashflow.
@@ -247,14 +259,24 @@ const calculateMonthlyCashflow = (
     // Add Estab Fees to "Cost" in Month 0 (to trigger funding)
     if (m === 0) {
       monthlyNetCost = monthlyNetCost.plus(unpaidSeniorFee).plus(unpaidMezzFee);
+      // Allocate fees to Finance Category breakdown
+      monthlyBreakdown[CostCategory.FINANCE] += (unpaidSeniorFee.toNumber() + unpaidMezzFee.toNumber());
     }
 
     // Process Revenue
     let monthlyNetRevenue = new Decimal(0);
+    let monthlyGrossRevenue = new Decimal(0); // Track Gross Sales
+
     revenues.forEach(rev => {
       if (m === rev.settlementDate) {
         const revTotal = new Decimal(rev.units).times(rev.pricePerUnit);
+        monthlyGrossRevenue = monthlyGrossRevenue.plus(revTotal);
+
         const commission = revTotal.times(rev.commissionRate).dividedBy(100);
+        
+        // Add Commission to Selling Costs breakdown
+        monthlyBreakdown[CostCategory.SELLING] += commission.toNumber();
+
         let gstLiability = new Decimal(0);
         
         // Revenue GST Logic
@@ -314,6 +336,7 @@ const calculateMonthlyCashflow = (
     pendingITCRefund = monthlyGSTPaid; // Refund next month
 
     const netPeriodCashflow = totalInflow.minus(totalOutflow);
+    runningCumulativeCashflow = runningCumulativeCashflow.plus(netPeriodCashflow);
     
     let fundingNeed = new Decimal(0);
     let repaymentCapacity = new Decimal(0);
@@ -428,6 +451,8 @@ const calculateMonthlyCashflow = (
       month: m,
       label: getMonthLabel(settings.startDate, m),
       developmentCosts: monthlyNetCost.toNumber(),
+      costBreakdown: monthlyBreakdown,
+      grossRevenue: monthlyGrossRevenue.toNumber(),
       netRevenue: monthlyNetRevenue.toNumber(),
       drawDownEquity: drawEquity.toNumber(),
       drawDownMezz: drawMezz.toNumber(),
@@ -443,7 +468,7 @@ const calculateMonthlyCashflow = (
       interestSenior: interestSenior.toNumber(),
       interestMezz: interestMezz.toNumber(),
       netCashflow: netPeriodCashflow.toNumber(),
-      cumulativeCashflow: 0
+      cumulativeCashflow: runningCumulativeCashflow.toNumber()
     });
   }
 

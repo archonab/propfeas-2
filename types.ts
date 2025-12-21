@@ -39,6 +39,9 @@ export enum ScenarioStatus {
   PROMOTED = 'Promoted'
 }
 
+// --- SENSITIVITY TYPES ---
+export type SensitivityVariable = 'revenue' | 'cost' | 'duration' | 'interest';
+
 // --- SITE-FIRST DATA MODEL ---
 
 export interface AgentContact {
@@ -226,7 +229,10 @@ export interface MonthlyFlow {
   label: string;
   
   developmentCosts: number; 
-  netRevenue: number; 
+  costBreakdown: Record<CostCategory, number>; // Breakdown by category
+
+  grossRevenue: number; // New field: Raw sales income before costs
+  netRevenue: number; // After Selling Costs and GST
   drawDownEquity: number;
   drawDownMezz: number;
   drawDownSenior: number;

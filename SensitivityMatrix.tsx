@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState } from 'react';
-import { FeasibilitySettings, LineItem, RevenueItem } from './types';
+import { FeasibilitySettings, LineItem, RevenueItem, SensitivityVariable } from './types';
 import { SensitivityService, SensitivityCell } from './services/sensitivityService';
 
 interface Props {
@@ -11,24 +11,42 @@ interface Props {
 
 export const SensitivityMatrix: React.FC<Props> = ({ settings, costs, revenues }) => {
   const [metric, setMetric] = useState<'margin' | 'profit'>('margin');
+  
+  // Flexible Axes
+  const [xAxis, setXAxis] = useState<SensitivityVariable>('revenue');
+  const [yAxis, setYAxis] = useState<SensitivityVariable>('cost');
 
-  // Memoize the heavy calculation so it only runs when inputs change
-  const steps = [-15, -10, -5, 0, 5, 10, 15];
+  // Determine Steps based on variable type
+  const getSteps = (type: SensitivityVariable) => {
+    switch (type) {
+        case 'revenue':
+        case 'cost':
+            return [-15, -10, -5, 0, 5, 10, 15]; // Percentages
+        case 'duration':
+            return [0, 3, 6, 9, 12, 18, 24]; // Months Delay
+        case 'interest':
+            return [0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0]; // Absolute Increase %
+        default:
+            return [-10, -5, 0, 5, 10];
+    }
+  };
+
+  const stepsX = getSteps(xAxis);
+  const stepsY = getSteps(yAxis);
+
   const matrix = useMemo(() => {
-    return SensitivityService.generateMatrix(settings, costs, revenues, steps);
-  }, [settings, costs, revenues]);
+    return SensitivityService.generateMatrix(settings, costs, revenues, xAxis, yAxis, stepsX, stepsY);
+  }, [settings, costs, revenues, xAxis, yAxis]);
 
   // Helper for Heatmap Colors
   const getCellColor = (val: number) => {
-    // Logic for Margin %
     if (metric === 'margin') {
       if (val < 0) return 'bg-red-100 text-red-800 border-red-200';
-      if (val < 10) return 'bg-amber-100 text-amber-800 border-amber-200'; // High Risk
-      if (val < 15) return 'bg-yellow-100 text-yellow-800 border-yellow-200'; // Moderate
-      if (val < 20) return 'bg-emerald-100 text-emerald-800 border-emerald-200'; // Good
-      return 'bg-emerald-200 text-emerald-900 border-emerald-300'; // Excellent
+      if (val < 10) return 'bg-amber-100 text-amber-800 border-amber-200';
+      if (val < 15) return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      if (val < 20) return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+      return 'bg-emerald-200 text-emerald-900 border-emerald-300';
     } else {
-      // Logic for Profit (simple > 0 check mainly)
       if (val < 0) return 'bg-red-100 text-red-800 border-red-200';
       return 'bg-emerald-100 text-emerald-800 border-emerald-200';
     }
@@ -38,43 +56,95 @@ export const SensitivityMatrix: React.FC<Props> = ({ settings, costs, revenues }
     if (metric === 'margin') {
       return `${cell.margin.toFixed(1)}%`;
     }
-    return `$${(cell.profit / 1000000).toFixed(2)}m`;
+    return `$${(cell.profit / 1000000).toFixed(1)}m`;
+  };
+
+  const formatHeader = (val: number, type: SensitivityVariable) => {
+    if (type === 'duration') return val === 0 ? 'Base' : `+${val}m`;
+    if (type === 'interest') return val === 0 ? 'Base' : `+${val.toFixed(1)}%`;
+    return val > 0 ? `+${val}%` : `${val}%`;
+  };
+
+  const getAxisLabel = (type: SensitivityVariable) => {
+      switch(type) {
+          case 'revenue': return 'Gross Revenue Variance';
+          case 'cost': return 'Construction Cost Variance';
+          case 'duration': return 'Project Delay (Months)';
+          case 'interest': return 'Interest Rate Increase';
+      }
   };
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 overflow-hidden">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div>
           <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Sensitivity Analysis</h3>
-          <p className="text-xs text-slate-500">Multivariate risk matrix (Revenue vs. Construction Costs)</p>
+          <p className="text-xs text-slate-500">Multi-variable stress testing & risk matrix.</p>
         </div>
-        <div className="flex bg-slate-100 p-1 rounded-lg">
-          <button
-            onClick={() => setMetric('margin')}
-            className={`px-3 py-1 text-[10px] font-bold uppercase rounded ${metric === 'margin' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-500'}`}
-          >
-            Margin %
-          </button>
-          <button
-            onClick={() => setMetric('profit')}
-            className={`px-3 py-1 text-[10px] font-bold uppercase rounded ${metric === 'profit' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-500'}`}
-          >
-            Profit $
-          </button>
+        
+        <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3">
+            {/* View Metric Toggle */}
+            <div className="flex bg-slate-100 p-1 rounded-lg">
+              <button
+                onClick={() => setMetric('margin')}
+                className={`px-3 py-1 text-[10px] font-bold uppercase rounded ${metric === 'margin' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-500'}`}
+              >
+                Margin %
+              </button>
+              <button
+                onClick={() => setMetric('profit')}
+                className={`px-3 py-1 text-[10px] font-bold uppercase rounded ${metric === 'profit' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-500'}`}
+              >
+                Profit $
+              </button>
+            </div>
         </div>
+      </div>
+
+      {/* Scenario Configuration Bar */}
+      <div className="flex flex-col md:flex-row gap-4 md:gap-8 mb-8 bg-slate-50 p-4 rounded-lg border border-slate-100">
+         <div className="flex-1">
+             <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">X-Axis Variable</label>
+             <select 
+               value={xAxis}
+               onChange={(e) => setXAxis(e.target.value as SensitivityVariable)}
+               className="w-full text-xs font-bold text-slate-700 border-slate-300 rounded-md focus:ring-blue-500"
+             >
+                 <option value="revenue">Sales Revenue (Price)</option>
+                 <option value="cost">Construction Cost</option>
+                 <option value="duration">Project Duration</option>
+                 <option value="interest">Interest Rate</option>
+             </select>
+         </div>
+         <div className="flex items-center justify-center pt-4 text-slate-300">
+             <i className="fa-solid fa-xmark"></i>
+         </div>
+         <div className="flex-1">
+             <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Y-Axis Variable</label>
+             <select 
+               value={yAxis}
+               onChange={(e) => setYAxis(e.target.value as SensitivityVariable)}
+               className="w-full text-xs font-bold text-slate-700 border-slate-300 rounded-md focus:ring-blue-500"
+             >
+                 <option value="revenue">Sales Revenue (Price)</option>
+                 <option value="cost">Construction Cost</option>
+                 <option value="duration">Project Duration</option>
+                 <option value="interest">Interest Rate</option>
+             </select>
+         </div>
       </div>
 
       <div className="relative overflow-x-auto">
         {/* X-Axis Label */}
         <div className="text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
-          Gross Realisation (Sales Price) Variance
+          {getAxisLabel(xAxis)}
         </div>
 
         <div className="flex">
           {/* Y-Axis Label */}
           <div className="flex items-center justify-center w-8 shrink-0">
              <div className="rotate-[-90deg] whitespace-nowrap text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-               Construction Cost Variance
+               {getAxisLabel(yAxis)}
              </div>
           </div>
 
@@ -82,20 +152,22 @@ export const SensitivityMatrix: React.FC<Props> = ({ settings, costs, revenues }
             <thead>
               <tr>
                 <th className="p-2"></th>
-                {steps.map(step => (
+                {stepsX.map(step => (
                   <th key={step} className={`p-2 font-bold ${step === 0 ? 'text-blue-600 bg-blue-50 rounded-t-lg' : 'text-slate-500'}`}>
-                    {step > 0 ? '+' : ''}{step}%
+                    {formatHeader(step, xAxis)}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {matrix.map((row, rowIndex) => {
-                const costVar = steps[rowIndex];
+                const yVal = stepsY[rowIndex];
+                const isBaseline = yVal === 0;
+                
                 return (
-                  <tr key={costVar}>
-                    <td className={`p-2 font-bold ${costVar === 0 ? 'text-blue-600 bg-blue-50 rounded-l-lg' : 'text-slate-500'}`}>
-                      {costVar > 0 ? '+' : ''}{costVar}%
+                  <tr key={yVal}>
+                    <td className={`p-2 font-bold whitespace-nowrap ${isBaseline ? 'text-blue-600 bg-blue-50 rounded-l-lg' : 'text-slate-500'}`}>
+                      {formatHeader(yVal, yAxis)}
                     </td>
                     {row.map((cell) => (
                       <td key={cell.xVar} className="p-1">
@@ -110,6 +182,8 @@ export const SensitivityMatrix: React.FC<Props> = ({ settings, costs, revenues }
             </tbody>
           </table>
         </div>
+        
+        {/* Key / Legend */}
         <div className="flex justify-end mt-4 space-x-4">
            <div className="flex items-center space-x-1">
               <div className="w-3 h-3 bg-red-100 border border-red-200 rounded"></div>

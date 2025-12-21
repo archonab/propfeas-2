@@ -7,6 +7,7 @@ import { SolverService } from './services/solverService';
 import { SensitivityMatrix } from './SensitivityMatrix';
 import { FeasibilityInputGrid } from './FeasibilityInputGrid';
 import { FeasibilityReport } from './FeasibilityReport';
+import { ConsolidatedCashflowReport } from './ConsolidatedCashflowReport';
 import { FinanceSettings } from './FinanceSettings';
 import { SiteSetup } from './SiteSetup';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Legend } from 'recharts';
@@ -36,6 +37,8 @@ interface Props {
 export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, onPromote, onChange }) => {
   // Default to 'summary' if acquired, otherwise 'site'
   const [activeTab, setActiveTab] = useState(site.status === 'Acquired' ? 'summary' : 'site');
+  const [reportSubTab, setReportSubTab] = useState<'pnl' | 'cashflow'>('pnl');
+
   const [settings, setSettings] = useState<FeasibilitySettings>({ 
     ...INITIAL_SETTINGS, 
     projectName: site.name,
@@ -467,7 +470,33 @@ export const FeasibilityEngine: React.FC<Props> = ({ site, isEditable = true, on
           )}
 
           {activeTab === 'reports' && (
-            <FeasibilityReport settings={settings} costs={costs} revenues={revenues} stats={stats} />
+            <div className="space-y-6">
+               <div className="flex justify-center border-b border-slate-200 pb-1">
+                  <nav className="flex space-x-4">
+                     <button 
+                       onClick={() => setReportSubTab('pnl')}
+                       className={`px-4 py-2 text-xs font-bold uppercase border-b-2 transition-colors ${reportSubTab === 'pnl' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                     >
+                       Profit & Loss
+                     </button>
+                     <button 
+                       onClick={() => setReportSubTab('cashflow')}
+                       className={`px-4 py-2 text-xs font-bold uppercase border-b-2 transition-colors ${reportSubTab === 'cashflow' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                     >
+                       Detailed Cashflow
+                     </button>
+                  </nav>
+               </div>
+
+               <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  {reportSubTab === 'pnl' && (
+                    <FeasibilityReport settings={settings} costs={costs} revenues={revenues} stats={stats} />
+                  )}
+                  {reportSubTab === 'cashflow' && (
+                    <ConsolidatedCashflowReport cashflow={cashflow} settings={settings} />
+                  )}
+               </div>
+            </div>
           )}
         </div>
       </div>

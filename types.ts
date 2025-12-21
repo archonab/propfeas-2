@@ -25,21 +25,70 @@ export enum CostCategory {
   FINANCE = 'Finance Costs'
 }
 
+export enum GstTreatment {
+  TAXABLE = 'Taxable',
+  GST_FREE = 'GST Free',
+  INPUT_TAXED = 'Input Taxed',
+  MARGIN_SCHEME = 'Margin Scheme'
+}
+
 export enum ScenarioStatus {
   DRAFT = 'Draft',
   LOCKED = 'Locked/Baseline',
   PROMOTED = 'Promoted'
 }
 
-export interface Project {
+// --- SITE-FIRST DATA MODEL ---
+
+export interface AgentContact {
+  name: string;
+  company: string;
+  email?: string;
+  phone?: string;
+}
+
+export interface VendorProfile {
+  name: string;
+  company?: string;
+}
+
+export interface SiteMilestones {
+  acquisitionDate?: string;
+  settlementDate?: string;
+  constructionStartDate?: string;
+  completionDate?: string;
+}
+
+export interface SiteDNA {
+  // Physical Attributes
+  address: string;
+  landArea: number; // in square meters
+  lga: string; // Local Government Area (Council)
+  zoning: string;
+  overlays: string[]; // e.g., "Heritage", "Flood"
+
+  // CRM / Deal Attributes
+  agent: AgentContact;
+  vendor: VendorProfile;
+
+  // Timeline
+  milestones: SiteMilestones;
+}
+
+export type LeadStatus = 'Prospect' | 'Due Diligence' | 'Acquired' | 'Archive';
+
+export interface SiteLead {
   id: string;
   code: string;
-  name: string;
-  address: string;
+  name: string; // Project Title / Name
   thumbnail: string;
-  status: 'prospect' | 'active' | 'complete';
+  status: LeadStatus;
+  
+  // Embedded Site Data
+  dna: SiteDNA;
+
+  // Management Stats (Mocked for dashboard)
   stage: 'Analysis' | 'Acquisition' | 'Planning' | 'Construction' | 'Sales';
-  targetFinish: string;
   pm: string;
   openTasks: number;
   openRFIs: number;
@@ -60,7 +109,7 @@ export interface LineItem {
   span: number;
   method: DistributionMethod;
   escalationRate: number; // Annual %
-  isTaxable: boolean;
+  gstTreatment: GstTreatment;
   
   // Advanced Distribution Settings
   sCurveSteepness?: number; // k-factor, default 10
@@ -75,7 +124,7 @@ export interface RevenueItem {
   exchangeDate: number;
   settlementDate: number;
   commissionRate: number;
-  isTaxable: boolean;
+  isTaxable: boolean; 
 }
 
 // --- ADVANCED FINANCIAL TYPES (FEASTUDY 7.0) ---
@@ -149,10 +198,14 @@ export interface CapitalStack {
 }
 
 export interface FeasibilitySettings {
-  projectName: string;
+  projectName: string; // The specific scenario name (e.g. "Option 1")
   description: string;
-  location: string;
-  startDate: string;
+  
+  // Site Context
+  site: SiteDNA; // Replacing flat 'location' string with full DNA
+
+  // Calculation Settings
+  startDate: string; // Cashflow Start Date (might differ from acquisition date)
   durationMonths: number;
   discountRate: number;
   gstRate: number;
@@ -167,37 +220,25 @@ export interface MonthlyFlow {
   month: number;
   label: string;
   
-  // Operational Flows
   developmentCosts: number; 
   netRevenue: number; 
-  
-  // Funding Sources
   drawDownEquity: number;
   drawDownMezz: number;
   drawDownSenior: number;
-  lendingInterestIncome: number; // Interest earned on surplus
-  
-  // Repayment Flows
+  lendingInterestIncome: number; 
   repaySenior: number;
   repayMezz: number;
   repayEquity: number;
-  
-  // Balances
   balanceSenior: number;
   balanceMezz: number;
   balanceEquity: number; 
-  balanceSurplus: number; // Cash at Bank
-  
-  // Costs
+  balanceSurplus: number; 
   interestSenior: number;
   interestMezz: number;
-  
-  // Totals
   netCashflow: number;
   cumulativeCashflow: number;
 }
 
-// ... existing Budget types ...
 export interface BudgetLineItem extends LineItem {
   originalBudget: number;
   committedCost: number;

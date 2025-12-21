@@ -306,7 +306,9 @@ export const FinanceSettings: React.FC<Props> = ({ settings, onUpdate, peakEquit
       <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center">
          <div>
             <h3 className="font-bold text-slate-800">Finance & Capital Stack</h3>
-            <p className="text-xs text-slate-500">Configure debt facilities, interest rates and equity injection.</p>
+            <p className="text-xs text-slate-500">
+               <span className="font-bold">{settings.site.address}</span> • Configure debt facilities, interest rates and equity injection.
+            </p>
          </div>
          <div className="flex items-center space-x-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm">
             <span className="text-[10px] font-bold text-slate-500 uppercase">Surplus Funds Rate</span>

@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
-import { CostCategory, DistributionMethod, InputType, LineItem, FeasibilitySettings } from './types';
+import { CostCategory, DistributionMethod, InputType, LineItem, FeasibilitySettings, GstTreatment } from './types';
+import { PhasingChart } from './PhasingChart';
 
 interface Props {
   costs: LineItem[];
@@ -13,6 +14,9 @@ interface Props {
 
 export const FeasibilityInputGrid: React.FC<Props> = ({ costs, settings, onUpdate, onAdd, onRemove, constructionTotal }) => {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
+
+  // Approximate total revenue from settings (needed for chart scaling if % Rev used)
+  const estimatedRevenue = 10000000; 
 
   const toggleExpanded = (id: string) => {
     setExpandedRow(expandedRow === id ? null : id);
@@ -68,6 +72,7 @@ export const FeasibilityInputGrid: React.FC<Props> = ({ costs, settings, onUpdat
               <th className="px-4 py-3 text-right">Value</th>
               <th className="px-4 py-3 text-center">Start Mo.</th>
               <th className="px-4 py-3 text-center">Duration</th>
+              <th className="px-4 py-3">GST Code</th>
               <th className="px-4 py-3">Distribution</th>
               <th className="px-4 py-3 w-10"></th>
             </tr>
@@ -76,11 +81,10 @@ export const FeasibilityInputGrid: React.FC<Props> = ({ costs, settings, onUpdat
             {costs.map((item) => {
               const isOverProject = (item.startDate + item.span) > settings.durationMonths;
               const isCalculated = item.inputType === InputType.PCT_CONSTRUCTION || item.inputType === InputType.PCT_REVENUE;
-              const needsAdvanced = item.method === DistributionMethod.S_CURVE || item.method === DistributionMethod.MILESTONE;
-
+              
               return (
                 <React.Fragment key={item.id}>
-                  <tr className={`group transition-colors ${isOverProject ? 'bg-red-50/50' : 'hover:bg-blue-50/30'}`}>
+                  <tr className={`group transition-colors ${isOverProject ? 'bg-red-50/50' : 'hover:bg-blue-50/30'} ${expandedRow === item.id ? 'bg-blue-50/50' : ''}`}>
                     <td className="px-4 py-2 text-center">
                       <button 
                         onClick={() => toggleExpanded(item.id)}
@@ -153,6 +157,30 @@ export const FeasibilityInputGrid: React.FC<Props> = ({ costs, settings, onUpdat
                       />
                     </td>
                     <td className="px-4 py-2">
+                        <div className="relative">
+                            <select 
+                                value={item.gstTreatment}
+                                onChange={e => onUpdate(item.id, 'gstTreatment', e.target.value)}
+                                className={`
+                                    bg-transparent border-none focus:ring-0 text-[10px] font-bold cursor-pointer w-full pr-4 uppercase tracking-tighter
+                                    ${item.gstTreatment === GstTreatment.TAXABLE ? 'text-blue-600' : ''}
+                                    ${item.gstTreatment === GstTreatment.GST_FREE ? 'text-emerald-600' : ''}
+                                    ${item.gstTreatment === GstTreatment.INPUT_TAXED ? 'text-amber-600' : ''}
+                                    ${item.gstTreatment === GstTreatment.MARGIN_SCHEME ? 'text-purple-600' : ''}
+                                `}
+                            >
+                                <option value={GstTreatment.TAXABLE}>Taxable (10%)</option>
+                                <option value={GstTreatment.GST_FREE}>GST Free (0%)</option>
+                                <option value={GstTreatment.INPUT_TAXED}>Input Taxed</option>
+                                <option value={GstTreatment.MARGIN_SCHEME}>Margin Scheme</option>
+                            </select>
+                            {/* Visual Indicator Overlay */}
+                            {item.gstTreatment === GstTreatment.MARGIN_SCHEME && (
+                                <span className="absolute -top-3 -right-2 bg-purple-100 text-purple-700 px-1 rounded text-[8px] font-black border border-purple-200">MS</span>
+                            )}
+                        </div>
+                    </td>
+                    <td className="px-4 py-2">
                       <select 
                         value={item.method}
                         onChange={e => onUpdate(item.id, 'method', e.target.value)}
@@ -170,50 +198,79 @@ export const FeasibilityInputGrid: React.FC<Props> = ({ costs, settings, onUpdat
                       </button>
                     </td>
                   </tr>
-                  {/* Advanced Configuration Row */}
+                  
+                  {/* Advanced Configuration & Chart Row */}
                   {expandedRow === item.id && (
-                     <tr className="bg-slate-50 border-b border-slate-100">
-                        <td colSpan={10} className="px-4 py-3">
-                           <div className="flex items-center space-x-8 pl-10 animate-in slide-in-from-top-2 duration-200">
-                              <div className="flex items-center space-x-2">
-                                 <label className="text-[10px] font-bold uppercase text-slate-500">Compounding Esc.</label>
-                                 <div className="flex items-center bg-white border border-slate-200 rounded px-2">
-                                    <input 
-                                       type="number" 
-                                       value={item.escalationRate || 0}
-                                       onChange={(e) => onUpdate(item.id, 'escalationRate', parseFloat(e.target.value))}
-                                       className="w-12 text-xs font-bold border-none focus:ring-0 p-1"
-                                    />
-                                    <span className="text-xs text-slate-400">% p.a</span>
-                                 </div>
-                              </div>
+                     <tr className="bg-slate-50 border-b border-slate-100 shadow-inner">
+                        <td colSpan={11} className="px-4 py-4">
+                           <div className="flex gap-8 animate-in slide-in-from-top-2 duration-200">
                               
-                              {item.method === DistributionMethod.S_CURVE && (
-                                 <div className="flex items-center space-x-2">
-                                    <label className="text-[10px] font-bold uppercase text-slate-500">S-Curve Steepness (k)</label>
-                                    <input 
-                                       type="range" 
-                                       min="5" max="20" step="1"
-                                       value={item.sCurveSteepness || 10}
-                                       onChange={(e) => onUpdate(item.id, 'sCurveSteepness', parseFloat(e.target.value))}
-                                       className="w-24 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer"
-                                    />
-                                    <span className="text-xs font-bold w-6">{item.sCurveSteepness || 10}</span>
-                                 </div>
-                              )}
+                              {/* Left: Settings Controls */}
+                              <div className="flex-1 space-y-6">
+                                  <div className="flex items-center space-x-2">
+                                     <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-400">
+                                       <i className="fa-solid fa-sliders"></i>
+                                     </div>
+                                     <h4 className="text-xs font-bold text-slate-700 uppercase">Advanced Distribution</h4>
+                                  </div>
 
-                              {item.method === DistributionMethod.MILESTONE && (
-                                 <div className="flex items-center space-x-2 flex-1">
-                                    <label className="text-[10px] font-bold uppercase text-slate-500">Milestone Profile</label>
-                                    <input 
-                                       type="text" 
-                                       placeholder="Format: Mo:%, Mo:% (e.g., 1:10, 6:40, 12:50)"
-                                       defaultValue={getMilestoneString(item.milestones)}
-                                       onBlur={(e) => handleMilestoneChange(item.id, e.target.value)}
-                                       className="flex-1 bg-white border border-slate-200 rounded px-3 py-1 text-xs mono focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
-                                    />
-                                 </div>
-                              )}
+                                  <div className="grid grid-cols-2 gap-6">
+                                    <div className="space-y-2">
+                                       <label className="text-[10px] font-bold uppercase text-slate-500">Compounding Escalation</label>
+                                       <div className="flex items-center bg-white border border-slate-200 rounded px-2 w-32 shadow-sm">
+                                          <input 
+                                             type="number" 
+                                             value={item.escalationRate || 0}
+                                             onChange={(e) => onUpdate(item.id, 'escalationRate', parseFloat(e.target.value))}
+                                             className="w-full text-xs font-bold border-none focus:ring-0 p-1.5"
+                                          />
+                                          <span className="text-xs text-slate-400 font-bold px-1">%</span>
+                                       </div>
+                                       <p className="text-[9px] text-slate-400">Applies annually, compounded monthly.</p>
+                                    </div>
+                                    
+                                    {item.method === DistributionMethod.S_CURVE && (
+                                       <div className="space-y-2">
+                                          <label className="text-[10px] font-bold uppercase text-slate-500">S-Curve Steepness (k)</label>
+                                          <div className="flex items-center space-x-3">
+                                            <input 
+                                               type="range" 
+                                               min="5" max="20" step="1"
+                                               value={item.sCurveSteepness || 10}
+                                               onChange={(e) => onUpdate(item.id, 'sCurveSteepness', parseFloat(e.target.value))}
+                                               className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                                            />
+                                            <span className="text-xs font-bold w-6 text-right text-slate-700">{item.sCurveSteepness || 10}</span>
+                                          </div>
+                                       </div>
+                                    )}
+
+                                    {item.method === DistributionMethod.MILESTONE && (
+                                       <div className="col-span-2 space-y-2">
+                                          <label className="text-[10px] font-bold uppercase text-slate-500">Milestone Profile</label>
+                                          <input 
+                                             type="text" 
+                                             placeholder="Format: Mo:%, Mo:% (e.g., 1:10, 6:40, 12:50)"
+                                             defaultValue={getMilestoneString(item.milestones)}
+                                             onBlur={(e) => handleMilestoneChange(item.id, e.target.value)}
+                                             className="w-full bg-white border border-slate-200 rounded px-3 py-2 text-xs mono focus:ring-2 focus:ring-blue-100 focus:border-blue-400 shadow-sm"
+                                          />
+                                          <p className="text-[9px] text-slate-400">Comma-separated Month:Percent pairs. Month is relative to start.</p>
+                                       </div>
+                                    )}
+                                  </div>
+                              </div>
+
+                              {/* Right: Phasing Chart */}
+                              <div className="w-[400px]">
+                                 <PhasingChart 
+                                    item={item} 
+                                    settings={settings} 
+                                    constructionTotal={constructionTotal} 
+                                    totalRevenue={estimatedRevenue}
+                                 />
+                              </div>
+
                            </div>
                         </td>
                      </tr>

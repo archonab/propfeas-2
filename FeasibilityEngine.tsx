@@ -1,23 +1,41 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { INITIAL_COSTS, INITIAL_REVENUE, INITIAL_SETTINGS } from './constants';
-import { FeasibilitySettings, LineItem, RevenueItem, CostCategory, DistributionMethod, InputType, ScenarioStatus } from './types';
+import { FeasibilitySettings, LineItem, RevenueItem, CostCategory, DistributionMethod, InputType, ScenarioStatus, GstTreatment } from './types';
 import { FinanceEngine } from './services/financeEngine';
 import { SolverService } from './services/solverService';
 import { SensitivityMatrix } from './SensitivityMatrix';
 import { FeasibilityInputGrid } from './FeasibilityInputGrid';
 import { FeasibilityReport } from './FeasibilityReport';
 import { FinanceSettings } from './FinanceSettings';
+import { SiteSetup } from './SiteSetup';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Legend } from 'recharts';
+
+// Missing components definitions
+const KPITile = ({ label, val, color }: { label: string, val: string, color: string }) => (
+  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between h-24">
+     <p className={`text-2xl font-black ${color} tracking-tight`}>{val}</p>
+     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{label}</p>
+  </div>
+);
+
+const ControlItem = ({ label, val }: { label: string, val: string }) => (
+  <div className="flex justify-between items-center text-xs mb-2 last:mb-0">
+     <span className="text-slate-500 font-medium">{label}</span>
+     <span className="font-bold text-slate-700">{val}</span>
+  </div>
+);
 
 interface Props {
   projectName: string;
   isEditable?: boolean;
   onPromote?: () => void;
+  onChange?: (settings: FeasibilitySettings) => void;
 }
 
-export const FeasibilityEngine: React.FC<Props> = ({ projectName, isEditable = true, onPromote }) => {
-  const [activeTab, setActiveTab] = useState('summary');
+export const FeasibilityEngine: React.FC<Props> = ({ projectName, isEditable = true, onPromote, onChange }) => {
+  // Default to 'site' tab for Site-First workflow
+  const [activeTab, setActiveTab] = useState('site');
   const [settings, setSettings] = useState<FeasibilitySettings>({ ...INITIAL_SETTINGS, projectName });
   const [costs, setCosts] = useState<LineItem[]>(INITIAL_COSTS);
   const [revenues, setRevenues] = useState<RevenueItem[]>(INITIAL_REVENUE);
@@ -26,6 +44,13 @@ export const FeasibilityEngine: React.FC<Props> = ({ projectName, isEditable = t
   const [solveTarget, setSolveTarget] = useState<number>(20);
   const [solveType, setSolveType] = useState<'margin' | 'irr'>('margin');
   const [isSolving, setIsSolving] = useState(false);
+
+  // Sync internal state changes to parent (if onChange provided)
+  useEffect(() => {
+    if (onChange) {
+      onChange(settings);
+    }
+  }, [settings, onChange]);
 
   const cashflow = useMemo(() => FinanceEngine.calculateMonthlyCashflow(settings, costs, revenues), [settings, costs, revenues]);
 
@@ -83,7 +108,7 @@ export const FeasibilityEngine: React.FC<Props> = ({ projectName, isEditable = t
       span: 12,
       method: DistributionMethod.LINEAR,
       escalationRate: 0,
-      isTaxable: true
+      gstTreatment: GstTreatment.TAXABLE
     };
     setCosts([...costs, newItem]);
   };
@@ -97,7 +122,6 @@ export const FeasibilityEngine: React.FC<Props> = ({ projectName, isEditable = t
     if (!isEditable) return;
     setIsSolving(true);
     
-    // Small timeout to allow UI to render loading state
     setTimeout(() => {
       try {
         const result = SolverService.solveForResidualLandValue(
@@ -108,7 +132,6 @@ export const FeasibilityEngine: React.FC<Props> = ({ projectName, isEditable = t
           revenues
         );
         
-        // Update Land Value
         let newCosts = costs.map(c => {
           if (c.category === CostCategory.LAND) {
             return { ...c, amount: result.landValue };
@@ -116,7 +139,6 @@ export const FeasibilityEngine: React.FC<Props> = ({ projectName, isEditable = t
           return c;
         });
 
-        // Update Stamp Duty if exists
         const dutyIndex = newCosts.findIndex(c => 
           c.category === CostCategory.STATUTORY && 
           (c.description.toLowerCase().includes('duty') || c.description.toLowerCase().includes('stamp'))
@@ -136,19 +158,27 @@ export const FeasibilityEngine: React.FC<Props> = ({ projectName, isEditable = t
     }, 100);
   };
 
+  const navTabs = [
+    { id: 'site', label: 'Site Context', icon: 'fa-map-location-dot' },
+    { id: 'summary', label: 'Dashboard', icon: 'fa-chart-simple' },
+    { id: 'inputs', label: 'Inputs & Assumptions', icon: 'fa-sliders' },
+    { id: 'reports', label: 'Formal Reports', icon: 'fa-file-pdf' }
+  ];
+
   return (
     <div className="flex flex-col space-y-6">
       <div className="flex justify-between items-center no-print">
         <nav className="flex space-x-1 bg-slate-100 p-1 rounded-lg">
-          {['summary', 'inputs', 'reports'].map(tab => (
+          {navTabs.map(tab => (
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase tracking-wider transition-all ${
-                activeTab === tab ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-4 py-2 rounded-md text-xs font-bold uppercase tracking-wider transition-all flex items-center space-x-2 ${
+                activeTab === tab.id ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
               }`}
             >
-              {tab}
+              <i className={`fa-solid ${tab.icon}`}></i>
+              <span>{tab.label}</span>
             </button>
           ))}
         </nav>
@@ -163,8 +193,27 @@ export const FeasibilityEngine: React.FC<Props> = ({ projectName, isEditable = t
       </div>
 
       <div className="flex-1">
+        {/* Replaced Project Name header with Site Address display logic in tabs or handled by SiteSetup */}
+        
+        {activeTab === 'site' && (
+           <SiteSetup settings={settings} onUpdate={setSettings} />
+        )}
+
         {activeTab === 'summary' && (
-          <div className="space-y-6">
+          <div className="space-y-6 animate-in fade-in duration-300">
+            {/* Header displaying canonical Address */}
+            <div className="flex items-baseline justify-between border-b border-slate-200 pb-4 mb-4">
+               <div>
+                  <h2 className="text-2xl font-black text-slate-800 tracking-tight">{settings.site.address || "New Site Feasibility"}</h2>
+                  <p className="text-sm text-slate-500 font-bold">{settings.site.zoning || "No Zoning"} • {settings.site.lga || "No Council"} • {settings.site.landArea} sqm</p>
+               </div>
+               <div className="text-right">
+                  <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${stats.margin > 15 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                     {stats.margin.toFixed(2)}% Margin
+                  </span>
+               </div>
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2 space-y-6">
                  <div className="grid grid-cols-4 gap-4">
@@ -319,17 +368,3 @@ export const FeasibilityEngine: React.FC<Props> = ({ projectName, isEditable = t
     </div>
   );
 };
-
-const KPITile = ({ label, val, color }: { label: string, val: string, color: string }) => (
-  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-center">
-    <p className={`text-2xl font-black ${color}`}>{val}</p>
-    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{label}</p>
-  </div>
-);
-
-const ControlItem = ({ label, val }: { label: string, val: string }) => (
-  <div className="flex justify-between items-center text-xs">
-    <span className="font-bold text-slate-500 uppercase">{label}</span>
-    <span className="font-mono font-bold text-slate-700">{val}</span>
-  </div>
-);

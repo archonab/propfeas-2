@@ -1,6 +1,6 @@
 
 import React, { useMemo } from 'react';
-import { CostCategory, DistributionMethod, InputType, LineItem } from './types';
+import { CostCategory, DistributionMethod, InputType, LineItem, GstTreatment } from './types';
 
 interface Props {
   landValue: number;
@@ -50,7 +50,7 @@ export const VictorianInputs: React.FC<Props> = ({ landValue, developmentCost, o
         span: 1,
         method: DistributionMethod.UPFRONT,
         escalationRate: 0,
-        isTaxable: false
+        gstTreatment: GstTreatment.GST_FREE // Statutory taxes are GST Free
       },
       {
         id: 'VIC-POS',
@@ -63,7 +63,7 @@ export const VictorianInputs: React.FC<Props> = ({ landValue, developmentCost, o
         span: 1,
         method: DistributionMethod.UPFRONT,
         escalationRate: 0,
-        isTaxable: false
+        gstTreatment: GstTreatment.GST_FREE
       },
       {
         id: 'VIC-MPL',
@@ -76,7 +76,7 @@ export const VictorianInputs: React.FC<Props> = ({ landValue, developmentCost, o
         span: 1,
         method: DistributionMethod.UPFRONT,
         escalationRate: 0,
-        isTaxable: false
+        gstTreatment: GstTreatment.GST_FREE
       }
     ];
     onSync(items);

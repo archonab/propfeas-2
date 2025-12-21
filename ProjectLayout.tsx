@@ -1,20 +1,19 @@
 
 import React, { useState } from 'react';
-import { Project, ProjectModule } from './types';
+import { SiteLead, ProjectModule } from './types';
 import { FeasibilityModule } from './FeasibilityModule';
 
 interface Props {
-  project: Project;
+  site: SiteLead;
   onBack: () => void;
 }
 
-export const ProjectLayout: React.FC<Props> = ({ project, onBack }) => {
+export const ProjectLayout: React.FC<Props> = ({ site, onBack }) => {
   const [activeModule, setActiveModule] = useState<ProjectModule>('feasibility');
 
   const menuItems: { id: ProjectModule; label: string; icon: string }[] = [
     { id: 'overview', label: 'Overview', icon: 'fa-solid fa-house' },
     { id: 'feasibility', label: 'Feasibility', icon: 'fa-solid fa-calculator' },
-    // Fix: Updated 'construction' to 'tasks' to match the ProjectModule type defined in types.ts
     { id: 'tasks', label: 'Construction (PM)', icon: 'fa-solid fa-helmet-safety' },
     { id: 'sales', label: 'Sales & Marketing', icon: 'fa-solid fa-tags' }
   ];
@@ -28,10 +27,10 @@ export const ProjectLayout: React.FC<Props> = ({ project, onBack }) => {
             <i className="fa-solid fa-chevron-left mr-2"></i> Back to Portfolio
           </button>
           <div className="flex items-center space-x-3">
-            <img src={project.thumbnail} className="w-10 h-10 rounded object-cover border border-slate-700" alt={project.name} />
+            <img src={site.thumbnail} className="w-10 h-10 rounded object-cover border border-slate-700" alt={site.name} />
             <div className="overflow-hidden">
-              <h2 className="text-sm font-bold text-white truncate leading-tight">{project.name}</h2>
-              <p className="text-[10px] truncate text-slate-500">{project.address}</p>
+              <h2 className="text-sm font-bold text-white truncate leading-tight">{site.name}</h2>
+              <p className="text-[10px] truncate text-slate-500">{site.dna.address}</p>
             </div>
           </div>
         </div>
@@ -55,7 +54,7 @@ export const ProjectLayout: React.FC<Props> = ({ project, onBack }) => {
           <div className="text-[9px] font-bold text-slate-500 uppercase mb-2 tracking-widest">Project Stats</div>
           <div className="flex justify-between items-center mb-1">
             <span className="text-[10px]">Status</span>
-            <span className="text-[10px] text-emerald-400 font-bold">{project.status}</span>
+            <span className="text-[10px] text-emerald-400 font-bold">{site.status}</span>
           </div>
           <div className="w-full bg-slate-700 h-1 rounded-full mt-2 overflow-hidden">
             <div className="bg-blue-500 h-full w-[35%]"></div>
@@ -69,7 +68,7 @@ export const ProjectLayout: React.FC<Props> = ({ project, onBack }) => {
           <div className="flex justify-between items-end">
             <div>
               <h1 className="text-2xl font-bold text-slate-800">{menuItems.find(i => i.id === activeModule)?.label}</h1>
-              <p className="text-sm text-slate-500 mt-1">{project.name} • Internal Module</p>
+              <p className="text-sm text-slate-500 mt-1">{site.name} • Internal Module</p>
             </div>
             <div className="flex items-center space-x-4">
                <div className="flex -space-x-2">
@@ -84,7 +83,7 @@ export const ProjectLayout: React.FC<Props> = ({ project, onBack }) => {
           </div>
         </header>
 
-        {activeModule === 'feasibility' && <FeasibilityModule projectName={project.name} />}
+        {activeModule === 'feasibility' && <FeasibilityModule projectName={site.name} />}
         
         {activeModule === 'overview' && (
           <div className="bg-white p-12 rounded-2xl border border-dashed border-slate-300 text-center animate-in zoom-in-95 duration-500">
@@ -94,7 +93,6 @@ export const ProjectLayout: React.FC<Props> = ({ project, onBack }) => {
           </div>
         )}
 
-        {/* Fix: Updated module check from 'construction' to 'tasks' */}
         {activeModule === 'tasks' && (
           <div className="bg-white p-12 rounded-2xl border border-dashed border-slate-300 text-center animate-in zoom-in-95 duration-500">
             <i className="fa-solid fa-helmet-safety text-4xl text-slate-200 mb-4 block"></i>

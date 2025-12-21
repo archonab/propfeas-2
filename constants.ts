@@ -1,85 +1,137 @@
 
-import { CostCategory, DistributionMethod, FeasibilitySettings, LineItem, RevenueItem, InputType, ScenarioStatus, Project, EquityMode, InterestRateMode, FeeBase, DebtLimitMethod } from './types';
+import { CostCategory, DistributionMethod, FeasibilitySettings, LineItem, RevenueItem, InputType, ScenarioStatus, SiteLead, EquityMode, InterestRateMode, FeeBase, DebtLimitMethod, GstTreatment } from './types';
 
-export const MOCK_PROJECTS: Project[] = [
-  // --- Active Portfolio ---
+export const MOCK_SITES: SiteLead[] = [
+  // --- Active Portfolio (Acquired) ---
   {
     id: 'p1',
     code: 'ACT-SYD-001',
     name: "Kings Hill Development",
-    address: "Kings Hill, NSW",
     thumbnail: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=400&h=250&auto=format&fit=crop",
-    status: 'active',
+    status: 'Acquired',
     stage: 'Planning',
-    targetFinish: '30 Jun 2026',
     pm: 'Sarah Mitchell',
     openTasks: 14,
     openRFIs: 3,
-    conditions: 8
+    conditions: 8,
+    dna: {
+      address: "Kings Hill, NSW",
+      landArea: 1250,
+      lga: "Sydney City Council",
+      zoning: "R4 High Density",
+      overlays: ["Heritage Facade"],
+      agent: { name: "Tom Ford", company: "Ray White Commercial" },
+      vendor: { name: "Private Holding Co." },
+      milestones: { acquisitionDate: "2023-01-15", settlementDate: "2023-06-30" }
+    }
   },
   {
     id: 'p2',
     code: 'ACT-MEL-042',
     name: "Parkside Estate",
-    address: "St Kilda, VIC",
     thumbnail: "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?q=80&w=400&h=250&auto=format&fit=crop",
-    status: 'active',
+    status: 'Acquired',
     stage: 'Construction',
-    targetFinish: '15 Dec 2025',
     pm: 'John Davis',
     openTasks: 27,
     openRFIs: 5,
-    conditions: 2
+    conditions: 2,
+    dna: {
+      address: "St Kilda, VIC",
+      landArea: 840,
+      lga: "Port Phillip",
+      zoning: "Mixed Use",
+      overlays: [],
+      agent: { name: "Emily Blunt", company: "JLL" },
+      vendor: { name: "InvestCorp" },
+      milestones: { acquisitionDate: "2022-08-10" }
+    }
   },
   // --- Prospects (Pipeline) ---
   {
     id: 'prospect-1',
     code: 'LEAD-089',
     name: "142 O'Riordan St",
-    address: "Mascot, NSW",
     thumbnail: "https://images.unsplash.com/photo-1582407947304-fd86f028f716?q=80&w=400&h=250&auto=format&fit=crop",
-    status: 'prospect',
+    status: 'Prospect',
     stage: 'Analysis',
-    targetFinish: 'TBD',
     pm: 'Unassigned',
     openTasks: 0,
     openRFIs: 0,
-    conditions: 0
+    conditions: 0,
+    dna: {
+      address: "Mascot, NSW",
+      landArea: 2100,
+      lga: "Bayside Council",
+      zoning: "B4 Mixed Use",
+      overlays: ["Airport Height Ops"],
+      agent: { name: "Pending", company: "CBRE" },
+      vendor: { name: "Logistics REIT" },
+      milestones: {}
+    }
   },
   {
     id: 'prospect-2',
     code: 'LEAD-092',
     name: "The Old Mill Site",
-    address: "Bowden, SA",
     thumbnail: "https://images.unsplash.com/photo-1516156008625-3a9d60da923c?q=80&w=400&h=250&auto=format&fit=crop",
-    status: 'prospect',
+    status: 'Prospect',
     stage: 'Analysis',
-    targetFinish: 'TBD',
     pm: 'Unassigned',
     openTasks: 0,
     openRFIs: 0,
-    conditions: 0
+    conditions: 0,
+    dna: {
+      address: "Bowden, SA",
+      landArea: 4500,
+      lga: "Charles Sturt",
+      zoning: "Urban Corridor",
+      overlays: ["Contamination"],
+      agent: { name: "Local Agent", company: "Harris RE" },
+      vendor: { name: "State Govt" },
+      milestones: {}
+    }
   },
   {
     id: 'prospect-3',
     code: 'LEAD-104',
     name: "Coastal Infill Opp",
-    address: "Gold Coast, QLD",
     thumbnail: "https://images.unsplash.com/photo-1497366216548-37526070297c?q=80&w=400&h=250&auto=format&fit=crop",
-    status: 'prospect',
+    status: 'Due Diligence',
     stage: 'Acquisition',
-    targetFinish: '31 Oct 2025',
     pm: 'Emma Wilson',
     openTasks: 2,
     openRFIs: 0,
-    conditions: 0
+    conditions: 0,
+    dna: {
+      address: "Gold Coast, QLD",
+      landArea: 600,
+      lga: "Gold Coast City",
+      zoning: "High Density Res",
+      overlays: [],
+      agent: { name: "Mike Ross", company: "Colliers" },
+      vendor: { name: "Private" },
+      milestones: { acquisitionDate: "2024-05-01" }
+    }
   }
 ];
 
 export const INITIAL_SETTINGS: FeasibilitySettings = {
-  projectName: "New Scenario",
+  projectName: "Scenario A: Base Case",
   description: "Standard residential feasibility",
-  location: "Sydney, NSW",
+  
+  // Site DNA (Default)
+  site: {
+    address: "New Site, NSW",
+    landArea: 1000,
+    lga: "Pending",
+    zoning: "Pending",
+    overlays: [],
+    agent: { name: "", company: "" },
+    vendor: { name: "" },
+    milestones: {}
+  },
+
   startDate: "2024-06-01",
   durationMonths: 24,
   discountRate: 15, // Project Discount Rate
@@ -132,7 +184,7 @@ export const INITIAL_COSTS: LineItem[] = [
     span: 1,
     method: DistributionMethod.UPFRONT,
     escalationRate: 0,
-    isTaxable: false
+    gstTreatment: GstTreatment.MARGIN_SCHEME
   },
   {
     id: '2',
@@ -145,7 +197,7 @@ export const INITIAL_COSTS: LineItem[] = [
     span: 12,
     method: DistributionMethod.S_CURVE,
     escalationRate: 3,
-    isTaxable: true
+    gstTreatment: GstTreatment.TAXABLE
   }
 ];
 

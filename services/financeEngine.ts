@@ -2,11 +2,23 @@
 import Decimal from 'decimal.js';
 import { 
   LineItem, RevenueItem, FeasibilitySettings, MonthlyFlow, DistributionMethod, 
-  InputType, CostCategory, DebtLimitMethod, EquityMode, InterestRateMode, FeeBase, CapitalTier
+  InputType, CostCategory, DebtLimitMethod, EquityMode, InterestRateMode, FeeBase, CapitalTier, GstTreatment
 } from '../types';
 
+// Helper: Error Function for Bell Curve
+const erf = (x: number) => {
+  var sign = (x >= 0) ? 1 : -1;
+  x = Math.abs(x);
+  var a1 =  0.254829592, a2 = -0.284496736, a3 =  1.421413741, a4 = -1.453152027, a5 =  1.061405429, p  =  0.3275911;
+  var t = 1.0 / (1.0 + p*x);
+  var y = 1.0 - (((((a5*t + a4)*t) + a3)*t + a2)*t + a1)*t*Math.exp(-x*x);
+  return sign*y;
+};
+
+// --- EXPORTED HELPERS (Used by Engine & UI Charts) ---
+
 // Helper: Calculate Line Item Nominal Total
-const calculateLineItemTotal = (item: LineItem, settings: FeasibilitySettings, constructionSum: number, totalRevenue: number): number => {
+export const calculateLineItemTotal = (item: LineItem, settings: FeasibilitySettings, constructionSum: number, totalRevenue: number): number => {
   const val = new Decimal(item.amount);
   switch (item.inputType) {
     case InputType.PCT_REVENUE:
@@ -21,47 +33,19 @@ const calculateLineItemTotal = (item: LineItem, settings: FeasibilitySettings, c
   }
 };
 
-const getMonthLabel = (startDate: string, offset: number): string => {
+export const getMonthLabel = (startDate: string, offset: number): string => {
   const d = new Date(startDate);
   d.setMonth(d.getMonth() + offset);
   return d.toLocaleString('default', { month: 'short', year: '2-digit' });
 };
 
-// Helper: Get Interest Rate for a specific month (Single vs Variable)
-const getMonthlyInterestRate = (tier: CapitalTier, currentMonth: number): Decimal => {
-  let annualRate = 0;
-  
-  if (tier.rateMode === InterestRateMode.SINGLE) {
-    annualRate = tier.interestRate;
-  } else {
-    // Variable: Find the latest rate that is active for this month
-    const activeRate = [...tier.variableRates]
-      .sort((a, b) => a.month - b.month)
-      .reverse()
-      .find(r => r.month <= currentMonth);
-      
-    annualRate = activeRate ? activeRate.rate : tier.interestRate;
-  }
-
-  return new Decimal(annualRate).dividedBy(100).dividedBy(12);
-};
-
 // Distribution Curve Logic (Standard S-Curve etc)
-const distributeValue = (total: number, currentMonth: number, item: LineItem): Decimal => {
+export const distributeValue = (total: number, currentMonth: number, item: LineItem): Decimal => {
   const totalDec = new Decimal(total);
   const span = item.span;
   const method = item.method;
   
   if (span <= 0) return new Decimal(0);
-
-  const erf = (x: number) => {
-    var sign = (x >= 0) ? 1 : -1;
-    x = Math.abs(x);
-    var a1 =  0.254829592, a2 = -0.284496736, a3 =  1.421413741, a4 = -1.453152027, a5 =  1.061405429, p  =  0.3275911;
-    var t = 1.0 / (1.0 + p*x);
-    var y = 1.0 - (((((a5*t + a4)*t) + a3)*t + a2)*t + a1)*t*Math.exp(-x*x);
-    return sign*y;
-  };
 
   switch (method) {
     case DistributionMethod.S_CURVE: {
@@ -112,6 +96,27 @@ const distributeValue = (total: number, currentMonth: number, item: LineItem): D
   }
 };
 
+// --- INTERNAL ENGINE HELPERS ---
+
+// Helper: Get Interest Rate for a specific month (Single vs Variable)
+const getMonthlyInterestRate = (tier: CapitalTier, currentMonth: number): Decimal => {
+  let annualRate = 0;
+  
+  if (tier.rateMode === InterestRateMode.SINGLE) {
+    annualRate = tier.interestRate;
+  } else {
+    // Variable: Find the latest rate that is active for this month
+    const activeRate = [...tier.variableRates]
+      .sort((a, b) => a.month - b.month)
+      .reverse()
+      .find(r => r.month <= currentMonth);
+      
+    annualRate = activeRate ? activeRate.rate : tier.interestRate;
+  }
+
+  return new Decimal(annualRate).dividedBy(100).dividedBy(12);
+};
+
 /**
  * CORE CASHFLOW ENGINE
  * Updated for Feastudy 7.0 parity
@@ -142,7 +147,8 @@ const calculateMonthlyCashflow = (
     .reduce((acc, c) => acc.plus(c.amount), new Decimal(0)).toNumber();
 
   const marginLandBase = costs
-    .filter(c => c.category === CostCategory.LAND && !c.isTaxable)
+    // Logic check: Margin Base usually includes Land that was acquired GST-Free or via Margin Scheme
+    .filter(c => c.category === CostCategory.LAND && (c.gstTreatment === GstTreatment.GST_FREE || c.gstTreatment === GstTreatment.MARGIN_SCHEME))
     .reduce((acc, c) => acc.plus(calculateLineItemTotal(c, settings, constructionSum, totalRevenue)), new Decimal(0));
 
   // --- 2. Establishment Fees & Limits ---
@@ -184,13 +190,14 @@ const calculateMonthlyCashflow = (
       equityPool = equityConfig.instalments.reduce((acc, i) => acc.plus(i.amount), new Decimal(0));
       break;
     case EquityMode.PCT_MONTHLY:
-      // Pari Passu - no upfront pool, calculated monthly on fly
-      equityPool = new Decimal(0); 
+      // Pari Passu - We simulate a large pool, but the restriction happens per month
+      equityPool = new Decimal(999999999999); 
       break;
   }
   
-  if (equityConfig.mode !== EquityMode.PCT_MONTHLY && equityConfig.mode !== EquityMode.INSTALMENTS) {
-    totalEquityCommitted = equityPool; // We assume this is available to draw from
+  // For fixed pool modes, we track availability
+  if (equityConfig.mode !== EquityMode.PCT_MONTHLY) {
+    totalEquityCommitted = equityPool; 
   }
 
   let cumulativeEquityUsed = new Decimal(0);
@@ -200,8 +207,6 @@ const calculateMonthlyCashflow = (
   let pendingITCRefund = new Decimal(0); // BAS Lag
 
   // Apply Establishment Fees to Balance at Month 0 (Simulated)
-  // Usually fees are capitalized to loan on first draw, or paid by equity.
-  // For simplicity here, we track them as an initial "cost" that needs funding in Month 0 logic.
   let unpaidSeniorFee = seniorEstabFee;
   let unpaidMezzFee = mezzEstabFee;
 
@@ -228,7 +233,9 @@ const calculateMonthlyCashflow = (
         
         monthlyNetCost = monthlyNetCost.plus(monthlyEscalated);
 
-        if (cost.isTaxable) {
+        // GST Logic: Only add GST if TAXABLE. 
+        // GST Free, Input Taxed, Margin Scheme on cost side implies NO GST to pay/claim on the cashflow.
+        if (cost.gstTreatment === GstTreatment.TAXABLE) {
           const gstRate = (settings.gstRate || 10) / 100;
           monthlyGSTPaid = monthlyGSTPaid.plus(monthlyEscalated.times(gstRate));
         }
@@ -248,19 +255,22 @@ const calculateMonthlyCashflow = (
         const commission = revTotal.times(rev.commissionRate).dividedBy(100);
         let gstLiability = new Decimal(0);
         
-        if (settings.useMarginScheme) {
-          const totalUnits = settings.totalUnits || 1;
-          const allocatedLandBase = marginLandBase.times(rev.units).dividedBy(totalUnits);
-          const margin = revTotal.minus(allocatedLandBase);
-          if (margin.gt(0)) gstLiability = margin.dividedBy(11);
-        } else {
-          gstLiability = revTotal.dividedBy(11);
+        // Revenue GST Logic
+        if (rev.isTaxable) {
+          if (settings.useMarginScheme) {
+            const totalUnits = settings.totalUnits || 1;
+            const allocatedLandBase = marginLandBase.times(rev.units).dividedBy(totalUnits);
+            const margin = revTotal.minus(allocatedLandBase);
+            if (margin.gt(0)) gstLiability = margin.dividedBy(11);
+          } else {
+            gstLiability = revTotal.dividedBy(11);
+          }
         }
         monthlyNetRevenue = monthlyNetRevenue.plus(revTotal.minus(commission).minus(gstLiability));
       }
     });
 
-    // B. Interest (Variable Rates)
+    // B. Interest Calculation
     const seniorRate = getMonthlyInterestRate(settings.capitalStack.senior, m);
     const mezzRate = getMonthlyInterestRate(settings.capitalStack.mezzanine, m);
     
@@ -276,7 +286,7 @@ const calculateMonthlyCashflow = (
     const interestSenior = seniorBalance.times(seniorRate).plus(seniorLineFee);
     const interestMezz = mezzBalance.times(mezzRate).plus(mezzLineFee);
 
-    // C. Surplus Interest (New in Feastudy 7)
+    // C. Surplus Interest
     const lendingRate = new Decimal(settings.capitalStack.surplusInterestRate || 0).dividedBy(100).dividedBy(12);
     const lendingInterestIncome = surplusBalance.times(lendingRate);
 
@@ -296,14 +306,11 @@ const calculateMonthlyCashflow = (
     }
 
     // E. Funding Waterfall
-    // Outflows: Costs + GST Paid + Serviced Interest
     const totalOutflow = monthlyNetCost.plus(monthlyGSTPaid).plus(financeFundingNeed);
-    // Inflows: Revenue + ITC Refund + Surplus Interest
     const totalInflow = monthlyNetRevenue.plus(pendingITCRefund).plus(lendingInterestIncome);
     
     pendingITCRefund = monthlyGSTPaid; // Refund next month
 
-    // Calculate Funding Need / Repayment Capacity
     const netPeriodCashflow = totalInflow.minus(totalOutflow);
     
     let fundingNeed = new Decimal(0);
@@ -311,7 +318,8 @@ const calculateMonthlyCashflow = (
 
     if (netPeriodCashflow.lt(0)) {
        fundingNeed = netPeriodCashflow.abs();
-       // Check if we have surplus cash to cover this first
+       
+       // Use Surplus first
        if (surplusBalance.gt(0)) {
          const fromSurplus = Decimal.min(surplusBalance, fundingNeed);
          surplusBalance = surplusBalance.minus(fromSurplus);
@@ -325,27 +333,31 @@ const calculateMonthlyCashflow = (
     let drawMezz = new Decimal(0);
     let drawSenior = new Decimal(0);
 
-    // --- EQUITY LOGIC (Modes) ---
+    // --- UPGRADED EQUITY LOGIC (Pari Passu & Phasing) ---
     if (fundingNeed.gt(0)) {
         if (equityConfig.mode === EquityMode.PCT_MONTHLY) {
-            // Pari Passu: Equity pays X% of the *outflow* this month
-            // Note: fundingNeed already nets off revenue. Pari passu usually applies to the gross cost bill.
-            // Simplified: Equity covers X% of the *deficit*.
-            const pct = new Decimal(equityConfig.percentageInput).dividedBy(100);
-            drawEquity = fundingNeed.times(pct);
-            fundingNeed = fundingNeed.minus(drawEquity);
+            // Pari Passu Mode:
+            // Developer must contribute X% of the deficit. 
+            // Debt covers the remainder.
+            const pariPassuPct = new Decimal(equityConfig.percentageInput).dividedBy(100);
+            const targetEquityDraw = fundingNeed.times(pariPassuPct);
+            
+            // Note: If we had a hard "Total Equity Cap" even for Pari Passu, we would check totalEquityCommitted here.
+            // Currently assuming "pay as you go" implies availability.
+            drawEquity = targetEquityDraw;
             cumulativeEquityUsed = cumulativeEquityUsed.plus(drawEquity);
             
+            // Determine remainder for debt
+            fundingNeed = fundingNeed.minus(drawEquity);
+
         } else if (equityConfig.mode === EquityMode.INSTALMENTS) {
              // Specific Injection Dates
              const injection = equityConfig.instalments.find(i => i.month === m);
              if (injection) {
-                 // Inject specifically this amount. If needed > injection, rest is debt. If injection > needed, surplus.
                  const amount = new Decimal(injection.amount);
-                 drawEquity = amount; // We draw it down regardless
+                 drawEquity = amount; 
                  cumulativeEquityUsed = cumulativeEquityUsed.plus(amount);
                  
-                 // If injection > need, add to surplus
                  if (amount.gte(fundingNeed)) {
                      const excess = amount.minus(fundingNeed);
                      surplusBalance = surplusBalance.plus(excess);
@@ -403,8 +415,7 @@ const calculateMonthlyCashflow = (
             mezzBalance = mezzBalance.minus(amount);
             repaymentCapacity = repaymentCapacity.minus(amount);
         }
-        // 3. Pay Equity (or retain as surplus?)
-        // Standard waterfall pays equity back.
+        // 3. Pay Equity (standard waterfall pays equity back last)
         if (repaymentCapacity.gt(0)) {
             repayEquity = repaymentCapacity;
         }
@@ -441,7 +452,7 @@ const calculateMonthlyCashflow = (
 const calculateReportStats = (settings: FeasibilitySettings, costs: LineItem[], revenues: RevenueItem[]) => {
   const totalRevenueGross = revenues.reduce((acc, rev) => acc + (rev.units * rev.pricePerUnit), 0);
   const fixedConstruction = costs.filter(c => c.category === CostCategory.CONSTRUCTION && c.inputType === InputType.FIXED).reduce((acc, c) => acc + c.amount, 0);
-  const landBaseForMargin = costs.filter(c => c.category === CostCategory.LAND && !c.isTaxable).reduce((acc, c) => acc + calculateLineItemTotal(c, settings, fixedConstruction, totalRevenueGross), 0);
+  const landBaseForMargin = costs.filter(c => c.category === CostCategory.LAND && (c.gstTreatment === GstTreatment.GST_FREE || c.gstTreatment === GstTreatment.MARGIN_SCHEME)).reduce((acc, c) => acc + calculateLineItemTotal(c, settings, fixedConstruction, totalRevenueGross), 0);
 
   let gstCollected = 0;
   if (settings.useMarginScheme) {
@@ -459,9 +470,9 @@ const calculateReportStats = (settings: FeasibilitySettings, costs: LineItem[], 
   costs.forEach(item => {
     const netAmount = calculateLineItemTotal(item, settings, fixedConstruction, totalRevenueGross);
     const gstRate = (settings.gstRate || 10) / 100;
-    const gst = item.isTaxable ? netAmount * gstRate : 0;
+    const gst = (item.gstTreatment === GstTreatment.TAXABLE) ? netAmount * gstRate : 0;
     const grossAmount = netAmount + gst;
-    if (item.isTaxable) totalItc += gst;
+    totalItc += gst;
     grossCostsByCategory[item.category] = (grossCostsByCategory[item.category] || 0) + grossAmount;
   });
 

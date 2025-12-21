@@ -1,12 +1,12 @@
 
 import React, { useState } from 'react';
-import { Project, ProjectModule, LineItem, CostCategory, RevenueItem } from './types';
+import { SiteLead, ProjectModule, LineItem, CostCategory, RevenueItem } from './types';
 import { FeasibilityEngine } from './FeasibilityEngine';
 import { ScenarioComparison, ScenarioData } from './ScenarioComparison';
 import { INITIAL_COSTS, INITIAL_REVENUE, INITIAL_SETTINGS } from './constants';
 
 interface Props {
-  project: Project;
+  site: SiteLead;
   onBack: () => void;
 }
 
@@ -22,7 +22,7 @@ const ProjectSidebarItem: React.FC<{ active: boolean; onClick: () => void; icon:
   </button>
 );
 
-export const ProjectDashboard: React.FC<Props> = ({ project, onBack }) => {
+export const ProjectDashboard: React.FC<Props> = ({ site, onBack }) => {
   const [activeModule, setActiveModule] = useState<ProjectModule | 'compare'>('overview');
 
   const navItems: { id: ProjectModule | 'compare'; label: string; icon: string }[] = [
@@ -35,22 +35,20 @@ export const ProjectDashboard: React.FC<Props> = ({ project, onBack }) => {
   ];
 
   // Mock Data Construction for "Compare" view
-  // In a real app, this would come from a Scenarios API
   const baselineScenario: ScenarioData = {
     id: 'base',
     name: 'Approved Baseline',
     isBaseline: true,
-    settings: { ...INITIAL_SETTINGS, projectName: project.name },
+    settings: { ...INITIAL_SETTINGS, projectName: site.name },
     costs: INITIAL_COSTS,
     revenues: INITIAL_REVENUE
   };
 
-  // Create an "Option B" scenario with higher costs but higher sales
   const optionBScenario: ScenarioData = {
     id: 'opt-b',
     name: 'High Spec Option',
     isBaseline: false,
-    settings: { ...INITIAL_SETTINGS, projectName: project.name },
+    settings: { ...INITIAL_SETTINGS, projectName: site.name },
     costs: INITIAL_COSTS.map(c => {
        if (c.category === CostCategory.CONSTRUCTION) {
          return { ...c, amount: c.amount * 1.15 }; // +15% Construction Cost
@@ -75,11 +73,11 @@ export const ProjectDashboard: React.FC<Props> = ({ project, onBack }) => {
           </button>
           <div className="flex items-center space-x-3">
              <div className="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden shrink-0">
-                <img src={project.thumbnail} className="w-full h-full object-cover" alt="" />
+                <img src={site.thumbnail} className="w-full h-full object-cover" alt="" />
              </div>
              <div className="overflow-hidden">
-                <h2 className="text-sm font-black text-slate-800 truncate leading-tight">{project.name}</h2>
-                <p className="text-[10px] text-slate-500 truncate">{project.address}</p>
+                <h2 className="text-sm font-black text-slate-800 truncate leading-tight">{site.name}</h2>
+                <p className="text-[10px] text-slate-500 truncate">{site.dna.address}</p>
              </div>
           </div>
         </div>
@@ -98,7 +96,7 @@ export const ProjectDashboard: React.FC<Props> = ({ project, onBack }) => {
 
         <div className="p-6 bg-white border-t border-slate-200">
            <div className="flex justify-between items-center mb-2">
-              <span className="text-[10px] font-bold text-slate-400 uppercase">Stage: {project.stage}</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase">Stage: {site.stage}</span>
               <span className="text-[10px] font-bold text-blue-600">42%</span>
            </div>
            <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden">
@@ -118,9 +116,9 @@ export const ProjectDashboard: React.FC<Props> = ({ project, onBack }) => {
                </header>
 
                <div className="grid grid-cols-4 gap-6 mb-10">
-                  <SummaryCard label="Open Tasks" val={project.openTasks} icon="fa-solid fa-list-check" color="text-slate-800" />
-                  <SummaryCard label="Open RFIs" val={project.openRFIs} icon="fa-solid fa-circle-question" color="text-amber-600" />
-                  <SummaryCard label="Conditions" val={project.conditions} icon="fa-solid fa-file-contract" color="text-blue-600" />
+                  <SummaryCard label="Open Tasks" val={site.openTasks} icon="fa-solid fa-list-check" color="text-slate-800" />
+                  <SummaryCard label="Open RFIs" val={site.openRFIs} icon="fa-solid fa-circle-question" color="text-amber-600" />
+                  <SummaryCard label="Conditions" val={site.conditions} icon="fa-solid fa-file-contract" color="text-blue-600" />
                   <SummaryCard label="Settled Units" val="8/20" icon="fa-solid fa-hand-holding-dollar" color="text-emerald-600" />
                </div>
 
@@ -150,7 +148,7 @@ export const ProjectDashboard: React.FC<Props> = ({ project, onBack }) => {
                     <i className="fa-solid fa-lock mr-2"></i> Read Only
                   </span>
                </header>
-               <FeasibilityEngine projectName={project.name} isEditable={false} />
+               <FeasibilityEngine projectName={site.name} isEditable={false} />
             </div>
           )}
           

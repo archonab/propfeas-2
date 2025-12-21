@@ -1,7 +1,6 @@
 
 import React from 'react';
 import { FeasibilitySettings, DebtLimitMethod } from './types';
-import { Landmark, Coins, Layers, Info, CheckCircle2, ShieldAlert } from 'lucide-react';
 
 interface Props {
   settings: FeasibilitySettings;
@@ -16,7 +15,7 @@ const InputGroup = ({ label, children, tooltip }: { label: string, children?: Re
       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">{label}</label>
       {tooltip && (
         <div className="ml-1 cursor-help relative group/tip">
-          <Info size={10} className="text-slate-400" />
+          <i className="fa-solid fa-circle-info text-slate-400 text-[10px]"></i>
           <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-slate-800 text-white text-[10px] p-2 rounded opacity-0 group-hover/tip:opacity-100 transition-opacity pointer-events-none z-50">
             {tooltip}
             <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-800"></div>
@@ -60,7 +59,7 @@ export const FinancingLayers: React.FC<Props> = ({ settings, onUpdate, peakEquit
         <div className="bg-slate-900 p-4 border-b border-slate-800 flex justify-between items-center text-white">
           <div className="flex items-center space-x-3">
             <div className="w-8 h-8 rounded bg-slate-800 flex items-center justify-center text-blue-400">
-               <Landmark size={18} />
+               <i className="fa-solid fa-landmark text-lg"></i>
             </div>
             <div>
                <h3 className="font-bold text-sm leading-tight">Senior Debt</h3>
@@ -145,12 +144,12 @@ export const FinancingLayers: React.FC<Props> = ({ settings, onUpdate, peakEquit
         <div className="bg-white p-4 border-b border-slate-100 flex justify-between items-center">
           <div className="flex items-center space-x-3">
             <div className="w-8 h-8 rounded bg-indigo-50 flex items-center justify-center text-indigo-600 border border-indigo-100">
-               <Layers size={18} />
+               <i className="fa-solid fa-layer-group text-lg"></i>
             </div>
             <div>
                <h3 className="font-bold text-sm text-slate-800 leading-tight">Mezzanine Debt</h3>
                <p className="text-[10px] text-indigo-600 font-medium flex items-center">
-                  <ShieldAlert size={10} className="mr-1" /> Subordinated
+                  <i className="fa-solid fa-shield-halved mr-1"></i> Subordinated
                </p>
             </div>
           </div>
@@ -216,7 +215,7 @@ export const FinancingLayers: React.FC<Props> = ({ settings, onUpdate, peakEquit
         <div className="bg-white p-4 border-b border-slate-100 flex justify-between items-center">
           <div className="flex items-center space-x-3">
             <div className="w-8 h-8 rounded bg-emerald-50 flex items-center justify-center text-emerald-600 border border-emerald-100">
-               <Coins size={18} />
+               <i className="fa-solid fa-coins text-lg"></i>
             </div>
             <div>
                <h3 className="font-bold text-sm text-slate-800 leading-tight">Developer Equity</h3>
@@ -253,7 +252,7 @@ export const FinancingLayers: React.FC<Props> = ({ settings, onUpdate, peakEquit
                  <span className="text-slate-500 font-medium">Hurdle Rate (IRR)</span>
                  <div className="flex items-center space-x-2">
                     <span className="font-bold text-slate-700">{settings.discountRate}%</span>
-                    <CheckCircle2 size={12} className="text-emerald-500" />
+                    <i className="fa-solid fa-circle-check text-emerald-500"></i>
                  </div>
               </div>
               <p className="text-[10px] text-slate-400 italic text-center border-t border-slate-100 pt-3">

@@ -1,0 +1,274 @@
+
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
+import { Site, FeasibilityScenario, CostCategory } from "../types";
+import { FinanceEngine } from "./financeEngine";
+
+// --- HELPERS ---
+const formatCurrency = (val: number) => {
+  return `$${val.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+};
+
+const formatDate = (dateString: string) => {
+  return new Date(dateString).toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' });
+};
+
+// Helper to load image as base64
+const getBase64ImageFromUrl = async (imageUrl: string): Promise<string | null> => {
+  try {
+    const res = await fetch(imageUrl);
+    const blob = await res.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.warn("Failed to load image for PDF", error);
+    return null;
+  }
+};
+
+export class PdfService {
+  
+  static async generateExecutiveSummary(site: Site, scenario: FeasibilityScenario, stats: any) {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.width;
+    const pageHeight = doc.internal.pageSize.height;
+    
+    // Brand Colors (Indigo-600)
+    const brandColor = "#4f46e5";
+    const secondaryColor = "#1e293b"; // Slate-800
+    const lightBg = "#f8fafc"; // Slate-50
+
+    // --- PAGE 1: DEAL SHEET ---
+    
+    // 1. Header
+    doc.setFillColor(brandColor);
+    doc.rect(0, 0, pageWidth, 20, "F");
+    doc.setTextColor("#ffffff");
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text("INVESTMENT MEMORANDUM", pageWidth - 20, 13, { align: "right" });
+    doc.text("DevFeas Pro", 20, 13);
+
+    // 2. Hero Section (Project Title)
+    doc.setTextColor(secondaryColor);
+    doc.setFontSize(24);
+    doc.setFont("helvetica", "bold");
+    doc.text(site.name, 20, 40);
+    
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor("#64748b");
+    doc.text(site.dna.address, 20, 48);
+
+    // 3. Site Image (Async Load)
+    try {
+        if (site.thumbnail) {
+            const base64Img = await getBase64ImageFromUrl(site.thumbnail);
+            if (base64Img) {
+                // Aspect Ratio 16:9 approx
+                const imgHeight = 60;
+                doc.addImage(base64Img, "JPEG", 20, 60, pageWidth - 40, imgHeight, undefined, 'FAST');
+            } else {
+                // Placeholder
+                doc.setFillColor("#e2e8f0");
+                doc.rect(20, 60, pageWidth - 40, 60, "F");
+                doc.setTextColor("#94a3b8");
+                doc.text("Image Unavailable", pageWidth/2, 90, { align: 'center' });
+            }
+        }
+    } catch (e) {
+        // Fallback if image fails
+        doc.setFillColor("#e2e8f0");
+        doc.rect(20, 60, pageWidth - 40, 60, "F");
+    }
+
+    // 4. Key Metrics Grid
+    const startY = 135;
+    const boxW = (pageWidth - 40 - 15) / 4; // 4 boxes, 5mm gap
+    const boxH = 25;
+
+    const metrics = [
+        { label: "Net Profit", value: formatCurrency(stats.profit), color: "#10b981" }, // Green
+        { label: "Dev Margin", value: `${stats.margin.toFixed(2)}%`, color: secondaryColor },
+        { label: "Equity IRR", value: `${stats.irr.toFixed(1)}%`, color: brandColor },
+        { label: "Peak Equity", value: formatCurrency(stats.peakEquity), color: secondaryColor }
+    ];
+
+    metrics.forEach((m, i) => {
+        const x = 20 + (i * (boxW + 5));
+        
+        // Background
+        doc.setFillColor("#ffffff");
+        doc.setDrawColor("#e2e8f0");
+        doc.rect(x, startY, boxW, boxH, "FD");
+        
+        // Label
+        doc.setFontSize(8);
+        doc.setTextColor("#64748b");
+        doc.text(m.label.toUpperCase(), x + 5, startY + 8);
+        
+        // Value
+        doc.setFontSize(14);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(m.color);
+        doc.text(m.value, x + 5, startY + 18);
+    });
+
+    // 5. Executive Summary Text
+    doc.setFontSize(14);
+    doc.setTextColor(secondaryColor);
+    doc.text("Executive Summary", 20, 180);
+    
+    doc.setFontSize(10);
+    doc.setTextColor("#334155");
+    doc.setFont("helvetica", "normal");
+    
+    const desc = scenario.settings.description || "No description provided for this scenario.";
+    const splitDesc = doc.splitTextToSize(desc, pageWidth - 40);
+    doc.text(splitDesc, 20, 190);
+
+    // Scenario Details
+    doc.setFontSize(10);
+    doc.setTextColor("#64748b");
+    doc.text(`Scenario: ${scenario.name}`, 20, 230);
+    doc.text(`Strategy: ${scenario.strategy}`, 20, 236);
+    doc.text(`Status: ${scenario.status}`, 20, 242);
+    doc.text(`Date: ${formatDate(new Date().toISOString())}`, 20, 248);
+
+    // Footer Page 1
+    doc.setFontSize(8);
+    doc.setTextColor("#94a3b8");
+    doc.text("Generated by DevFeas Pro | Commercial in Confidence", pageWidth / 2, pageHeight - 10, { align: "center" });
+
+
+    // --- PAGE 2: FINANCIAL STRUCTURE ---
+    doc.addPage();
+
+    // Header Page 2
+    doc.setFillColor(brandColor);
+    doc.rect(0, 0, pageWidth, 20, "F");
+    doc.setTextColor("#ffffff");
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text("FINANCIAL STRUCTURE", pageWidth - 20, 13, { align: "right" });
+    doc.text("DevFeas Pro", 20, 13);
+
+    // Calculate Sources & Uses Data
+    // Uses
+    const acquisition = scenario.settings.acquisition;
+    const landCost = acquisition.purchasePrice;
+    const acqCosts = FinanceEngine.calculateStampDuty(landCost, acquisition.stampDutyState, acquisition.isForeignBuyer) + acquisition.legalFeeEstimate + (landCost * acquisition.buyersAgentFee/100);
+    
+    // Aggregates
+    const costsByCategory: Record<string, number> = {};
+    scenario.costs.forEach(c => {
+        // Simple aggregate for display - simplistic calculation
+        const total = c.amount * (c.inputType.includes('%') ? (c.inputType.includes('Revenue') ? stats.totalIn : stats.constructionTotal)/c.amount : 1);
+        costsByCategory[c.category] = (costsByCategory[c.category] || 0) + total; 
+    });
+
+    const construction = stats.constructionTotal;
+    const consultants = costsByCategory[CostCategory.CONSULTANTS] || 0;
+    const statutory = costsByCategory[CostCategory.STATUTORY] || 0;
+    const selling = costsByCategory[CostCategory.SELLING] || 0;
+    const finance = stats.interestTotal; // From engine stats
+    const misc = costsByCategory[CostCategory.MISCELLANEOUS] || 0;
+
+    const totalUses = stats.totalOut;
+
+    // Sources (Approximation based on Peak Debt/Equity)
+    // Note: Actual sources sum to Total Uses in a balanced model. 
+    // We use Peak Debt + Peak Equity as the "Funding Requirement".
+    // Sales Revenue is technically a source if recycling, but for S&U table usually we show Initial Funding.
+    // However, usually Sources = Debt + Equity + Net Sales Recycled.
+    // For simplicity in this static report, we'll just list the Capital Stack limits or Peaks.
+    
+    const seniorDebt = stats.peakSenior;
+    const mezzDebt = stats.peakMezz;
+    const equity = stats.peakEquity;
+    
+    // Gap/Sales Recycling (Balancing item)
+    const totalSources = seniorDebt + mezzDebt + equity;
+    const recycling = Math.max(0, totalUses - totalSources); 
+
+    // Render "Sources & Uses" Table
+    doc.setFontSize(14);
+    doc.setTextColor(secondaryColor);
+    doc.text("Sources & Uses of Funds", 20, 40);
+
+    autoTable(doc, {
+        startY: 45,
+        head: [['Uses of Funds', 'Amount', '%', 'Sources of Funds', 'Amount', '%']],
+        body: [
+            ['Land Purchase', formatCurrency(landCost), `${(landCost/totalUses*100).toFixed(1)}%`, 'Senior Debt', formatCurrency(seniorDebt), `${(seniorDebt/totalUses*100).toFixed(1)}%`],
+            ['Acquisition Costs', formatCurrency(acqCosts), `${(acqCosts/totalUses*100).toFixed(1)}%`, 'Mezzanine Debt', formatCurrency(mezzDebt), `${(mezzDebt/totalUses*100).toFixed(1)}%`],
+            ['Construction', formatCurrency(construction), `${(construction/totalUses*100).toFixed(1)}%`, 'Developer Equity', formatCurrency(equity), `${(equity/totalUses*100).toFixed(1)}%`],
+            ['Professional Fees', formatCurrency(consultants), `${(consultants/totalUses*100).toFixed(1)}%`, 'Sales Recycling', formatCurrency(recycling), `${(recycling/totalUses*100).toFixed(1)}%`],
+            ['Statutory Authority', formatCurrency(statutory), `${(statutory/totalUses*100).toFixed(1)}%`, '', '', ''],
+            ['Finance Costs', formatCurrency(finance), `${(finance/totalUses*100).toFixed(1)}%`, '', '', ''],
+            ['Marketing & Sales', formatCurrency(selling), `${(selling/totalUses*100).toFixed(1)}%`, '', '', ''],
+            ['Contingency / Misc', formatCurrency(misc), `${(misc/totalUses*100).toFixed(1)}%`, '', '', ''],
+            ['TOTAL USES', formatCurrency(totalUses), '100%', 'TOTAL SOURCES', formatCurrency(totalUses), '100%']
+        ],
+        theme: 'striped',
+        headStyles: { fillColor: brandColor, textColor: '#ffffff', fontStyle: 'bold' },
+        columnStyles: {
+            0: { cellWidth: 40, fontStyle: 'bold' },
+            1: { cellWidth: 30, halign: 'right' },
+            2: { cellWidth: 15, halign: 'right' },
+            3: { cellWidth: 40, fontStyle: 'bold' },
+            4: { cellWidth: 30, halign: 'right' },
+            5: { cellWidth: 15, halign: 'right' },
+        },
+        footStyles: { fillColor: secondaryColor, textColor: '#ffffff', fontStyle: 'bold' }
+    });
+
+    // Risk Covenants
+    const finalY = (doc as any).lastAutoTable.finalY + 20;
+    
+    doc.setFontSize(14);
+    doc.setTextColor(secondaryColor);
+    doc.text("Risk & Covenants", 20, finalY);
+
+    autoTable(doc, {
+        startY: finalY + 5,
+        head: [['Metric', 'Result', 'Target / Covenant', 'Status']],
+        body: [
+            ['Development Margin', `${stats.margin.toFixed(2)}%`, '> 18.00%', stats.margin > 18 ? 'PASS' : 'REVIEW'],
+            ['Loan to Cost (LTC)', `${stats.ltc.toFixed(2)}%`, '< 85.00%', stats.ltc < 85 ? 'PASS' : 'REVIEW'],
+            ['Loan to Value (LVR)', `${stats.lvr.toFixed(2)}%`, '< 65.00%', stats.lvr < 65 ? 'PASS' : 'REVIEW'],
+            ['Profit Share (Equity)', `${(stats.profit/stats.peakEquity).toFixed(2)}x`, '> 1.50x', (stats.profit/stats.peakEquity) > 1.5 ? 'PASS' : 'REVIEW'],
+        ],
+        theme: 'grid',
+        headStyles: { fillColor: secondaryColor, textColor: '#ffffff' },
+        columnStyles: {
+            1: { fontStyle: 'bold', halign: 'right' },
+            2: { halign: 'right' },
+            3: { halign: 'center', fontStyle: 'bold' }
+        },
+        didParseCell: function(data) {
+            if (data.column.index === 3 && data.section === 'body') {
+                if (data.cell.raw === 'PASS') {
+                    data.cell.styles.textColor = '#10b981'; // Green
+                } else {
+                    data.cell.styles.textColor = '#f59e0b'; // Amber
+                }
+            }
+        }
+    });
+
+    // Disclaimer
+    doc.setFontSize(8);
+    doc.setTextColor("#94a3b8");
+    doc.text("Disclaimer: This report is for feasibility analysis purposes only and does not constitute financial advice. All figures are estimates.", 20, pageHeight - 20);
+
+    // Footer Page 2
+    doc.text("Generated by DevFeas Pro | Commercial in Confidence", pageWidth / 2, pageHeight - 10, { align: "center" });
+
+    // Save
+    doc.save(`Investment_Memo_${site.code}_${new Date().toISOString().split('T')[0]}.pdf`);
+  }
+}

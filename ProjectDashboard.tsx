@@ -1,10 +1,13 @@
 
-import React, { useState } from 'react';
-import { Site, ProjectModule, LineItem, CostCategory, RevenueItem, SmartRates, FeasibilityScenario, TaxConfiguration } from './types';
+import React, { useState, useEffect } from 'react';
+import { Site, CockpitTab, LineItem, CostCategory, RevenueItem, SmartRates, FeasibilityScenario, TaxConfiguration } from './types';
 import { FeasibilityEngine } from './FeasibilityEngine';
 import { ScenarioComparison } from './ScenarioComparison';
-import { INITIAL_COSTS, INITIAL_REVENUE, INITIAL_SETTINGS, createDefaultScenario } from './constants';
+import { ScenarioManager } from './components/ScenarioManager';
+import { SiteDNAHub } from './components/SiteDNAHub';
 import { SiteSettings } from './components/SiteSettings';
+import { INITIAL_COSTS, INITIAL_REVENUE, INITIAL_SETTINGS, createDefaultScenario } from './constants';
+import { useProject } from './contexts/SiteContext';
 
 interface Props {
   site: Site;
@@ -14,178 +17,6 @@ interface Props {
   libraryData?: LineItem[];
   taxScales?: TaxConfiguration;
 }
-
-const ProjectSidebarItem: React.FC<{ active: boolean; onClick: () => void; icon: string; label: string }> = ({ active, onClick, icon, label }) => (
-  <button
-    onClick={onClick}
-    className={`w-full flex items-center space-x-3 px-4 py-2.5 rounded-lg transition-all text-sm font-semibold whitespace-nowrap ${
-      active ? 'bg-white text-indigo-700 shadow-sm border border-indigo-100' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100/50'
-    }`}
-  >
-    <i className={`${icon} w-5 text-center`}></i>
-    <span>{label}</span>
-  </button>
-);
-
-export const ProjectDashboard: React.FC<Props> = ({ site, onBack, onUpdateSite, smartRates, libraryData, taxScales }) => {
-  const [activeModule, setActiveModule] = useState<ProjectModule | 'compare' | 'settings'>('overview');
-
-  const navItems: { id: ProjectModule | 'compare' | 'settings'; label: string; icon: string }[] = [
-    { id: 'overview', label: 'Overview', icon: 'fa-solid fa-chart-pie' },
-    { id: 'feasibility', label: 'Feasibility (Baseline)', icon: 'fa-solid fa-calculator' },
-    { id: 'compare', label: 'Scenario Compare', icon: 'fa-solid fa-scale-balanced' },
-    { id: 'procurement', label: 'RFQs / Tenders', icon: 'fa-solid fa-file-contract' },
-    { id: 'sales', label: 'Sales & Settlements', icon: 'fa-solid fa-dollar-sign' },
-    { id: 'files', label: 'Documents', icon: 'fa-solid fa-folder' },
-    { id: 'settings', label: 'Site Settings', icon: 'fa-solid fa-sliders' },
-  ];
-
-  // Mock Data Construction for "Compare" view using new Type
-  // Note: For a real dashboard, we'd pull from site.scenarios
-  const baselineScenario: FeasibilityScenario = createDefaultScenario('Approved Baseline');
-  baselineScenario.isBaseline = true;
-  baselineScenario.settings.projectName = site.name;
-
-  const optionBScenario: FeasibilityScenario = createDefaultScenario('High Spec Option');
-  optionBScenario.costs = INITIAL_COSTS.map(c => {
-       if (c.category === CostCategory.CONSTRUCTION) {
-         return { ...c, amount: c.amount * 1.15 }; // +15% Construction Cost
-       }
-       return c;
-  });
-  optionBScenario.revenues = INITIAL_REVENUE.map(r => ({
-       ...r,
-       pricePerUnit: r.pricePerUnit * 1.20 // +20% Sales Price
-  }));
-  optionBScenario.settings.projectName = site.name;
-
-  const comparisonScenarios = [baselineScenario, optionBScenario];
-
-  const activeFeasibilityScenario = site.scenarios.find(s => s.isBaseline) || site.scenarios[0];
-
-  return (
-    <div className="h-full flex flex-col lg:flex-row overflow-hidden animate-in fade-in duration-300">
-      {/* Project Secondary Sidebar */}
-      {/* Mobile: Top Bar, Desktop: Left Sidebar */}
-      <aside className="w-full lg:w-64 border-b lg:border-b-0 lg:border-r border-slate-200 bg-slate-50 flex flex-col no-print shrink-0">
-        <div className="p-4 lg:p-6 border-b border-slate-200 bg-white flex justify-between lg:block items-center">
-          <div className="flex items-center space-x-3 overflow-hidden">
-             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-100 to-white border border-slate-200 overflow-hidden shrink-0 shadow-sm">
-                <img src={site.thumbnail} className="w-full h-full object-cover" alt="" />
-             </div>
-             <div className="overflow-hidden min-w-0">
-                <h2 className="text-sm font-black text-slate-800 truncate leading-tight">{site.name}</h2>
-                <p className="text-[10px] text-slate-500 truncate">{site.dna.address}</p>
-             </div>
-          </div>
-          
-          <button onClick={onBack} className="text-[10px] font-bold text-slate-400 uppercase tracking-widest hover:text-slate-600 transition-colors flex items-center shrink-0 ml-4 lg:ml-0 lg:mb-4 lg:mt-0">
-            <span className="hidden lg:inline"><i className="fa-solid fa-chevron-left mr-2"></i> Portfolio</span>
-            <span className="lg:hidden"><i className="fa-solid fa-xmark text-lg"></i></span>
-          </button>
-        </div>
-
-        {/* Scrollable Nav on Mobile */}
-        <nav className="flex-1 p-2 lg:p-4 space-x-2 lg:space-x-0 lg:space-y-1 flex lg:flex-col overflow-x-auto no-scrollbar">
-          {navItems.map(item => (
-            <ProjectSidebarItem 
-              key={item.id} 
-              active={activeModule === item.id} 
-              onClick={() => setActiveModule(item.id)} 
-              icon={item.icon} 
-              label={item.label} 
-            />
-          ))}
-        </nav>
-
-        <div className="hidden lg:block p-6 bg-white border-t border-slate-200">
-           <div className="flex justify-between items-center mb-2">
-              <span className="text-[10px] font-bold text-slate-400 uppercase">Stage: {site.stage}</span>
-              <span className="text-[10px] font-bold text-blue-600">42%</span>
-           </div>
-           <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-              <div className="h-full bg-blue-500 w-[42%]"></div>
-           </div>
-        </div>
-      </aside>
-
-      {/* Module Content */}
-      <main className="flex-1 overflow-y-auto p-4 lg:p-8 bg-white relative pb-24 lg:pb-8">
-        <div className="max-w-6xl mx-auto">
-          {activeModule === 'overview' && (
-            <div className="animate-in fade-in duration-500">
-               <header className="mb-6 lg:mb-10">
-                  <h1 className="text-xl lg:text-2xl font-black text-slate-800 tracking-tight uppercase">Project Overview</h1>
-                  <p className="text-sm text-slate-500">Consolidated live performance data from all enterprise modules.</p>
-               </header>
-
-               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 lg:gap-6 mb-8 lg:mb-10">
-                  <SummaryCard label="Open Tasks" val={site.openTasks} icon="fa-solid fa-list-check" color="text-slate-800" />
-                  <SummaryCard label="Open RFIs" val={site.openRFIs} icon="fa-solid fa-circle-question" color="text-amber-600" />
-                  <SummaryCard label="Conditions" val={site.conditions} icon="fa-solid fa-file-contract" color="text-blue-600" />
-                  <SummaryCard label="Settled Units" val="8/20" icon="fa-solid fa-hand-holding-dollar" color="text-emerald-600" />
-               </div>
-
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8">
-                  <div className="bg-slate-50 p-6 lg:p-8 rounded-2xl border border-dashed border-slate-300 text-center">
-                     <i className="fa-solid fa-chart-line text-4xl text-slate-200 mb-4 block"></i>
-                     <h3 className="text-sm font-bold text-slate-800">Financial Variance Tracking</h3>
-                     <p className="text-xs text-slate-500 mt-2">Comparison of live actuals against the Feasibility Baseline. Coming soon.</p>
-                  </div>
-                  <div className="bg-slate-50 p-6 lg:p-8 rounded-2xl border border-dashed border-slate-300 text-center">
-                     <i className="fa-solid fa-users-gear text-4xl text-slate-200 mb-4 block"></i>
-                     <h3 className="text-sm font-bold text-slate-800">Team Collaboration</h3>
-                     <p className="text-xs text-slate-500 mt-2">Manage user permissions and task assignments for this site.</p>
-                  </div>
-               </div>
-            </div>
-          )}
-
-          {activeModule === 'feasibility' && (
-            <div className="animate-in slide-in-from-bottom-4 duration-500">
-               <header className="mb-6 lg:mb-8 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-                  <div>
-                    <h1 className="text-xl lg:text-2xl font-black text-slate-800 tracking-tight uppercase">Feasibility Baseline</h1>
-                    <p className="text-sm text-slate-500 italic">Locked snapshot from Acquisition Phase</p>
-                  </div>
-                  <span className="self-start sm:self-auto px-3 py-1 bg-blue-100 text-blue-700 rounded-md text-[10px] font-bold uppercase tracking-widest border border-blue-200">
-                    <i className="fa-solid fa-lock mr-2"></i> Read Only
-                  </span>
-               </header>
-               <FeasibilityEngine 
-                  site={site} 
-                  activeScenario={activeFeasibilityScenario}
-                  isEditable={false} 
-                  smartRates={smartRates}
-                  libraryData={libraryData}
-                  taxScales={taxScales}
-                  onRequestEditSite={() => setActiveModule('settings')}
-               />
-            </div>
-          )}
-          
-          {activeModule === 'compare' && (
-            <ScenarioComparison scenarios={comparisonScenarios} siteDNA={site.dna} />
-          )}
-
-          {activeModule === 'settings' && onUpdateSite && (
-             <SiteSettings site={site} onUpdate={onUpdateSite} />
-          )}
-
-          {['procurement', 'sales', 'files'].includes(activeModule as any) && (
-            <div className="flex flex-col items-center justify-center py-20 lg:py-40 animate-in zoom-in-95 duration-500">
-              <i className={`${navItems.find(n => n.id === activeModule)?.icon} text-5xl text-slate-100 mb-6`}></i>
-              <h3 className="text-lg font-bold text-slate-800 tracking-tight">{navItems.find(n => n.id === activeModule)?.label} Module</h3>
-              <p className="text-slate-500 text-sm mt-2 max-w-sm text-center font-medium">
-                Integrated enterprise features for active sites. Connecting to Golden Thread live database.
-              </p>
-            </div>
-          )}
-        </div>
-      </main>
-    </div>
-  );
-};
 
 const SummaryCard = ({ label, val, icon, color }: { label: string, val: string | number, icon: string, color: string }) => (
   <div className="bg-white p-4 lg:p-6 rounded-2xl border border-slate-200 shadow-sm">
@@ -198,3 +29,241 @@ const SummaryCard = ({ label, val, icon, color }: { label: string, val: string |
      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{label}</p>
   </div>
 );
+
+export const SiteCockpit: React.FC<Props> = ({ site, onBack, onUpdateSite, smartRates, libraryData, taxScales }) => {
+  const { selectedScenarioId, selectScenario, updateScenario, addScenario } = useProject();
+  
+  // Initialize activeTab based on whether a scenario is selected. 
+  // If a scenario ID exists on mount, we assume the user wants to view it (deep link behavior).
+  const [activeTab, setActiveTab] = useState<CockpitTab>(selectedScenarioId ? 'feasibility' : 'overview');
+  const [isEditingSettings, setIsEditingSettings] = useState(false);
+
+  // Derived
+  const activeScenario = site.scenarios.find(s => s.id === selectedScenarioId);
+
+  // Auto-switch to feasibility tab if a scenario is selected externally while component is mounted
+  useEffect(() => {
+    if (selectedScenarioId && activeTab !== 'feasibility') {
+        setActiveTab('feasibility');
+    }
+  }, [selectedScenarioId]);
+
+  // Handlers
+  const handleSaveScenario = (updatedScenario: FeasibilityScenario) => {
+    if (selectedScenarioId) {
+        updateScenario(site.id, selectedScenarioId, updatedScenario);
+    }
+  };
+
+  const handleBackToModels = () => {
+      selectScenario(null);
+  };
+
+  // Nav Helpers
+  const TabButton = ({ id, label, icon }: { id: CockpitTab, label: string, icon: string }) => (
+      <button
+        onClick={() => { setActiveTab(id); selectScenario(null); }}
+        className={`px-4 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center ${
+            activeTab === id && !selectedScenarioId 
+            ? 'border-indigo-600 text-indigo-700 bg-indigo-50/50' 
+            : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+        }`}
+      >
+          <i className={`${icon} mr-2 text-sm ${activeTab === id ? 'text-indigo-500' : 'text-slate-400'}`}></i>
+          {label}
+      </button>
+  );
+
+  return (
+    <div className="h-full flex flex-col overflow-hidden animate-in fade-in duration-300 bg-slate-50/50">
+      
+      {/* 1. COCKPIT HEADER (Sticky) */}
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-50 shrink-0 shadow-sm">
+          <div className="px-6 py-3 flex justify-between items-center">
+              <div className="flex items-center space-x-4">
+                  <button onClick={onBack} className="text-slate-400 hover:text-slate-600 transition-colors text-[10px] font-bold uppercase tracking-widest flex items-center">
+                      <i className="fa-solid fa-arrow-left mr-2"></i> All Sites
+                  </button>
+                  <div className="h-6 w-px bg-slate-200"></div>
+                  <div>
+                      <div className="flex items-center space-x-2">
+                          <h1 className="text-lg font-black text-slate-800 uppercase tracking-tight leading-none">{site.name}</h1>
+                          <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide border ${
+                              site.status === 'Acquired' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 
+                              site.status === 'Due Diligence' ? 'bg-purple-50 text-purple-600 border-purple-100' : 
+                              'bg-amber-50 text-amber-600 border-amber-100'
+                          }`}>
+                              {site.status}
+                          </span>
+                      </div>
+                      <div className="text-[10px] font-bold text-slate-400 flex items-center mt-0.5">
+                          <i className="fa-solid fa-location-dot mr-1.5 opacity-60"></i> {site.dna.address}
+                          <span className="mx-2">•</span>
+                          {site.dna.landArea.toLocaleString()} sqm
+                      </div>
+                  </div>
+              </div>
+
+              <div className="flex items-center space-x-3">
+                  {onUpdateSite && (
+                      <button 
+                        onClick={() => setIsEditingSettings(true)}
+                        className="text-slate-500 hover:text-indigo-600 transition-colors text-xs font-bold flex items-center px-3 py-1.5 rounded-lg hover:bg-indigo-50"
+                      >
+                          <i className="fa-solid fa-sliders mr-2"></i> Settings
+                      </button>
+                  )}
+              </div>
+          </div>
+
+          {/* Sub-Navigation */}
+          <div className="px-6 flex space-x-2 border-t border-slate-100 overflow-x-auto no-scrollbar">
+              <TabButton id="overview" label="Overview" icon="fa-solid fa-chart-pie" />
+              <TabButton id="dna" label="Asset DNA" icon="fa-solid fa-dna" />
+              <button
+                onClick={() => setActiveTab('feasibility')}
+                className={`px-4 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center ${
+                    activeTab === 'feasibility' 
+                    ? 'border-indigo-600 text-indigo-700 bg-indigo-50/50' 
+                    : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                }`}
+              >
+                  <i className={`fa-solid fa-calculator mr-2 text-sm ${activeTab === 'feasibility' ? 'text-indigo-500' : 'text-slate-400'}`}></i>
+                  Feasibility Models
+                  <span className="ml-2 bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[9px] font-black">{site.scenarios.length}</span>
+              </button>
+              <TabButton id="stakeholders" label="Stakeholders" icon="fa-solid fa-users" />
+          </div>
+      </header>
+
+      {/* 2. MAIN CONTENT AREA */}
+      <main className="flex-1 overflow-y-auto p-6 md:p-8 relative">
+          <div className="max-w-7xl mx-auto h-full flex flex-col">
+              
+              {/* SETTINGS MODAL OVERLAY */}
+              {isEditingSettings && onUpdateSite && (
+                  <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
+                      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[85vh] overflow-hidden flex flex-col">
+                          <div className="flex justify-between items-center px-6 py-4 border-b border-slate-200">
+                              <h3 className="font-bold text-slate-800 text-lg">Global Site Settings</h3>
+                              <button onClick={() => setIsEditingSettings(false)} className="text-slate-400 hover:text-slate-600">
+                                  <i className="fa-solid fa-xmark text-lg"></i>
+                              </button>
+                          </div>
+                          <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
+                              <SiteSettings site={site} onUpdate={onUpdateSite} />
+                          </div>
+                          <div className="px-6 py-4 border-t border-slate-200 flex justify-end">
+                              <button onClick={() => setIsEditingSettings(false)} className="px-6 py-2 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700">Done</button>
+                          </div>
+                      </div>
+                  </div>
+              )}
+
+              {/* TAB: OVERVIEW */}
+              {activeTab === 'overview' && (
+                  <div className="animate-in fade-in duration-300">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 lg:gap-6 mb-8">
+                          <SummaryCard label="Models" val={site.scenarios.length} icon="fa-solid fa-layer-group" color="text-slate-800" />
+                          <SummaryCard label="Open Tasks" val={site.openTasks} icon="fa-solid fa-list-check" color="text-slate-800" />
+                          <SummaryCard label="Open RFIs" val={site.openRFIs} icon="fa-solid fa-circle-question" color="text-amber-600" />
+                          <SummaryCard label="Conditions" val={site.conditions} icon="fa-solid fa-file-contract" color="text-blue-600" />
+                      </div>
+
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden h-80 relative group">
+                              <img 
+                                src="https://images.unsplash.com/photo-1524813686514-a5756c97759e?q=80&w=800&auto=format&fit=crop" 
+                                className="w-full h-full object-cover opacity-80 group-hover:opacity-60 transition-opacity" 
+                                alt="Map" 
+                              />
+                              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button className="bg-white text-slate-800 px-4 py-2 rounded-lg font-bold shadow-lg">View Interactive Map</button>
+                              </div>
+                              <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur px-3 py-1 rounded-lg text-xs font-bold text-slate-700 shadow-sm">
+                                  {site.dna.lga} Council
+                              </div>
+                          </div>
+
+                          <div className="bg-white p-8 rounded-2xl border border-dashed border-slate-300 text-center flex flex-col items-center justify-center">
+                              <i className="fa-solid fa-chart-simple text-4xl text-slate-200 mb-4"></i>
+                              <h3 className="text-lg font-bold text-slate-800">Financial Performance</h3>
+                              <p className="text-slate-500 text-sm mt-2 max-w-sm">
+                                  Select a baseline feasibility model to display key performance indicators on this dashboard.
+                              </p>
+                              <button onClick={() => setActiveTab('feasibility')} className="mt-6 text-indigo-600 font-bold text-sm hover:underline">
+                                  Go to Feasibility Models
+                              </button>
+                          </div>
+                      </div>
+                  </div>
+              )}
+
+              {/* TAB: ASSET DNA */}
+              {activeTab === 'dna' && (
+                  <div className="h-full bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in duration-300">
+                      <SiteDNAHub 
+                          site={site} 
+                          onUpdate={(updated) => onUpdateSite && onUpdateSite(updated)} 
+                          readOnly={!onUpdateSite}
+                      />
+                  </div>
+              )}
+
+              {/* TAB: FEASIBILITY MODELS (The Engine Room) */}
+              {activeTab === 'feasibility' && (
+                  <div className="h-full flex flex-col animate-in fade-in duration-300">
+                      
+                      {selectedScenarioId && activeScenario ? (
+                          // 1. ENGINE VIEW
+                          <div className="flex-1 flex flex-col h-full">
+                              <div className="mb-4 flex items-center">
+                                  <button 
+                                    onClick={handleBackToModels}
+                                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800 uppercase tracking-widest flex items-center"
+                                  >
+                                      <i className="fa-solid fa-chevron-left mr-2"></i> Back to Models
+                                  </button>
+                                  <div className="ml-4 h-4 w-px bg-slate-300"></div>
+                                  <span className="ml-4 text-sm font-bold text-slate-700">{activeScenario.name}</span>
+                              </div>
+                              <div className="flex-1 border border-slate-200 rounded-xl shadow-sm overflow-hidden bg-white">
+                                  <FeasibilityEngine 
+                                      site={site} 
+                                      activeScenario={activeScenario}
+                                      isEditable={true} 
+                                      onSaveScenario={handleSaveScenario}
+                                      onRequestEditSite={() => setIsEditingSettings(true)}
+                                      smartRates={smartRates}
+                                      libraryData={libraryData}
+                                      taxScales={taxScales}
+                                  />
+                              </div>
+                          </div>
+                      ) : (
+                          // 2. LIST VIEW (Manager)
+                          <div className="flex-1">
+                              <ScenarioManager 
+                                  site={site} 
+                                  onBack={() => setActiveTab('overview')}
+                                  onRequestEdit={() => setIsEditingSettings(true)}
+                              />
+                          </div>
+                      )}
+                  </div>
+              )}
+
+              {/* TAB: STAKEHOLDERS (Placeholder for now) */}
+              {activeTab === 'stakeholders' && (
+                  <div className="animate-in fade-in duration-300 p-12 text-center border-2 border-dashed border-slate-300 rounded-2xl bg-slate-50">
+                      <i className="fa-solid fa-users text-4xl text-slate-300 mb-4"></i>
+                      <h3 className="text-xl font-bold text-slate-800">Stakeholder Management</h3>
+                      <p className="text-slate-500 mt-2">Manage investors, consultants, and authorities linked to this site.</p>
+                  </div>
+              )}
+
+          </div>
+      </main>
+    </div>
+  );
+};

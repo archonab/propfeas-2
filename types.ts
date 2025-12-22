@@ -203,8 +203,9 @@ export interface Site {
   conditions: number;
 }
 
-export type GlobalView = 'pipeline' | 'portfolio' | 'admin';
-export type ProjectModule = 'overview' | 'feasibility' | 'tasks' | 'procurement' | 'contracts' | 'sales' | 'rfi' | 'files';
+export type GlobalView = 'sites' | 'feasibilities' | 'admin';
+export type CockpitTab = 'overview' | 'dna' | 'feasibility' | 'stakeholders';
+export type ProjectModule = 'overview' | 'feasibility' | 'tasks' | 'sales';
 
 export interface LineItem {
   id: string;

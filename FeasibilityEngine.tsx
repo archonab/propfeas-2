@@ -17,6 +17,7 @@ import { HelpTooltip } from './components/HelpTooltip';
 import { GlossaryTerm } from './glossary';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Legend } from 'recharts';
 import { DEFAULT_TAX_SCALES } from './constants';
+import { PdfService } from './services/pdfService';
 
 interface Props {
   site: Site; 
@@ -32,10 +33,10 @@ interface Props {
 
 // --- SUB-COMPONENT: KPI HUD (Mini-Header) ---
 const StickyKpiHeader = ({ stats, strategy, siteName }: { stats: any, strategy: 'SELL' | 'HOLD', siteName: string }) => (
-  <div className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-200 shadow-sm px-4 md:px-6 py-2 md:py-3 flex flex-col md:flex-row md:items-center justify-between transition-all">
+  <div className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-sm px-4 py-2 md:py-3 flex flex-col md:flex-row md:items-center justify-between transition-all">
       
       {/* Mobile Context Line */}
-      <div className="md:hidden flex justify-between items-center mb-2 border-b border-slate-100 pb-1">
+      <div className="md:hidden flex justify-between items-center mb-1 pb-1 border-b border-slate-100">
           <span className="text-[10px] font-bold text-slate-500 uppercase truncate max-w-[200px]">{siteName}</span>
           <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wide ${
               stats.margin > 15 ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
@@ -44,10 +45,10 @@ const StickyKpiHeader = ({ stats, strategy, siteName }: { stats: any, strategy: 
           </span>
       </div>
 
-      <div className="flex justify-between md:justify-start md:space-x-8 overflow-x-auto no-scrollbar items-end">
+      <div className="flex justify-between md:justify-start md:space-x-8 overflow-x-auto no-scrollbar items-end w-full md:w-auto">
           <div className="flex flex-col">
               <span className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-widest">Net Profit</span>
-              <span className={`text-base md:text-lg font-black font-mono leading-none ${stats.profit > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+              <span className={`text-sm md:text-lg font-black font-mono leading-none ${stats.profit > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                   ${(stats.profit/1000000).toFixed(2)}m
               </span>
           </div>
@@ -56,7 +57,7 @@ const StickyKpiHeader = ({ stats, strategy, siteName }: { stats: any, strategy: 
               <span className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center">
                   Margin <span className="hidden md:inline"><HelpTooltip term="MDC" className="ml-1 text-slate-300" /></span>
               </span>
-              <span className={`text-base md:text-lg font-black font-mono leading-none ${stats.margin > 15 ? 'text-slate-800' : 'text-amber-500'}`}>
+              <span className={`text-sm md:text-lg font-black font-mono leading-none ${stats.margin > 15 ? 'text-slate-800' : 'text-amber-500'}`}>
                   {stats.margin.toFixed(2)}%
               </span>
           </div>
@@ -65,7 +66,7 @@ const StickyKpiHeader = ({ stats, strategy, siteName }: { stats: any, strategy: 
               <span className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center">
                   IRR <span className="hidden md:inline"><HelpTooltip term="IRR" className="ml-1 text-slate-300" /></span>
               </span>
-              <span className="text-base md:text-lg font-black font-mono leading-none text-indigo-600">
+              <span className="text-sm md:text-lg font-black font-mono leading-none text-indigo-600">
                   {stats.irr.toFixed(1)}%
               </span>
           </div>
@@ -111,6 +112,7 @@ export const FeasibilityEngine: React.FC<Props> = ({
   
   const [activeTab, setActiveTab] = useState(defaultTab);
   const [reportSubTab, setReportSubTab] = useState<'pnl' | 'cashflow'>('pnl');
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   // Initialize state from the passed scenario prop
   const [settings, setSettings] = useState<FeasibilitySettings>(activeScenario.settings);
@@ -233,6 +235,19 @@ export const FeasibilityEngine: React.FC<Props> = ({
 
   const handleReportNavigation = (targetTab: string, section?: string) => {
       setActiveTab(targetTab);
+  };
+
+  const handleExportPdf = async () => {
+      setIsGeneratingPdf(true);
+      await new Promise(resolve => setTimeout(resolve, 50)); // Breath
+      try {
+          await PdfService.generateExecutiveSummary(site, currentScenarioState, stats);
+      } catch (e) {
+          console.error(e);
+          alert("Failed to generate PDF. See console.");
+      } finally {
+          setIsGeneratingPdf(false);
+      }
   };
 
   // Define Tabs based on Strategy
@@ -538,18 +553,33 @@ export const FeasibilityEngine: React.FC<Props> = ({
 
             {activeTab === 'reports' && (
               <div className="space-y-6">
-                <div className="flex justify-center border-b border-slate-200 pb-1 no-print bg-white/50 backdrop-blur sticky top-16 z-20 pt-2">
+                <div className="flex justify-between items-center border-b border-slate-200 pb-2 mb-6 no-print bg-slate-50/95 backdrop-blur sticky top-0 z-30 pt-2 px-1">
+                    <div className="w-1/3 hidden md:block"></div>
                     <nav className="flex space-x-4">
                       <button onClick={() => setReportSubTab('pnl')} className={`px-4 py-2 text-xs font-bold uppercase border-b-2 transition-colors ${reportSubTab === 'pnl' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Profit & Loss</button>
                       <button onClick={() => setReportSubTab('cashflow')} className={`px-4 py-2 text-xs font-bold uppercase border-b-2 transition-colors ${reportSubTab === 'cashflow' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Detailed Cashflow</button>
                     </nav>
+                    <div className="w-1/3 flex justify-end">
+                       <button 
+                         onClick={handleExportPdf}
+                         disabled={isGeneratingPdf}
+                         className="flex items-center text-[10px] font-bold uppercase tracking-wider bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg transition-all shadow-sm disabled:opacity-50"
+                       >
+                         {isGeneratingPdf ? (
+                             <><i className="fa-solid fa-circle-notch fa-spin mr-2"></i> Generating</>
+                         ) : (
+                             <><i className="fa-solid fa-file-pdf mr-2"></i> Export PDF</>
+                         )}
+                       </button>
+                    </div>
                 </div>
 
                 <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
                     {reportSubTab === 'pnl' && (
                       <FeasibilityReport 
                           scenario={currentScenarioState} 
-                          siteDNA={site.dna} 
+                          siteDNA={site.dna}
+                          site={site}
                           stats={stats} 
                           onNavigate={handleReportNavigation}
                       />

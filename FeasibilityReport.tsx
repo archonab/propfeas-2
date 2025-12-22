@@ -1,13 +1,14 @@
 
 import React, { useMemo, useState } from 'react';
-import { FeasibilityScenario, CostCategory, SiteDNA, LineItem, GstTreatment } from './types';
+import { FeasibilityScenario, CostCategory, SiteDNA, LineItem, GstTreatment, Site } from './types';
 import { FinanceEngine } from './services/financeEngine';
 import { SensitivityService } from './services/sensitivityService';
 import { HelpTooltip } from './components/HelpTooltip';
 
 interface Props {
   scenario: FeasibilityScenario;
-  siteDNA: SiteDNA; 
+  siteDNA: SiteDNA;
+  site?: Site; 
   stats: {
     profit: number;
     margin: number;
@@ -15,6 +16,13 @@ interface Props {
     interestTotal: number;
     totalOut: number;
     totalIn: number;
+    peakEquity: number;
+    peakSenior: number;
+    peakMezz: number;
+    peakTotalDebt: number;
+    constructionTotal: number;
+    ltc: number;
+    lvr: number;
   };
   onNavigate?: (tab: string, section?: string) => void;
 }
@@ -376,7 +384,7 @@ const HoldReport = ({ scenario, siteDNA, stats }: { scenario: FeasibilityScenari
     );
 };
 
-export const FeasibilityReport: React.FC<Props> = ({ scenario, siteDNA, stats, onNavigate }) => {
+export const FeasibilityReport: React.FC<Props> = ({ scenario, siteDNA, stats, onNavigate, site }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('valuer');
 
   const reportStats = useMemo(() => 
@@ -387,7 +395,8 @@ export const FeasibilityReport: React.FC<Props> = ({ scenario, siteDNA, stats, o
   const detailedCosts = useDetailedCosts(scenario, siteDNA);
 
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col relative">
+       
        <div className="bg-white p-12 max-w-5xl mx-auto shadow-xl print-container border border-slate-200 print:border-none w-full">
           {scenario.strategy === 'HOLD' 
             ? <HoldReport scenario={scenario} siteDNA={siteDNA} stats={stats} />

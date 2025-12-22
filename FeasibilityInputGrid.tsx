@@ -39,8 +39,7 @@ const DebouncedInput = ({
   placeholder?: string;
 }) => {
   const [localValue, setLocalValue] = useState(value);
-  const initialRender = useRef(true);
-
+  
   useEffect(() => {
     setLocalValue(value);
   }, [value]);
@@ -297,99 +296,97 @@ const CostSection: React.FC<{
                  const isExpanded = expandedRow === item.id;
 
                  return (
-                    <div key={item.id} className={`bg-white transition-colors ${isExpanded ? 'bg-indigo-50/20' : 'hover:bg-slate-50'}`}>
+                    <div key={item.id} className={`bg-white transition-colors group ${isExpanded ? 'bg-indigo-50/20' : 'hover:bg-slate-50'}`}>
                        
-                       {/* DESKTOP ROW LAYOUT (>768px) */}
-                       <div className="hidden md:flex p-4 flex-row items-center gap-4">
-                          <div className="flex-1 grid grid-cols-12 gap-4 items-center">
-                             <div className="col-span-4">
-                                <DebouncedInput 
-                                   type="text" 
-                                   value={item.description}
-                                   onChange={(val) => onUpdate(item.id, 'description', val)}
-                                   className="w-full bg-transparent border-b border-transparent hover:border-slate-200 focus:border-indigo-500 focus:ring-0 px-0 py-1 text-sm font-bold text-slate-800"
-                                   placeholder="Item Description"
-                                />
-                             </div>
-                             
-                             <div className="col-span-3">
-                                {isLinked ? (
-                                    <div className="flex items-center space-x-2 bg-indigo-50 px-2 py-1 rounded border border-indigo-100 w-fit">
-                                        <i className="fa-solid fa-robot text-indigo-500 text-[10px]"></i>
-                                        <span className="text-[10px] font-bold text-indigo-700 uppercase">{driverLabel}</span>
-                                    </div>
-                                ) : (
-                                    <select 
-                                        value={item.inputType} 
-                                        onChange={(e) => onUpdate(item.id, 'inputType', e.target.value)}
-                                        className="w-full bg-transparent border-none text-xs font-medium text-slate-500 focus:ring-0 px-0 py-1"
-                                    >
-                                        {isOperatingLedger ? (
-                                            <>
-                                                <option value={InputType.FIXED}>Fixed Annual ($)</option>
-                                                <option value={InputType.PCT_REVENUE}>% of Gross Rent</option>
-                                                <option value={InputType.RATE_PER_UNIT}>Rate per Unit</option>
-                                            </>
-                                        ) : (
-                                            Object.values(InputType).map(t => {
-                                                if (item.category === CostCategory.CONSTRUCTION && t === InputType.PCT_CONSTRUCTION) return null;
-                                                return <option key={t} value={t}>{t}</option>
-                                            })
-                                        )}
-                                    </select>
-                                )}
-                                
-                                {showDriver && !isLinked && (
-                                   <div className="text-[9px] text-indigo-600 font-medium truncate" title={driverLabel}>
-                                      Linked to {driverLabel}
-                                   </div>
-                                )}
-                             </div>
-
-                             <div className="col-span-3 text-right">
-                                <div className="flex items-center justify-end space-x-2">
-                                   {isLinked ? (
-                                       <div className="text-sm font-bold text-slate-800 bg-slate-100 px-2 py-1 rounded cursor-not-allowed border border-slate-200 min-w-[80px] text-center">
-                                           {calculatedValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                                       </div>
-                                   ) : (
-                                       <DebouncedInput 
-                                          type="number" 
-                                          value={item.amount}
-                                          onChange={(val) => onUpdate(item.id, 'amount', val)}
-                                          className="w-24 text-right bg-transparent border-b border-slate-200 focus:border-indigo-500 focus:ring-0 px-1 py-1 text-sm font-bold text-slate-800"
-                                       />
-                                   )}
-                                   <span className="text-xs text-slate-400 font-bold">
-                                      {item.inputType.includes('Pct') || item.inputType.includes('%') ? '%' : '$'}
-                                   </span>
+                       {/* DESKTOP: BLOOMBERG GRID (Flex Row mimicking High Density Table) */}
+                       <div className="hidden md:flex p-2 items-center gap-4 text-sm">
+                          {/* Col 1: Description (Main) */}
+                          <div className="flex-1 pl-2">
+                             <DebouncedInput 
+                                type="text" 
+                                value={item.description}
+                                onChange={(val) => onUpdate(item.id, 'description', val)}
+                                className="w-full bg-transparent border-transparent focus:border-indigo-500 focus:ring-0 px-2 py-1 font-bold text-slate-800 placeholder:text-slate-300 hover:border-slate-200 rounded transition-colors"
+                                placeholder="Item Description"
+                             />
+                          </div>
+                          
+                          {/* Col 2: Type/Driver */}
+                          <div className="w-40">
+                             {isLinked ? (
+                                <div className="flex items-center space-x-2 px-2 py-1">
+                                    <i className="fa-solid fa-robot text-indigo-500 text-[10px]"></i>
+                                    <span className="text-[10px] font-bold text-indigo-700 uppercase truncate" title={driverLabel}>{driverLabel}</span>
                                 </div>
-                                {showDriver && !isLinked && (
-                                   <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                                      = ${calculatedValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                                   </div>
+                             ) : (
+                                <select 
+                                    value={item.inputType} 
+                                    onChange={(e) => onUpdate(item.id, 'inputType', e.target.value)}
+                                    className="w-full bg-transparent border-transparent hover:border-slate-200 focus:border-indigo-500 rounded text-xs font-medium text-slate-500 focus:ring-0 px-2 py-1 cursor-pointer"
+                                >
+                                    {isOperatingLedger ? (
+                                        <>
+                                            <option value={InputType.FIXED}>Fixed Annual ($)</option>
+                                            <option value={InputType.PCT_REVENUE}>% of Gross Rent</option>
+                                            <option value={InputType.RATE_PER_UNIT}>Rate per Unit</option>
+                                        </>
+                                    ) : (
+                                        Object.values(InputType).map(t => {
+                                            if (item.category === CostCategory.CONSTRUCTION && t === InputType.PCT_CONSTRUCTION) return null;
+                                            return <option key={t} value={t}>{t}</option>
+                                        })
+                                    )}
+                                </select>
+                             )}
+                          </div>
+
+                          {/* Col 3: Amount (Input) */}
+                          <div className="w-32 text-right">
+                             <div className="flex items-center justify-end group/input relative">
+                                {!isLinked && (
+                                   <DebouncedInput 
+                                      type="number" 
+                                      value={item.amount}
+                                      onChange={(val) => onUpdate(item.id, 'amount', val)}
+                                      className="w-full text-right bg-transparent border-transparent hover:border-slate-200 focus:border-indigo-500 focus:ring-0 px-2 py-1 font-bold text-slate-800 font-mono rounded"
+                                   />
                                 )}
-                                {warning && <div className="text-[9px] text-red-500 font-bold">{warning}</div>}
+                                <span className={`text-xs text-slate-400 font-bold ml-1 ${isLinked ? 'opacity-0' : ''}`}>
+                                   {item.inputType.includes('Pct') || item.inputType.includes('%') ? '%' : '$'}
+                                </span>
                              </div>
-                             
-                             <div className="col-span-2 flex justify-end items-center space-x-2">
-                                <button 
-                                   onClick={() => toggleExpanded(item.id)} 
-                                   className={`p-1.5 rounded-md transition-colors ${isExpanded ? 'bg-indigo-100 text-indigo-600' : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100'}`}
-                                >
-                                   <i className="fa-solid fa-sliders"></i>
-                                </button>
-                                <button 
-                                   onClick={() => onRemove(item.id)} 
-                                   className="p-1.5 text-slate-300 hover:text-red-500 transition-colors"
-                                >
-                                   <i className="fa-solid fa-trash"></i>
-                                </button>
+                          </div>
+
+                          {/* Col 4: Total (Calculated) */}
+                          <div className="w-32 text-right pr-4">
+                             <div className="text-sm font-mono font-bold text-slate-900 tabular-nums">
+                                ${calculatedValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                              </div>
+                             {showDriver && !isLinked && (
+                                <div className="text-[9px] text-indigo-400 font-mono opacity-0 group-hover:opacity-100 transition-opacity">
+                                   Link: {driverLabel}
+                                </div>
+                             )}
+                          </div>
+                          
+                          {/* Col 5: Actions */}
+                          <div className="w-16 flex justify-end items-center space-x-1 pr-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                             <button 
+                                onClick={() => toggleExpanded(item.id)} 
+                                className={`p-1.5 rounded-md transition-colors ${isExpanded ? 'text-indigo-600 bg-indigo-50' : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100'}`}
+                             >
+                                <i className="fa-solid fa-sliders"></i>
+                             </button>
+                             <button 
+                                onClick={() => onRemove(item.id)} 
+                                className="p-1.5 text-slate-300 hover:text-red-500 transition-colors"
+                             >
+                                <i className="fa-solid fa-trash"></i>
+                             </button>
                           </div>
                        </div>
 
-                       {/* MOBILE CARD LAYOUT (<768px) */}
+                       {/* MOBILE: CARD STACK (Vertical Layout) */}
                        <div className="md:hidden p-4">
                           <div className="flex justify-between items-start mb-2" onClick={() => toggleExpanded(item.id)}>
                              <div className="flex-1 mr-4">
@@ -402,11 +399,11 @@ const CostSection: React.FC<{
                                 </div>
                              </div>
                              <div className="text-right">
-                                <div className="text-sm font-black text-slate-800">
+                                <div className="text-sm font-black text-slate-800 font-mono">
                                     ${calculatedValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                                 </div>
                                 {!isLinked && (
-                                    <div className="text-[10px] text-slate-400">
+                                    <div className="text-[10px] text-slate-400 font-mono">
                                         {item.amount}{item.inputType.includes('%') ? '%' : ''}
                                     </div>
                                 )}
@@ -443,7 +440,7 @@ const CostSection: React.FC<{
                                             type="number" 
                                             value={item.amount}
                                             onChange={(e) => onUpdate(item.id, 'amount', parseFloat(e.target.value))}
-                                            className="w-full border-slate-200 rounded text-sm font-bold text-slate-800 py-2"
+                                            className="w-full border-slate-200 rounded text-sm font-bold text-slate-800 py-2 font-mono"
                                             disabled={isLinked}
                                         />
                                     </div>
@@ -461,7 +458,7 @@ const CostSection: React.FC<{
                        
                        {/* Expanded Panel (Desktop Only, since Mobile inlines it) */}
                        {isExpanded && (
-                          <div className="hidden md:block px-4 pb-4 animate-in fade-in slide-in-from-top-1 duration-200">
+                          <div className="hidden md:block px-4 pb-4 animate-in fade-in slide-in-from-top-1 duration-200 bg-slate-50/50">
                              <AdvancedConfigSection item={item} />
                           </div>
                        )}
@@ -470,9 +467,9 @@ const CostSection: React.FC<{
               })}
 
               {/* Add Button (Desktop) */}
-              <div className="hidden md:flex p-3 bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer" onClick={() => onAdd(categories[0])}>
-                 <div className="flex justify-center items-center text-xs font-bold text-indigo-600">
-                    <i className="fa-solid fa-plus mr-2"></i> Add Item to {title}
+              <div className="hidden md:flex p-2 bg-white hover:bg-slate-50 transition-colors cursor-pointer border-t border-slate-100 justify-center" onClick={() => onAdd(categories[0])}>
+                 <div className="flex items-center text-xs font-bold text-indigo-600 py-1">
+                    <i className="fa-solid fa-plus mr-2"></i> Add Item
                  </div>
               </div>
 

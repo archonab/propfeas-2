@@ -28,7 +28,7 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
       units: 1,
       pricePerUnit: 0,
       offsetFromCompletion: 1,
-      settlementSpan: 6, // Legacy prop
+      settlementSpan: 6, 
       
       // Sell Defaults
       absorptionRate: 1,
@@ -36,7 +36,7 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
       isTaxable: true,
       
       // Hold Defaults
-      weeklyRent: 0, // Legacy support, using pricePerUnit for Annual/Weekly
+      weeklyRent: 0, 
       opexRate: 25,
       vacancyFactorPct: 5.0,
       leaseUpMonths: 3,
@@ -105,31 +105,31 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
         </button>
       </div>
 
-      {/* TABLE (Desktop) - Hidden on Mobile */}
+      {/* TABLE (Desktop) - High Density with Sticky Columns */}
       <div className="hidden md:block flex-1 overflow-x-auto shadow-inner rounded-xl border border-slate-100 m-4">
-        <table className="w-full text-left text-sm border-collapse min-w-[800px]">
+        <table className="w-full text-left text-sm border-collapse min-w-[900px]">
           <thead>
-            <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-widest font-bold sticky top-0 z-10">
-              <th className="px-4 py-3 w-48 bg-slate-50">Description</th>
+            <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-widest font-bold sticky top-0 z-30">
+              <th className="px-4 py-3 w-48 bg-slate-50 sticky left-0 z-40 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">Description</th>
               <th className="px-4 py-3 w-20 text-center bg-slate-50">Mode</th>
               
               {!isHold ? (
                  <>
-                    <th className="px-4 py-3 text-center w-20 bg-slate-50">Qty</th>
-                    <th className="px-4 py-3 text-right bg-slate-50">Avg Price</th>
-                    <th className="px-4 py-3 text-center w-24 bg-slate-50">Rate (U/Mo)</th>
-                    <th className="px-4 py-3 text-center w-24 bg-slate-50">Offset (Mo)</th>
-                    <th className="px-4 py-3 text-right bg-slate-50">Total Revenue</th>
+                    <th className="px-2 py-3 text-center w-20 bg-slate-50">Qty</th>
+                    <th className="px-2 py-3 text-right bg-slate-50">Avg Price</th>
+                    <th className="px-2 py-3 text-center w-24 bg-slate-50">Rate (U/Mo)</th>
+                    <th className="px-2 py-3 text-center w-24 bg-slate-50">Offset (Mo)</th>
+                    <th className="px-4 py-3 text-right bg-slate-50 w-32">Total Revenue</th>
                  </>
               ) : (
                  <>
-                    <th className="px-4 py-3 text-center w-20 bg-slate-50">Units</th>
-                    <th className="px-4 py-3 text-right bg-slate-50">Rent (Pa)</th>
-                    <th className="px-4 py-3 text-center w-16 bg-slate-50">Opex % <HelpTooltip term="OPEX"/></th>
-                    <th className="px-4 py-3 text-center w-16 bg-slate-50">Vac %</th>
-                    <th className="px-4 py-3 text-center w-20 bg-slate-50">Lease Up</th>
-                    <th className="px-4 py-3 text-center w-16 bg-slate-50">Cap % <HelpTooltip term="CAP_RATE"/></th>
-                    <th className="px-4 py-3 text-center w-10 bg-slate-50" title="Capitalised?">Cap?</th>
+                    <th className="px-2 py-3 text-center w-20 bg-slate-50">Units</th>
+                    <th className="px-2 py-3 text-right bg-slate-50">Rent (Pa)</th>
+                    <th className="px-2 py-3 text-center w-16 bg-slate-50">Opex % <HelpTooltip term="OPEX"/></th>
+                    <th className="px-2 py-3 text-center w-16 bg-slate-50">Vac %</th>
+                    <th className="px-2 py-3 text-center w-20 bg-slate-50">Lease Up</th>
+                    <th className="px-2 py-3 text-center w-16 bg-slate-50">Cap % <HelpTooltip term="CAP_RATE"/></th>
+                    <th className="px-2 py-3 text-center w-10 bg-slate-50" title="Capitalised?">Cap?</th>
                  </>
               )}
               <th className="px-4 py-3 w-10 bg-slate-50"></th>
@@ -141,20 +141,20 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
               const grossTotal = isQtyMode ? item.units * item.pricePerUnit : item.pricePerUnit;
 
               return (
-              <tr key={item.id} className="hover:bg-slate-50 transition-colors group">
-                {/* Description */}
-                <td className="px-4 py-2">
+              <tr key={item.id} className="hover:bg-slate-50 transition-colors group text-xs">
+                {/* Sticky Description Column */}
+                <td className="px-4 py-1 sticky left-0 z-20 bg-white group-hover:bg-slate-50 border-r border-slate-100">
                   <input 
                     type="text" 
                     value={item.description}
                     onChange={(e) => updateRevenue(item.id, 'description', e.target.value)}
-                    className="w-full bg-transparent border-none focus:ring-0 text-xs font-bold text-slate-700 placeholder:text-slate-300"
+                    className="w-full bg-transparent border-none focus:ring-0 font-bold text-slate-700 placeholder:text-slate-300"
                     placeholder="Item Name"
                   />
                 </td>
                 
                 {/* Mode Toggle */}
-                <td className="px-4 py-2 text-center">
+                <td className="px-4 py-1 text-center">
                    <button 
                      onClick={() => updateRevenue(item.id, 'calcMode', isQtyMode ? 'LUMP_SUM' : 'QUANTITY_RATE')}
                      className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase ${isQtyMode ? 'bg-indigo-50 text-indigo-600 border-indigo-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}
@@ -166,51 +166,51 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
                 {!isHold ? (
                    <>
                       {/* QTY */}
-                      <td className="px-4 py-2 text-center">
+                      <td className="px-2 py-1 text-center">
                         {isQtyMode ? (
                             <input 
                                 type="number" 
                                 value={item.units}
                                 onChange={(e) => updateRevenue(item.id, 'units', parseFloat(e.target.value))}
-                                className="w-16 bg-slate-50 text-center border-slate-200 focus:ring-indigo-500 text-xs font-bold rounded py-1"
+                                className="w-full bg-transparent text-center border-none focus:ring-0 font-bold text-slate-700 hover:bg-slate-100 rounded"
                             />
                         ) : <span className="text-slate-300">-</span>}
                       </td>
                       
                       {/* Price */}
-                      <td className="px-4 py-2 text-right">
+                      <td className="px-2 py-1 text-right">
                          <input 
                            type="number" 
                            value={item.pricePerUnit}
                            onChange={(e) => updateRevenue(item.id, 'pricePerUnit', parseFloat(e.target.value))}
-                           className="w-24 bg-transparent text-right border-none focus:ring-0 text-xs font-mono font-bold text-slate-700"
+                           className="w-full bg-transparent text-right border-none focus:ring-0 font-mono font-bold text-slate-700 hover:bg-slate-100 rounded"
                          />
                       </td>
 
                       {/* Absorption Rate */}
-                      <td className="px-4 py-2 text-center">
+                      <td className="px-2 py-1 text-center">
                          <input 
                            type="number" 
                            value={item.absorptionRate}
                            onChange={(e) => updateRevenue(item.id, 'absorptionRate', parseFloat(e.target.value))}
-                           className="w-16 bg-slate-50 text-center border-slate-200 focus:ring-indigo-500 text-xs font-bold rounded py-1"
+                           className="w-full bg-transparent text-center border-none focus:ring-0 font-bold text-slate-600 hover:bg-slate-100 rounded"
                            placeholder="1"
                          />
                       </td>
 
                       {/* Offset */}
-                      <td className="px-4 py-2 text-center">
+                      <td className="px-2 py-1 text-center">
                          <input 
                            type="number" 
                            value={item.offsetFromCompletion}
                            onChange={(e) => updateRevenue(item.id, 'offsetFromCompletion', parseFloat(e.target.value))}
-                           className="w-16 bg-slate-50 text-center border-slate-200 focus:ring-indigo-500 text-xs font-bold rounded py-1"
+                           className="w-full bg-transparent text-center border-none focus:ring-0 font-bold text-slate-600 hover:bg-slate-100 rounded"
                          />
                       </td>
 
                       {/* Total */}
-                      <td className="px-4 py-2 text-right">
-                         <span className="text-xs font-mono font-bold text-slate-800">
+                      <td className="px-4 py-1 text-right">
+                         <span className="font-mono font-bold text-slate-900 tabular-nums">
                             ${grossTotal.toLocaleString(undefined, {maximumFractionDigits: 0})}
                          </span>
                       </td>
@@ -218,72 +218,72 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
                 ) : (
                    <>
                       {/* Units */}
-                      <td className="px-4 py-2 text-center">
+                      <td className="px-2 py-1 text-center">
                          {isQtyMode ? (
                             <input 
                                 type="number" 
                                 value={item.units}
                                 onChange={(e) => updateRevenue(item.id, 'units', parseFloat(e.target.value))}
-                                className="w-14 bg-slate-50 text-center border-slate-200 focus:ring-indigo-500 text-xs font-bold rounded py-1"
+                                className="w-full bg-transparent text-center border-none focus:ring-0 font-bold text-slate-700 hover:bg-slate-100 rounded"
                             />
                          ) : <span className="text-slate-300">-</span>}
                       </td>
 
                       {/* Rent (Annual) */}
-                      <td className="px-4 py-2 text-right">
+                      <td className="px-2 py-1 text-right">
                          <input 
                            type="number" 
                            value={item.pricePerUnit}
                            onChange={(e) => updateRevenue(item.id, 'pricePerUnit', parseFloat(e.target.value))}
-                           className="w-24 bg-transparent text-right border-none focus:ring-0 text-xs font-mono font-bold text-slate-700"
+                           className="w-full bg-transparent text-right border-none focus:ring-0 font-mono font-bold text-slate-700 hover:bg-slate-100 rounded"
                          />
                       </td>
 
                       {/* Opex */}
-                      <td className="px-4 py-2 text-center">
+                      <td className="px-2 py-1 text-center">
                          <input 
                            type="number" 
                            value={item.opexRate}
                            onChange={(e) => updateRevenue(item.id, 'opexRate', parseFloat(e.target.value))}
-                           className="w-12 bg-transparent text-center border-none focus:ring-0 text-xs font-bold text-slate-500"
+                           className="w-full bg-transparent text-center border-none focus:ring-0 font-bold text-slate-500 hover:bg-slate-100 rounded"
                          />
                       </td>
 
                       {/* Vacancy */}
-                      <td className="px-4 py-2 text-center">
+                      <td className="px-2 py-1 text-center">
                          <input 
                            type="number" 
                            value={item.vacancyFactorPct}
                            onChange={(e) => updateRevenue(item.id, 'vacancyFactorPct', parseFloat(e.target.value))}
-                           className="w-12 bg-transparent text-center border-none focus:ring-0 text-xs font-bold text-slate-500"
+                           className="w-full bg-transparent text-center border-none focus:ring-0 font-bold text-slate-500 hover:bg-slate-100 rounded"
                          />
                       </td>
 
                       {/* Lease Up */}
-                      <td className="px-4 py-2 text-center">
+                      <td className="px-2 py-1 text-center">
                          <div className="flex items-center justify-center space-x-1">
                             <input 
                                 type="number" 
                                 value={item.leaseUpMonths}
                                 onChange={(e) => updateRevenue(item.id, 'leaseUpMonths', parseFloat(e.target.value))}
-                                className="w-10 bg-slate-50 text-center border-slate-200 text-xs font-bold rounded py-1"
+                                className="w-full bg-transparent text-center border-none focus:ring-0 font-bold text-slate-600 hover:bg-slate-100 rounded"
                             />
                             <span className="text-[9px] text-slate-400">mo</span>
                          </div>
                       </td>
 
                       {/* Cap Rate */}
-                      <td className="px-4 py-2 text-center">
+                      <td className="px-2 py-1 text-center">
                          <input 
                            type="number" step="0.1"
                            value={item.capRate}
                            onChange={(e) => updateRevenue(item.id, 'capRate', parseFloat(e.target.value))}
-                           className="w-12 bg-transparent text-center border-none focus:ring-0 text-xs font-bold text-indigo-600"
+                           className="w-full bg-transparent text-center border-none focus:ring-0 font-bold text-indigo-600 hover:bg-slate-100 rounded"
                          />
                       </td>
 
                       {/* Is Cap? */}
-                      <td className="px-4 py-2 text-center">
+                      <td className="px-4 py-1 text-center">
                          <input 
                            type="checkbox" 
                            checked={item.isCapitalised}
@@ -294,7 +294,7 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
                    </>
                 )}
 
-                <td className="px-4 py-2 text-center">
+                <td className="px-4 py-1 text-center">
                   <button onClick={() => removeRevenue(item.id)} className="text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100">
                     <i className="fa-solid fa-times"></i>
                   </button>
@@ -305,7 +305,7 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
         </table>
       </div>
 
-      {/* MOBILE: CARD STACK (Visible only on <768px) */}
+      {/* MOBILE: CARD STACK (Vertical) - Same logic, refined for touch */}
       <div className="md:hidden p-4 space-y-4 pb-24">
          {revenues.filter(r => r.strategy === strategy).map(item => {
              const isQtyMode = item.calcMode === 'QUANTITY_RATE';

@@ -120,11 +120,7 @@ export const FeasibilityEngine: React.FC<Props> = ({
   const [costs, setCosts] = useState<LineItem[]>(activeScenario.costs);
   const [revenues, setRevenues] = useState<RevenueItem[]>(activeScenario.revenues);
   
-  const [isSolving, setIsSolving] = useState(false);
-
   // --- AUTO-SAVE GUARD ---
-  // We use a Ref to track if the component has completed its initial data load.
-  // This prevents the 'useEffect' below from triggering an immediate save on mount/view.
   const isInitialized = useRef(false);
 
   // Find Linked Scenario if applicable
@@ -158,13 +154,10 @@ export const FeasibilityEngine: React.FC<Props> = ({
 
   // Update local state if activeScenario changes from outside (e.g. switching scenarios)
   useEffect(() => {
-    // Reset the guard when switching scenarios so we don't save the previous state into the new one
     isInitialized.current = false;
-    
     setSettings(activeScenario.settings);
     setCosts(activeScenario.costs);
     setRevenues(activeScenario.revenues);
-    // Reset tab on scenario switch to avoid blank states
     setActiveTab(site.status === 'Acquired' ? 'summary' : (activeScenario.strategy === 'HOLD' ? 'strategy' : 'deal'));
   }, [activeScenario.id]);
 
@@ -173,12 +166,8 @@ export const FeasibilityEngine: React.FC<Props> = ({
     [currentScenarioState, site.dna, linkedScenario, taxScales]
   );
 
-  // Updated to use the new calculateProjectMetrics
   const stats = useMemo(() => {
     const metrics = FinanceEngine.calculateProjectMetrics(cashflow, settings);
-    
-    // Compatibility Mapping for old components if needed, or update components
-    // Legacy mapping:
     return {
         ...metrics,
         profit: metrics.netProfit,
@@ -186,8 +175,7 @@ export const FeasibilityEngine: React.FC<Props> = ({
         irr: metrics.equityIRR,
         peakEquity: metrics.peakEquity,
         totalOut: metrics.totalDevelopmentCost,
-        totalIn: metrics.grossRevenue + (metrics.netRevenue - metrics.grossRevenue), // Approx
-        // Add manual calcs for charts if missing in metrics
+        totalIn: metrics.grossRevenue + (metrics.netRevenue - metrics.grossRevenue),
         ltc: (metrics.peakDebtAmount / metrics.totalDevelopmentCost) * 100,
         constructionTotal: costs.filter(c => c.category === CostCategory.CONSTRUCTION).reduce((a,b)=>a+b.amount,0),
         interestTotal: metrics.totalFinanceCost
@@ -234,12 +222,12 @@ export const FeasibilityEngine: React.FC<Props> = ({
   const handleExportPdf = async () => {
       setIsGeneratingPdf(true);
       
-      // Delay slightly to allow UI to update while calculations run
+      // Allow UI update
       setTimeout(async () => {
         try {
-            // 1. Generate Matrix for the dedicated Sensitivity Page
+            // 1. Generate Matrix (Async with Worker option if supported)
             const steps = [-15, -10, -5, 0, 5, 10, 15];
-            const sensitivityMatrix = SensitivityService.generateMatrix(
+            const sensitivityMatrix = await SensitivityService.generateMatrix(
                 settings,
                 costs,
                 revenues,
@@ -247,10 +235,11 @@ export const FeasibilityEngine: React.FC<Props> = ({
                 'cost',    // Default Y
                 steps,
                 steps,
-                site.dna
+                site.dna,
+                { runInWorker: true }
             );
 
-            // 2. Generate detailed 1D Risk Tables for the new Risk Report Page
+            // 2. Generate detailed 1D Risk Tables (Sync for now as they are fast individual runs)
             const riskTables = {
                 land: SensitivityService.generateSensitivityTable('land', settings, costs, revenues, site.dna),
                 cost: SensitivityService.generateSensitivityTable('cost', settings, costs, revenues, site.dna),
@@ -267,7 +256,7 @@ export const FeasibilityEngine: React.FC<Props> = ({
                 cashflow,
                 site.dna,
                 sensitivityMatrix,
-                riskTables // Pass the new tables
+                riskTables
             );
         } catch (e) {
             console.error("PDF Generation Error", e);

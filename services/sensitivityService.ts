@@ -3,29 +3,32 @@ import { FeasibilitySettings, LineItem, RevenueItem, CostCategory, SensitivityVa
 import { FinanceEngine } from './financeEngine';
 
 export interface SensitivityCell {
-  xVar: number; // Value change (%, Months, or %)
-  yVar: number; // Value change
+  xVar: number; 
+  yVar: number; 
   margin: number;
   profit: number;
 }
 
-// Helper to apply variance to a fresh set of data
-const applyVariance = (
+const FIXED_TIMESTAMP = "2024-01-01T00:00:00.000Z";
+
+// In-memory cache
+const MATRIX_CACHE = new Map<string, SensitivityCell[][]>();
+
+// Helper to apply variance (Pure)
+export const applyVariance = (
   type: SensitivityVariable,
-  varianceValue: number, // % for rev/cost, Months for duration, absolute % for interest
+  varianceValue: number, 
   settings: FeasibilitySettings,
   costs: LineItem[],
   revenues: RevenueItem[]
 ): { settings: FeasibilitySettings; costs: LineItem[]; revenues: RevenueItem[] } => {
   
-  // Deep Copy inputs
   let newSettings = JSON.parse(JSON.stringify(settings));
   let newCosts = costs.map(c => ({...c}));
   let newRevenues = revenues.map(r => ({...r}));
 
   switch (type) {
     case 'revenue': {
-      // Variance is % (e.g., 10 = +10%)
       const multiplier = 1 + (varianceValue / 100);
       newRevenues = newRevenues.map(r => ({
         ...r,
@@ -33,17 +36,11 @@ const applyVariance = (
       }));
       break;
     }
-
     case 'cost': {
-      // Variance is % (e.g., 10 = +10%)
       const multiplier = 1 + (varianceValue / 100);
       newCosts = newCosts.map(c => {
         if (c.category === CostCategory.CONSTRUCTION) {
           const newItem = { ...c, amount: c.amount * multiplier };
-          
-          // Compound Escalation Shock:
-          // If cost increases > 0%, we assume inflation is rising, so we bump escalation rate too.
-          // Rule: Add 0.5% escalation for every 10% cost increase (approx)
           if (varianceValue > 0) {
              newItem.escalationRate = (newItem.escalationRate || 0) + 0.5;
           }
@@ -53,44 +50,25 @@ const applyVariance = (
       });
       break;
     }
-
     case 'duration': {
-      // Variance is Absolute Months (e.g., 3 = +3 months delay)
       const delay = varianceValue;
-      const originalDuration = settings.durationMonths;
-      
-      // 1. Extend Project Duration
-      newSettings.durationMonths = originalDuration + delay;
-
-      // 2. Stretch Construction S-Curves
-      // We scale the span proportionally
+      newSettings.durationMonths = settings.durationMonths + delay;
       newCosts = newCosts.map(c => {
         if (c.category === CostCategory.CONSTRUCTION) {
-          return {
-             ...c,
-             span: c.span + delay
-          };
+          return { ...c, span: c.span + delay };
         }
         return c;
       });
-
-      // 3. Shift Revenue Settlement (handled automatically by offsetFromCompletion)
       break;
     }
-
     case 'interest': {
-      // Variance is Absolute Percentage (e.g. 1.0 = +1.00% rate increase)
       newSettings.capitalStack.senior.interestRate += varianceValue;
       newSettings.capitalStack.mezzanine.interestRate += varianceValue;
       break;
     }
-
     case 'land': {
-      // Variance is % (e.g. 10 = +10% Purchase Price)
       const multiplier = 1 + (varianceValue / 100);
-      const newPrice = newSettings.acquisition.purchasePrice * multiplier;
-      newSettings.acquisition.purchasePrice = newPrice;
-      // Stamp Duty & Agent Fees will auto-recalc in FinanceEngine based on this new price
+      newSettings.acquisition.purchasePrice = settings.acquisition.purchasePrice * multiplier;
       break;
     }
   }
@@ -98,12 +76,8 @@ const applyVariance = (
   return { settings: newSettings, costs: newCosts, revenues: newRevenues };
 };
 
-export const SensitivityService = {
-  /**
-   * Generates a matrix of financial outcomes.
-   * Fully flexible X and Y axes.
-   */
-  generateMatrix(
+// Pure Synchronous Matrix Calculation
+export const calculateMatrixSync = (
     settings: FeasibilitySettings,
     baseCosts: LineItem[],
     baseRevenues: RevenueItem[],
@@ -112,20 +86,14 @@ export const SensitivityService = {
     stepsX: number[],
     stepsY: number[],
     siteDNA: SiteDNA
-  ): SensitivityCell[][] {
-    
+): SensitivityCell[][] => {
     const matrix: SensitivityCell[][] = [];
 
-    // Loop Y-Axis
     for (const yVal of stepsY) {
       const row: SensitivityCell[] = [];
-
-      // 1. Apply Y-Axis Variance to Base Data
       const yScenario = applyVariance(yAxis, yVal, settings, baseCosts, baseRevenues);
 
-      // Loop X-Axis
       for (const xVal of stepsX) {
-        // 2. Apply X-Axis Variance to the Y-Scenario Data
         const finalScenarioParts = applyVariance(
             xAxis, 
             xVal, 
@@ -137,8 +105,8 @@ export const SensitivityService = {
         const tempScenario: FeasibilityScenario = {
           id: 'temp-sensitivity',
           name: 'Sensitivity Run',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+          createdAt: FIXED_TIMESTAMP, // Deterministic
+          updatedAt: FIXED_TIMESTAMP, // Deterministic
           isBaseline: false,
           status: ScenarioStatus.DRAFT,
           strategy: 'SELL',
@@ -163,13 +131,74 @@ export const SensitivityService = {
       }
       matrix.push(row);
     }
-
     return matrix;
+};
+
+export const SensitivityService = {
+  /**
+   * Generates a matrix of financial outcomes.
+   * Supports caching and optional Web Worker execution.
+   */
+  generateMatrix: async (
+    settings: FeasibilitySettings,
+    baseCosts: LineItem[],
+    baseRevenues: RevenueItem[],
+    xAxis: SensitivityVariable,
+    yAxis: SensitivityVariable,
+    stepsX: number[],
+    stepsY: number[],
+    siteDNA: SiteDNA,
+    options: { runInWorker?: boolean } = {}
+  ): Promise<SensitivityCell[][]> => {
+    
+    // 1. Check Cache
+    const cacheKey = JSON.stringify({ settings, costs: baseCosts, revenues: baseRevenues, xAxis, yAxis, stepsX, stepsY, siteDNA });
+    if (MATRIX_CACHE.has(cacheKey)) {
+        // console.debug('Sensitivity Cache Hit');
+        return MATRIX_CACHE.get(cacheKey)!;
+    }
+
+    let result: SensitivityCell[][];
+
+    // 2. Worker Execution
+    if (options.runInWorker && typeof Worker !== 'undefined') {
+        try {
+            // Stub: In a real Vite app, you'd use: new Worker(new URL('./sensitivity.worker.ts', import.meta.url), { type: 'module' })
+            // For now, we fall back to sync if the worker file isn't explicitly build-ready in this environment
+            // Or assume the worker is available at runtime
+            const worker = new Worker(new URL('./sensitivity.worker.ts', import.meta.url), { type: 'module' });
+            
+            result = await new Promise<SensitivityCell[][]>((resolve, reject) => {
+                worker.onmessage = (e) => {
+                    resolve(e.data);
+                    worker.terminate();
+                };
+                worker.onerror = (e) => {
+                    console.warn("Worker error, falling back to sync", e);
+                    worker.terminate();
+                    resolve(calculateMatrixSync(settings, baseCosts, baseRevenues, xAxis, yAxis, stepsX, stepsY, siteDNA));
+                };
+                worker.postMessage({ settings, costs: baseCosts, revenues: baseRevenues, xAxis, yAxis, stepsX, stepsY, siteDNA });
+            });
+        } catch (e) {
+            console.warn("Worker instantiation failed, running sync", e);
+            result = calculateMatrixSync(settings, baseCosts, baseRevenues, xAxis, yAxis, stepsX, stepsY, siteDNA);
+        }
+    } else {
+        // 3. Sync Execution
+        // Run in next tick to avoid blocking UI immediately if invoked in event handler
+        await new Promise(r => setTimeout(r, 0)); 
+        result = calculateMatrixSync(settings, baseCosts, baseRevenues, xAxis, yAxis, stepsX, stepsY, siteDNA);
+    }
+
+    // 4. Update Cache
+    MATRIX_CACHE.set(cacheKey, result);
+    return result;
   },
 
   /**
-   * Generates a 1-Dimensional Sensitivity Table for a specific variable.
-   * Returns rows detailing TDC, Profit, Margin, IRR.
+   * Generates a 1-Dimensional Sensitivity Table.
+   * Kept synchronous for now as it's lighter (1D vs 2D), but uses deterministic logic.
    */
   generateSensitivityTable(
     variable: SensitivityVariable,
@@ -179,46 +208,36 @@ export const SensitivityService = {
     siteDNA: SiteDNA
   ): SensitivityRow[] {
     
-    // Define steps based on variable
     let steps: number[] = [];
-    if (variable === 'duration') {
-      steps = [-3, 0, 3, 6, 9, 12]; // Months
-    } else if (variable === 'interest') {
-      steps = [-0.5, 0, 0.5, 1.0, 1.5, 2.0]; // Absolute %
-    } else {
-      steps = [-20, -10, -5, 0, 5, 10, 20]; // Percentage
-    }
+    if (variable === 'duration') steps = [-3, 0, 3, 6, 9, 12];
+    else if (variable === 'interest') steps = [-0.5, 0, 0.5, 1.0, 1.5, 2.0];
+    else steps = [-20, -10, -5, 0, 5, 10, 20];
 
     const rows: SensitivityRow[] = [];
 
     for (const step of steps) {
-        // 1. Create variant
         const variant = applyVariance(variable, step, settings, costs, revenues);
         
-        // 2. Determine Display Value for the variable
         let variableValue = 0;
         let varianceLabel = '';
 
+        // Label Logic
         switch (variable) {
             case 'land':
                 variableValue = variant.settings.acquisition.purchasePrice;
                 varianceLabel = step === 0 ? 'Base Case' : (step > 0 ? `+${step}%` : `${step}%`);
                 break;
             case 'cost':
-                // Sum Construction
-                variableValue = variant.costs
-                    .filter(c => c.category === CostCategory.CONSTRUCTION)
-                    .reduce((a,b) => a+b.amount, 0);
+                variableValue = variant.costs.filter(c => c.category === CostCategory.CONSTRUCTION).reduce((a,b) => a+b.amount, 0);
                 varianceLabel = step === 0 ? 'Base Case' : (step > 0 ? `+${step}%` : `${step}%`);
                 break;
             case 'revenue':
-                // Est. Gross Revenue
                 variableValue = variant.revenues.reduce((a,b) => a + (b.units * b.pricePerUnit), 0);
                 varianceLabel = step === 0 ? 'Base Case' : (step > 0 ? `+${step}%` : `${step}%`);
                 break;
             case 'duration':
                 variableValue = variant.settings.durationMonths;
-                varianceLabel = step === 0 ? 'Base Case' : (step > 0 ? `+${step} Months` : `${step} Months`);
+                varianceLabel = step === 0 ? 'Base Case' : (step > 0 ? `+${step} Mo` : `${step} Mo`);
                 break;
             case 'interest':
                 variableValue = variant.settings.capitalStack.senior.interestRate;
@@ -226,12 +245,11 @@ export const SensitivityService = {
                 break;
         }
 
-        // 3. Run Engine
         const tempScenario: FeasibilityScenario = {
             id: 'temp-risk',
             name: 'Risk Run',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
+            createdAt: FIXED_TIMESTAMP,
+            updatedAt: FIXED_TIMESTAMP,
             isBaseline: false,
             status: ScenarioStatus.DRAFT,
             strategy: 'SELL',
@@ -241,13 +259,10 @@ export const SensitivityService = {
         };
 
         const flows = FinanceEngine.calculateMonthlyCashflow(tempScenario, siteDNA);
-
-        // 4. Calculate Metrics
         const totalOut = flows.reduce((acc, curr) => acc + curr.developmentCosts + curr.interestSenior + curr.interestMezz, 0);
         const totalIn = flows.reduce((acc, curr) => acc + curr.netRevenue, 0);
         const profit = totalIn - totalOut;
         const margin = totalOut > 0 ? (profit / totalOut) * 100 : 0;
-        
         const equityFlows = flows.map(f => f.repayEquity - f.drawDownEquity);
         const irr = FinanceEngine.calculateIRR(equityFlows);
 

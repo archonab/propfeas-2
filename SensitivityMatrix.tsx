@@ -1,5 +1,5 @@
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { FeasibilitySettings, LineItem, RevenueItem, SensitivityVariable, SiteDNA } from './types';
 import { SensitivityService, SensitivityCell } from './services/sensitivityService';
 
@@ -16,6 +16,10 @@ export const SensitivityMatrix: React.FC<Props> = ({ settings, costs, revenues, 
   // Flexible Axes
   const [xAxis, setXAxis] = useState<SensitivityVariable>('revenue');
   const [yAxis, setYAxis] = useState<SensitivityVariable>('cost');
+  
+  // Data State
+  const [matrix, setMatrix] = useState<SensitivityCell[][]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
   // Determine Steps based on variable type
   const getSteps = (type: SensitivityVariable) => {
@@ -32,12 +36,39 @@ export const SensitivityMatrix: React.FC<Props> = ({ settings, costs, revenues, 
     }
   };
 
-  const stepsX = getSteps(xAxis);
-  const stepsY = getSteps(yAxis);
+  const stepsX = useMemo(() => getSteps(xAxis), [xAxis]);
+  const stepsY = useMemo(() => getSteps(yAxis), [yAxis]);
 
-  const matrix = useMemo(() => {
-    return SensitivityService.generateMatrix(settings, costs, revenues, xAxis, yAxis, stepsX, stepsY, siteDNA);
-  }, [settings, costs, revenues, xAxis, yAxis, siteDNA]);
+  // Async Calculation Effect
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+
+    // Debounce slightly to prevent rapid flickering on quick inputs
+    const timer = setTimeout(() => {
+        SensitivityService.generateMatrix(
+            settings, 
+            costs, 
+            revenues, 
+            xAxis, 
+            yAxis, 
+            stepsX, 
+            stepsY, 
+            siteDNA,
+            { runInWorker: true } // Offload to worker
+        ).then(result => {
+            if (isMounted) {
+                setMatrix(result);
+                setIsLoading(false);
+            }
+        });
+    }, 300);
+
+    return () => {
+        isMounted = false;
+        clearTimeout(timer);
+    };
+  }, [settings, costs, revenues, xAxis, yAxis, siteDNA, stepsX, stepsY]);
 
   // Helper for Heatmap Colors
   const getCellColor = (val: number) => {
@@ -76,7 +107,16 @@ export const SensitivityMatrix: React.FC<Props> = ({ settings, costs, revenues, 
   };
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 overflow-hidden">
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 overflow-hidden relative">
+      
+      {isLoading && (
+          <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-20 flex items-center justify-center">
+              <div className="bg-white border border-slate-200 shadow-xl rounded-lg px-4 py-2 flex items-center text-xs font-bold text-slate-600">
+                  <i className="fa-solid fa-circle-notch fa-spin mr-2 text-indigo-600"></i> Calculating...
+              </div>
+          </div>
+      )}
+
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div>
           <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Sensitivity Analysis</h3>

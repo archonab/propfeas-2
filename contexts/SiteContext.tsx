@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode, useCa
 import { Site, FeasibilityScenario, SmartRates, LineItem, TaxConfiguration, TaxState, LeadStatus, CostCategory, ScenarioStatus } from '../types';
 import { MOCK_SITES, DEFAULT_RATES, DEFAULT_TAX_SCALES } from '../constants';
 import { STANDARD_LIBRARY } from '../costLibrary';
+import { safeParseScenario } from '../schemas';
 
 // Define the shape of the context
 interface ProjectContextType {
@@ -215,8 +216,16 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
   }, []);
 
   const addScenario = useCallback((siteId: string, scenario: FeasibilityScenario) => {
+    // Validate Creation
+    const validation = safeParseScenario(scenario);
+    if (!validation.ok) {
+        console.error("Failed to add scenario: Schema Validation Error", validation.errors);
+        alert("System Error: Cannot create scenario due to data validation failure. Check console.");
+        return;
+    }
+
     const stampedScenario = {
-        ...scenario,
+        ...validation.data, // Use validated data
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
     };
@@ -235,12 +244,33 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
   const updateScenario = useCallback((siteId: string, scenarioId: string, updates: Partial<FeasibilityScenario>) => {
     setSites(prev => prev.map(site => {
         if (site.id !== siteId) return site;
+        
+        const targetScenario = site.scenarios.find(s => s.id === scenarioId);
+        // If not found, nothing to update
+        if (!targetScenario) return site;
+
+        // Perform merge
+        const mergedScenario: FeasibilityScenario = {
+            ...targetScenario,
+            ...updates,
+            updatedAt: new Date().toISOString()
+        };
+
+        // Validate Merged Result
+        const validation = safeParseScenario(mergedScenario);
+        if (!validation.ok) {
+            console.warn(`Validation failed for Scenario ${scenarioId}. Update blocked.`, validation.errors);
+            // We reject the update to prevent state corruption
+            return site;
+        }
+
+        // Apply validated update
         return {
             ...site,
             updatedAt: new Date().toISOString(), // Parent site update
             scenarios: site.scenarios.map(s => {
                 if (s.id !== scenarioId) return s;
-                return { ...s, ...updates, updatedAt: new Date().toISOString() };
+                return validation.data;
             })
         };
     }));
@@ -268,6 +298,8 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
         const source = site.scenarios.find(s => s.id === scenarioId);
         if (!source) return site;
 
+        // Validation implicitly handled as we are duplicating a valid existing source
+        // But re-validating ensures copy is safe
         const copy: FeasibilityScenario = {
             ...JSON.parse(JSON.stringify(source)),
             id: `scen-${Date.now()}-${Math.floor(Math.random()*1000)}`,

@@ -154,7 +154,6 @@ export const SensitivityService = {
     // 1. Check Cache
     const cacheKey = JSON.stringify({ settings, costs: baseCosts, revenues: baseRevenues, xAxis, yAxis, stepsX, stepsY, siteDNA });
     if (MATRIX_CACHE.has(cacheKey)) {
-        // console.debug('Sensitivity Cache Hit');
         return MATRIX_CACHE.get(cacheKey)!;
     }
 
@@ -163,9 +162,6 @@ export const SensitivityService = {
     // 2. Worker Execution
     if (options.runInWorker && typeof Worker !== 'undefined') {
         try {
-            // Stub: In a real Vite app, you'd use: new Worker(new URL('./sensitivity.worker.ts', import.meta.url), { type: 'module' })
-            // For now, we fall back to sync if the worker file isn't explicitly build-ready in this environment
-            // Or assume the worker is available at runtime
             const worker = new Worker(new URL('./sensitivity.worker.ts', import.meta.url), { type: 'module' });
             
             result = await new Promise<SensitivityCell[][]>((resolve, reject) => {
@@ -186,7 +182,6 @@ export const SensitivityService = {
         }
     } else {
         // 3. Sync Execution
-        // Run in next tick to avoid blocking UI immediately if invoked in event handler
         await new Promise(r => setTimeout(r, 0)); 
         result = calculateMatrixSync(settings, baseCosts, baseRevenues, xAxis, yAxis, stepsX, stepsY, siteDNA);
     }
@@ -198,7 +193,6 @@ export const SensitivityService = {
 
   /**
    * Generates a 1-Dimensional Sensitivity Table.
-   * Kept synchronous for now as it's lighter (1D vs 2D), but uses deterministic logic.
    */
   generateSensitivityTable(
     variable: SensitivityVariable,
@@ -221,7 +215,6 @@ export const SensitivityService = {
         let variableValue = 0;
         let varianceLabel = '';
 
-        // Label Logic
         switch (variable) {
             case 'land':
                 variableValue = variant.settings.acquisition.purchasePrice;

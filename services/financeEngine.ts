@@ -279,12 +279,6 @@ const calcCostSchedule = (
     .filter(c => c.category === CostCategory.CONSTRUCTION)
     .reduce((acc, c) => acc + c.amount, 0);
   
-  // Note: Revenue total is calculated separately in main flow or approximated here if needed.
-  // For cost distribution, % of Revenue items usually apply at end, we need the total revenue number.
-  // We'll pass 0 for totalRevenue here and rely on dynamic recalculation if needed, or pass it in.
-  // To keep it pure, we should calculate totalRevenue first. 
-  // However, circular dependency (Revenue items might depend on Costs?) -> No, typically not.
-  // Let's assume Revenue is calculable.
   const estTotalRevenue = scenario.revenues.reduce((acc, rev) => {
      if (rev.strategy === 'Hold') return acc + ((rev.weeklyRent||0) * 52 * rev.units);
      return acc + (rev.units * rev.pricePerUnit);
@@ -360,7 +354,6 @@ const calcCostSchedule = (
   }
 
   // C. Operating Costs (Hold Phase)
-  // If Hold, we have `scenario.costs` acting as Opex
   if (isHold) {
       // Dynamic Land Tax & Statutory Appreciation
       let currentStatutoryValue = new Decimal(siteDNA.auv || purchasePrice || 0);
@@ -381,12 +374,6 @@ const calcCostSchedule = (
                   schedule[m].totalNet = schedule[m].totalNet.plus(annualTax);
                   schedule[m].breakdown[CostCategory.STATUTORY] += annualTax;
               }
-              
-              // 2. Opex Line Items are handled in Revenue logic usually as NET rent, 
-              // but if explicit costs exist in `scenario.costs`, add them here.
-              // (Simplification: Opex is usually deducted from Gross Rent in Revenue module, 
-              // but we need to track cashflow. Let's assume standard Opex % is in Revenue, 
-              // and explicit items here are EXTRA)
           }
           currentStatutoryValue = currentStatutoryValue.times(monthlyGrowthFactor);
       }
@@ -522,54 +509,10 @@ const calcTaxSchedule = (
   
   return costSchedule.map((cost, m) => {
       const revenue = revenueSchedule[m];
-      
-      // Accumulate Credits (ITC) from Costs
-      // Add credits from Selling Costs (Commissions have GST)
       const commsGst = revenue.sellingCosts.div(11); 
       const monthlyItc = cost.totalGST.plus(commsGst);
       
       pendingCredits = pendingCredits.plus(monthlyItc);
-      
-      let netMovement = new Decimal(0);
-      
-      // Settlement Logic (Quarterly BAS)
-      if (timeline.isQuarterEnd[m] || m === costSchedule.length - 1) {
-          // Liability is paid, Credits are claimed
-          // Net = Refund (Inflow) or Payment (Outflow)
-          // Since we track Liability as positive number, inflow is +credits - liability?
-          // Standard cashflow: GST collected is inflow, GST paid is outflow.
-          // Net Settlement = (Collected - Paid). 
-          // If Collected > Paid -> Pay ATO (Outflow). 
-          // If Paid > Collected -> Refund (Inflow).
-          
-          // However, revenueSchedule.net ALREADY excludes GST collected (it keeps it aside).
-          // And costSchedule.totalNet INCLUDES GST paid.
-          // So we just need the "GST Clearing" line.
-          // Cashflow Effect = +Refund OR -Payment
-          
-          const periodLiability = revenue.gstLiability; // This needs accumulation if not paid monthly?
-          // For simplicity, we assume revenue GST is held until BAS.
-          // Actually, revenueSchedule.gstLiability is per month. We need to accumulate it too.
-          // Let's assume strict quarterly washing.
-      }
-      
-      // SIMPLIFIED APPROACH used in original engine:
-      // Refund = Accumulated Credits. Payment = Accumulated Liability.
-      // Net them out. 
-      // Original logic: `netGstMovement = monthlyGstLiability - monthlyItc` (Monthly accrual)
-      // Then `if (isQuarterEnd) basCashflow = pendingCredits`
-      // Wait, the original engine ONLY claimed credits quarterly, but paid liability monthly?
-      // "const cashInflowFromRev = monthlyNetRevenue.plus(monthlyGstLiability)" -> Revenue keeps GST
-      // Then pays it? No, typically Developer Cashflow shows Gross Revenue (Inc GST) then a "GST Paid" line.
-      // Or Net Revenue (Ex GST) and a "GST Net Position" line.
-      
-      // Let's stick to the behavior of the original `calculateMonthlyCashflow` for parity:
-      // It added `basCashflow = pendingGstCredits` at quarter end. 
-      // It subtracted `monthlyGstLiability` from Gross to get Net.
-      // So effectively, we get Net Revenue, pay Gross Costs, and get a quarterly refund of the GST on costs.
-      // The GST on Revenue seems to disappear in the original code's Net Revenue calculation?
-      // Original: `monthlyNetRevenue = revenueForPeriod.dividedBy(11).times(10)` (Ex GST).
-      // So we operate ex-GST on revenue, inc-GST on costs, and claim back cost-GST quarterly.
       
       let cashImpact = new Decimal(0);
       if (timeline.isQuarterEnd[m]) {
@@ -600,7 +543,7 @@ const calcFundingSchedule = (
   // Running Balances
   let seniorBal = new Decimal(0);
   let mezzBal = new Decimal(0);
-  let equityUsed = new Decimal(0);
+  let cumulativeEquity = new Decimal(0); // Track total equity put in so far
   let surplusCash = new Decimal(0);
   
   // Asset Tracking
@@ -636,34 +579,18 @@ const calcFundingSchedule = (
       let investmentInt = new Decimal(0);
       
       if (isOp && m === timeline.actualRefiMonth) {
-          // Valuation Logic
-          // We can't strictly calculate this pure without revenue context, but we have `rev.gross`
-          // Actually original engine did this inside the loop using `activeRevenues`.
-          // We'll trust the input settings for Hold Strategy refi amount if calculated outside, 
-          // OR recalculate here. Original engine recalculated.
-          // ... (Simplified: use Asset Value tracking or just Refi Amount)
-          
-          // Re-implementing simplified Refi logic:
           const lvr = (settings.holdStrategy?.refinanceLvr || 65) / 100;
-          // Determine value based on Year 1 NOI
-          // Since we are in a pure loop, we'd need to look ahead or assume stabilised.
-          // Original Code: `currentAssetValue = valuation`
-          // We will use currentAssetValue as proxy for now or re-calc if needed.
           const loanAmount = currentAssetValue.times(lvr);
           refiInflow = loanAmount;
-          investmentBal = loanAmount; // Simplified separate pot
+          investmentBal = loanAmount;
       }
       
       if (isOp) {
-          // Investment Loan Interest
           const invRate = (settings.holdStrategy?.investmentRate || 0) / 100 / 12;
           investmentInt = investmentBal.times(invRate);
       }
 
       // 3. Net Cash Position (Pre-Finance)
-      // Inflow: Net Revenue (ex GST) + Tax Refund + Refi + Surplus Interest
-      // Outflow: Costs (inc GST) + Investment Interest
-      
       let lendingInt = new Decimal(0);
       if (surplusCash.gt(0)) {
           lendingInt = surplusCash.times((capitalStack.surplusInterestRate || 0)/100/12);
@@ -679,15 +606,15 @@ const calcFundingSchedule = (
           ? new Decimal(seniorLimit).times(seniorLineRate) 
           : new Decimal(0);
 
+      // Calculates the raw funding requirement for this month
       let netCash = inflow.minus(outflow).minus(lineFee);
 
-      // 4. Waterfall
+      // 4. Waterfall Variables
       let drawEq = new Decimal(0), drawSn = new Decimal(0), drawMz = new Decimal(0);
       let paySn = new Decimal(0), payMz = new Decimal(0), payEq = new Decimal(0);
 
       // Interest Calculation
       const getRate = (tier: CapitalTier) => {
-          // Simplified: Single rate support. For variable, need lookup.
           return new Decimal(tier.interestRate).div(100).div(12);
       };
       
@@ -698,49 +625,101 @@ const calcFundingSchedule = (
       if (capitalStack.senior.isInterestCapitalised !== false) seniorBal = seniorBal.plus(intSn);
       if (capitalStack.mezzanine.isInterestCapitalised !== false) mezzBal = mezzBal.plus(intMz);
 
-      // Funding
+      // --- FUNDING LOGIC ---
       if (netCash.lt(0)) {
           let deficit = netCash.abs();
           
-          // Use Surplus first
+          // A. Use Surplus Cash First
           if (surplusCash.gt(0)) {
               const use = Decimal.min(deficit, surplusCash);
               surplusCash = surplusCash.minus(use);
               deficit = deficit.minus(use);
           }
 
+          // B. Use Developer Equity (Waterfall Step 1)
           if (deficit.gt(0)) {
-              if (!isOp) {
-                  // Senior
-                  drawSn = deficit;
-                  seniorBal = seniorBal.plus(drawSn);
-              } else {
-                  // Operating shortfall = Equity
-                  drawEq = deficit;
-                  equityUsed = equityUsed.plus(drawEq);
+              const eqSettings = capitalStack.equity;
+              let equityAvailableForDraw = new Decimal(0);
+
+              if (eqSettings.mode === EquityMode.SUM_OF_MONEY) {
+                  // Fixed Upfront: Draw until the "Initial Contribution" cap is hit
+                  const limit = new Decimal(eqSettings.initialContribution);
+                  const remainingCapacity = limit.minus(cumulativeEquity);
+                  if (remainingCapacity.gt(0)) {
+                      equityAvailableForDraw = Decimal.min(deficit, remainingCapacity);
+                  }
+              } 
+              else if (eqSettings.mode === EquityMode.PCT_MONTHLY) {
+                  // Pari Passu: Pay X% of the monthly deficit
+                  const pct = new Decimal(eqSettings.percentageInput).div(100);
+                  equityAvailableForDraw = deficit.times(pct);
+              }
+              // Add other modes (PCT_LAND etc) here if needed, defaulting to SUM_OF_MONEY logic for now
+              
+              if (equityAvailableForDraw.gt(0)) {
+                  drawEq = equityAvailableForDraw;
+                  cumulativeEquity = cumulativeEquity.plus(drawEq);
+                  deficit = deficit.minus(drawEq);
               }
           }
+
+          // C. Use Senior Debt (Waterfall Step 2)
+          if (deficit.gt(0)) {
+              // Check Senior Limit
+              const snLimit = capitalStack.senior.limit || Infinity; // Default to unlimited if 0/null
+              const snAvailable = (snLimit === 0 && capitalStack.senior.limitMethod === DebtLimitMethod.FIXED) 
+                  ? new Decimal(Number.MAX_SAFE_INTEGER) // Treat 0 as Unlimited
+                  : new Decimal(snLimit).minus(seniorBal);
+              
+              if (snAvailable.gt(0)) {
+                 const draw = Decimal.min(deficit, snAvailable);
+                 drawSn = draw;
+                 seniorBal = seniorBal.plus(drawSn);
+                 deficit = deficit.minus(drawSn);
+              }
+          }
+
+          // D. Use Mezzanine Debt (Waterfall Step 3)
+          if (deficit.gt(0)) {
+              const mzLimit = capitalStack.mezzanine.limit || 0;
+              const mzAvailable = new Decimal(mzLimit).minus(mezzBal);
+
+              if (mzAvailable.gt(0)) {
+                  const draw = Decimal.min(deficit, mzAvailable);
+                  drawMz = draw;
+                  mezzBal = mezzBal.plus(drawMz);
+                  deficit = deficit.minus(drawMz);
+              }
+          }
+
+          // E. Emergency Equity (If debts are capped and we still have a deficit)
+          if (deficit.gt(0)) {
+              const emergencyEquity = deficit;
+              drawEq = drawEq.plus(emergencyEquity);
+              cumulativeEquity = cumulativeEquity.plus(emergencyEquity);
+              deficit = new Decimal(0);
+          }
+
       } else {
-          // Repayment Waterfall
+          // --- REPAYMENT LOGIC (Surplus) ---
           let surplus = netCash;
           
-          // Pay Senior
+          // 1. Pay Senior
           if (seniorBal.gt(0)) {
               paySn = Decimal.min(surplus, seniorBal);
               seniorBal = seniorBal.minus(paySn);
               surplus = surplus.minus(paySn);
           }
-          // Pay Mezz
+          // 2. Pay Mezz
           if (mezzBal.gt(0) && surplus.gt(0)) {
               payMz = Decimal.min(surplus, mezzBal);
               mezzBal = mezzBal.minus(payMz);
               surplus = surplus.minus(payMz);
           }
-          // Pay Equity
+          // 3. Pay Equity / Profit Distribution
           if (surplus.gt(0)) {
               payEq = surplus;
-              // Add to surplus cash store if needed, or just payout
-              // For IRR calculation, it's a payout.
+              surplus = new Decimal(0);
           }
       }
 
@@ -748,7 +727,6 @@ const calcFundingSchedule = (
       if (!isOp) {
           currentAssetValue = currentAssetValue.plus(costs.totalNet);
       } else {
-          // Growth
           const growth = (settings.holdStrategy?.annualCapitalGrowth || 0) / 100;
           const monthlyGrowth = Math.pow(1 + growth, 1/12) - 1;
           currentAssetValue = currentAssetValue.times(1 + monthlyGrowth);
@@ -771,18 +749,18 @@ const calcFundingSchedule = (
           repayEquity: payEq.toNumber(),
           balanceSenior: seniorBal.toNumber(),
           balanceMezz: mezzBal.toNumber(),
-          balanceEquity: equityUsed.toNumber(),
+          balanceEquity: cumulativeEquity.toNumber(),
           balanceSurplus: surplusCash.toNumber(),
           interestSenior: intSn.toNumber(),
           interestMezz: intMz.toNumber(),
           lineFeeSenior: lineFee.toNumber(),
           netCashflow: netCash.toNumber(),
-          cumulativeCashflow: 0, // Calculated later if needed
+          cumulativeCashflow: 0, 
           investmentBalance: investmentBal.toNumber(),
           investmentInterest: investmentInt.toNumber(),
           assetValue: currentAssetValue.toNumber(),
           statutoryValue: currentStatutoryValue.toNumber(),
-          landTaxLiability: costs.breakdown[CostCategory.STATUTORY], // Approx
+          landTaxLiability: costs.breakdown[CostCategory.STATUTORY],
           inflationFactor: timeline.inflationFactors[m].toNumber(),
           depreciation: depreciation.toNumber()
       });
@@ -811,8 +789,6 @@ const calculateMonthlyCashflow = (
 };
 
 // --- LEGACY EXPORTS (METRICS & ITEMISED) ---
-// These rely on the orchestrator but are kept for API compatibility
-
 const generateItemisedCashflowData = (
   scenario: FeasibilityScenario, 
   siteDNA: SiteDNA,
@@ -852,7 +828,6 @@ const generateItemisedCashflowData = (
   incomeCat.rows.push(salesRow, otherRow);
 
   // Re-run cost distribution logic individually for reporting granularity
-  // This is slightly inefficient (re-running dist logic) but ensures item-level detail matches aggregate
   const timeline = buildTimeline(scenario);
   const constructionSum = scenario.costs.filter(c => c.category === CostCategory.CONSTRUCTION).reduce((a,b) => a+b.amount, 0);
   const revenueSum = incomeCat.total;
@@ -870,7 +845,6 @@ const generateItemisedCashflowData = (
       const totalAmount = calculateLineItemTotal(item, scenario.settings, siteDNA, constructionSum, revenueSum, taxScales);
       const row: ItemisedRow = { label: item.description, total: totalAmount, values: new Array(duration).fill(0) };
       
-      // Determine Start
       let startIdx = item.startDate;
       if (item.linkToMilestone === MilestoneLink.ACQUISITION) startIdx += timeline.settlementMonth;
       if (item.linkToMilestone === MilestoneLink.CONSTRUCTION_START) startIdx += timeline.constStartMonth;
@@ -879,7 +853,6 @@ const generateItemisedCashflowData = (
       for (let m = 0; m < duration; m++) {
           if (m >= startIdx && m < startIdx + item.span) {
               const base = distributeValue(totalAmount, m - startIdx, item);
-              // GST gross up for display? Usually cashflow reports show GROSS payments
               const val = item.gstTreatment === GstTreatment.TAXABLE ? base.times(1.1) : base;
               row.values[m] = val.toNumber();
           }
@@ -911,7 +884,6 @@ const generateItemisedCashflowData = (
   return { headers: months, categories, netCashflow, cumulativeCashflow: [] };
 };
 
-// ... Metric calculators (IRR, NPV, Stats) kept pure ...
 const calculateReportStats = (scenario: FeasibilityScenario, siteDNA: SiteDNA, taxScales: TaxConfiguration = DEFAULT_TAX_SCALES) => {
   const revenues = scenario.revenues;
   const totalRevenueGross = revenues.reduce((acc, rev) => {
@@ -970,7 +942,7 @@ const calculateProjectMetrics = (cashflow: MonthlyFlow[], settings: FeasibilityS
   const netRealisation = totalGrossRevenue - gstCollected;
   
   const rawDevCost = cashflow.reduce((acc, c) => acc + c.developmentCosts, 0);
-  const gstInputCredits = rawDevCost * 0.09; // Approx method retained for compatibility
+  const gstInputCredits = rawDevCost * 0.09; 
   
   const exactProfit = netRealisation - (totalDevelopmentCost - gstInputCredits); 
   const devMarginPct = totalDevelopmentCost > 0 ? (exactProfit / (totalDevelopmentCost - gstInputCredits)) * 100 : 0;
@@ -1031,7 +1003,6 @@ export const FinanceEngine = {
   calculateNPV,
   calculateIRR,
   calculateStampDuty,
-  // Export pure functions for testing
   _internal: {
     buildTimeline,
     calcCostSchedule,

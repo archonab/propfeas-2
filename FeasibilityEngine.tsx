@@ -168,16 +168,30 @@ export const FeasibilityEngine: React.FC<Props> = ({
 
   const stats = useMemo(() => {
     const metrics = FinanceEngine.calculateProjectMetrics(cashflow, settings);
+    
+    let maxSenior = 0;
+    let maxMezz = 0;
+    cashflow.forEach(c => {
+        if (c.balanceSenior > maxSenior) maxSenior = c.balanceSenior;
+        if (c.balanceMezz > maxMezz) maxMezz = c.balanceMezz;
+    });
+
+    const constructionTotal = costs.filter(c => c.category === CostCategory.CONSTRUCTION).reduce((a,b)=>a+b.amount,0);
+
     return {
         ...metrics,
         profit: metrics.netProfit,
         margin: metrics.devMarginPct,
         irr: metrics.equityIRR,
         peakEquity: metrics.peakEquity,
+        peakSenior: maxSenior,
+        peakMezz: maxMezz,
+        peakTotalDebt: metrics.peakDebtAmount,
         totalOut: metrics.totalDevelopmentCost,
-        totalIn: metrics.grossRevenue + (metrics.netRevenue - metrics.grossRevenue),
-        ltc: (metrics.peakDebtAmount / metrics.totalDevelopmentCost) * 100,
-        constructionTotal: costs.filter(c => c.category === CostCategory.CONSTRUCTION).reduce((a,b)=>a+b.amount,0),
+        totalIn: metrics.netRevenue,
+        ltc: metrics.totalDevelopmentCost > 0 ? (metrics.peakDebtAmount / metrics.totalDevelopmentCost) * 100 : 0,
+        lvr: metrics.grossRevenue > 0 ? (metrics.peakDebtAmount / metrics.grossRevenue) * 100 : 0,
+        constructionTotal: constructionTotal,
         interestTotal: metrics.totalFinanceCost
     };
   }, [cashflow, costs, settings, linkedScenario, isHoldStrategy]);

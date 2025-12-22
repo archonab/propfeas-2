@@ -18,8 +18,8 @@ interface Props {
 const ProjectSidebarItem: React.FC<{ active: boolean; onClick: () => void; icon: string; label: string }> = ({ active, onClick, icon, label }) => (
   <button
     onClick={onClick}
-    className={`w-full lg:w-full flex items-center space-x-3 px-4 py-2.5 rounded-lg transition-all text-sm font-semibold whitespace-nowrap ${
-      active ? 'bg-white text-slate-900 shadow-sm border border-slate-100' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100/50'
+    className={`w-full flex items-center space-x-3 px-4 py-2.5 rounded-lg transition-all text-sm font-semibold whitespace-nowrap ${
+      active ? 'bg-white text-indigo-700 shadow-sm border border-indigo-100' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100/50'
     }`}
   >
     <i className={`${icon} w-5 text-center`}></i>
@@ -70,7 +70,7 @@ export const ProjectDashboard: React.FC<Props> = ({ site, onBack, onUpdateSite, 
       <aside className="w-full lg:w-64 border-b lg:border-b-0 lg:border-r border-slate-200 bg-slate-50 flex flex-col no-print shrink-0">
         <div className="p-4 lg:p-6 border-b border-slate-200 bg-white flex justify-between lg:block items-center">
           <div className="flex items-center space-x-3 overflow-hidden">
-             <div className="w-8 h-8 lg:w-10 lg:h-10 rounded-lg bg-slate-100 overflow-hidden shrink-0">
+             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-100 to-white border border-slate-200 overflow-hidden shrink-0 shadow-sm">
                 <img src={site.thumbnail} className="w-full h-full object-cover" alt="" />
              </div>
              <div className="overflow-hidden min-w-0">
@@ -103,7 +103,7 @@ export const ProjectDashboard: React.FC<Props> = ({ site, onBack, onUpdateSite, 
               <span className="text-[10px] font-bold text-slate-400 uppercase">Stage: {site.stage}</span>
               <span className="text-[10px] font-bold text-blue-600">42%</span>
            </div>
-           <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden">
+           <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
               <div className="h-full bg-blue-500 w-[42%]"></div>
            </div>
         </div>

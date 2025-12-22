@@ -95,17 +95,17 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
     <div className="bg-white md:rounded-xl md:shadow-sm md:border border-slate-200 overflow-hidden mb-8 relative flex flex-col h-full">
       
       {/* HEADER */}
-      <div className="hidden md:flex bg-slate-50 px-6 py-4 border-b border-slate-200 justify-between items-center shrink-0">
+      <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center shrink-0 sticky top-14 md:static z-20">
         <div>
-          <h3 className="font-bold text-slate-800">{isHold ? 'Rental Mix & Valuation' : 'Sales Mix & Absorption'}</h3>
-          <p className="text-xs text-slate-500 mt-0.5">{isHold ? 'Define rent roll, lease-up and capitalisation parameters' : 'Define unit pricing, quantity and sales rate (units/mo)'}</p>
+          <h3 className="font-bold text-slate-800 text-sm md:text-base">{isHold ? 'Rental Mix & Valuation' : 'Sales Mix & Absorption'}</h3>
+          <p className="text-[10px] md:text-xs text-slate-500 mt-0.5">{isHold ? 'Define rent roll, lease-up and capitalisation parameters' : 'Define unit pricing, quantity and sales rate'}</p>
         </div>
         <button onClick={addRevenue} className="flex items-center text-xs font-bold bg-indigo-600 text-white px-3 py-1.5 rounded hover:bg-indigo-700 transition-colors shadow-sm">
             <i className="fa-solid fa-plus mr-1.5"></i> Add Row
         </button>
       </div>
 
-      {/* TABLE (Desktop) */}
+      {/* TABLE (Desktop) - Hidden on Mobile */}
       <div className="hidden md:block flex-1 overflow-x-auto shadow-inner rounded-xl border border-slate-100 m-4">
         <table className="w-full text-left text-sm border-collapse min-w-[800px]">
           <thead>
@@ -305,20 +305,130 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
         </table>
       </div>
 
+      {/* MOBILE: CARD STACK (Visible only on <768px) */}
+      <div className="md:hidden p-4 space-y-4 pb-24">
+         {revenues.filter(r => r.strategy === strategy).map(item => {
+             const isQtyMode = item.calcMode === 'QUANTITY_RATE';
+             const grossTotal = isQtyMode ? item.units * item.pricePerUnit : item.pricePerUnit;
+             const isExpanded = expandedRow === item.id;
+
+             return (
+             <div key={item.id} className={`bg-white border transition-all rounded-xl p-4 shadow-sm relative overflow-hidden ${isExpanded ? 'border-indigo-200 ring-1 ring-indigo-50' : 'border-slate-200'}`}>
+                 <div className="flex justify-between items-start mb-3" onClick={() => toggleExpanded(item.id)}>
+                     <div className="flex-1">
+                        <div className="font-bold text-slate-800 text-sm mb-1">{item.description}</div>
+                        <p className="text-[10px] text-slate-400 font-medium">
+                           {item.calcMode === 'QUANTITY_RATE' ? `${item.units} Units @ $${item.pricePerUnit.toLocaleString()}` : 'Lump Sum Amount'}
+                        </p>
+                     </div>
+                     <div className="text-right">
+                        <span className="block text-sm font-mono font-black text-slate-700">
+                           ${grossTotal.toLocaleString(undefined, {maximumFractionDigits: 0})}
+                        </span>
+                     </div>
+                 </div>
+                 
+                 {/* Expand/Collapse Toggle */}
+                 <button 
+                    onClick={() => toggleExpanded(item.id)}
+                    className="w-full text-center py-2 bg-slate-50 rounded-lg text-xs font-bold text-slate-500 hover:bg-slate-100 transition-colors flex justify-center items-center"
+                 >
+                    {isExpanded ? 'Hide Details' : 'Edit Details'} 
+                    <i className={`fa-solid fa-chevron-down ml-2 transition-transform ${isExpanded ? 'rotate-180' : ''}`}></i>
+                 </button>
+
+                 {/* Collapsible Edit Form */}
+                 {isExpanded && (
+                    <div className="pt-4 mt-2 border-t border-slate-100 grid grid-cols-2 gap-3 animate-in slide-in-from-top-2 duration-200">
+                        <div className="col-span-2">
+                           <label className="text-[10px] font-bold text-slate-400 uppercase">Description</label>
+                           <input 
+                              type="text" 
+                              value={item.description}
+                              onChange={(e) => updateRevenue(item.id, 'description', e.target.value)}
+                              className="w-full border-slate-200 rounded py-1.5 px-2 text-sm font-bold mt-1"
+                           />
+                        </div>
+
+                        <div className="col-span-2">
+                           <label className="text-[10px] font-bold text-slate-400 uppercase">Calculation Mode</label>
+                           <div className="flex bg-slate-100 p-1 rounded mt-1">
+                              <button onClick={() => updateRevenue(item.id, 'calcMode', 'QUANTITY_RATE')} className={`flex-1 py-1 rounded text-[10px] font-bold ${item.calcMode === 'QUANTITY_RATE' ? 'bg-white shadow text-indigo-600' : 'text-slate-500'}`}>Rate x Qty</button>
+                              <button onClick={() => updateRevenue(item.id, 'calcMode', 'LUMP_SUM')} className={`flex-1 py-1 rounded text-[10px] font-bold ${item.calcMode === 'LUMP_SUM' ? 'bg-white shadow text-indigo-600' : 'text-slate-500'}`}>Fixed Sum</button>
+                           </div>
+                        </div>
+                        
+                        <div>
+                           <label className="text-[10px] font-bold text-slate-400 uppercase">Amount ($)</label>
+                           <input type="number" className="w-full border-slate-200 rounded py-1.5 px-2 text-sm font-bold mt-1" value={item.pricePerUnit} onChange={e => updateRevenue(item.id, 'pricePerUnit', parseFloat(e.target.value))} />
+                        </div>
+                        
+                        {item.calcMode === 'QUANTITY_RATE' && (
+                            <div>
+                               <label className="text-[10px] font-bold text-slate-400 uppercase">Quantity</label>
+                               <input type="number" className="w-full border-slate-200 rounded py-1.5 px-2 text-sm font-bold mt-1" value={item.units} onChange={e => updateRevenue(item.id, 'units', parseFloat(e.target.value))} />
+                            </div>
+                        )}
+
+                        {!isHold ? (
+                           <>
+                              <div>
+                                 <label className="text-[10px] font-bold text-slate-400 uppercase">Absorp. Rate</label>
+                                 <input type="number" className="w-full border-slate-200 rounded py-1.5 px-2 text-sm font-bold mt-1" value={item.absorptionRate} onChange={e => updateRevenue(item.id, 'absorptionRate', parseFloat(e.target.value))} />
+                              </div>
+                              <div>
+                                 <label className="text-[10px] font-bold text-slate-400 uppercase">Offset (Mo)</label>
+                                 <input type="number" className="w-full border-slate-200 rounded py-1.5 px-2 text-sm font-bold mt-1" value={item.offsetFromCompletion} onChange={e => updateRevenue(item.id, 'offsetFromCompletion', parseFloat(e.target.value))} />
+                              </div>
+                           </>
+                        ) : (
+                           <>
+                              <div>
+                                 <label className="text-[10px] font-bold text-slate-400 uppercase">Opex %</label>
+                                 <input type="number" className="w-full border-slate-200 rounded py-1.5 px-2 text-sm font-bold mt-1" value={item.opexRate} onChange={e => updateRevenue(item.id, 'opexRate', parseFloat(e.target.value))} />
+                              </div>
+                              <div>
+                                 <label className="text-[10px] font-bold text-slate-400 uppercase">Cap Rate %</label>
+                                 <input type="number" step="0.1" className="w-full border-slate-200 rounded py-1.5 px-2 text-sm font-bold mt-1" value={item.capRate} onChange={e => updateRevenue(item.id, 'capRate', parseFloat(e.target.value))} />
+                              </div>
+                           </>
+                        )}
+
+                        <div className="col-span-2 pt-2">
+                           <button onClick={() => removeRevenue(item.id)} className="w-full py-2 border border-red-200 text-red-600 rounded font-bold text-xs hover:bg-red-50">
+                              Remove Item
+                           </button>
+                        </div>
+                    </div>
+                 )}
+             </div>
+         )})}
+      </div>
+
       {/* FOOTER: LIVE VALUATION */}
-      <div className="bg-slate-900 text-white p-4 shrink-0">
+      <div className="bg-slate-900 text-white p-4 shrink-0 fixed bottom-14 md:bottom-0 left-0 w-full md:relative z-20 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] md:shadow-none">
          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-            <div className="flex items-center space-x-3">
-                <div className={`w-8 h-8 rounded flex items-center justify-center ${isHold ? 'bg-indigo-500' : 'bg-blue-500'}`}>
+            <div className="flex items-center space-x-3 w-full md:w-auto">
+                <div className={`w-8 h-8 rounded flex items-center justify-center shrink-0 ${isHold ? 'bg-indigo-500' : 'bg-blue-500'}`}>
                     <i className={`fa-solid ${isHold ? 'fa-building' : 'fa-tags'}`}></i>
                 </div>
-                <div>
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">{isHold ? 'Investment Value' : 'Gross Realisation'}</h4>
-                    <p className="text-lg font-black font-mono">
-                        ${isHold ? (totals.valuation/1000000).toFixed(2) : (totals.gross/1000000).toFixed(2)}m
-                    </p>
+                <div className="flex justify-between w-full md:block">
+                    <div>
+                        <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{isHold ? 'Investment Value' : 'Gross Realisation'}</h4>
+                        <p className="text-lg font-black font-mono leading-none">
+                            ${isHold ? (totals.valuation/1000000).toFixed(2) : (totals.gross/1000000).toFixed(2)}m
+                        </p>
+                    </div>
+                    {/* Mobile Summary Metric */}
+                    <div className="md:hidden text-right">
+                        <div className="text-[9px] font-bold text-slate-400 uppercase">{isHold ? 'NOI' : 'Avg Price'}</div>
+                        <div className="text-sm font-mono font-bold">
+                            {isHold ? `$${(totals.effectiveNet/1000).toFixed(0)}k` : `$${Math.round(totals.avg/1000)}k`}
+                        </div>
+                    </div>
                 </div>
             </div>
+            
             {/* Desktop Metrics */}
             <div className="hidden md:flex space-x-8 text-xs">
                 {!isHold ? (
@@ -346,102 +456,6 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
                 )}
             </div>
          </div>
-      </div>
-
-      {/* MOBILE: CARD STACK */}
-      <div className="md:hidden p-4 space-y-4 pb-24">
-         <div className="flex justify-between items-center mb-2">
-            <h3 className="font-bold text-slate-800 text-sm">Revenue Mix</h3>
-            <button onClick={addRevenue} className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100">
-               + Add
-            </button>
-         </div>
-         {revenues.filter(r => r.strategy === strategy).map(item => (
-             <div key={item.id} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm relative overflow-hidden">
-                 <div className="flex justify-between items-start mb-3">
-                     <div className="flex-1">
-                        <input 
-                          className="font-bold text-slate-800 border-none p-0 focus:ring-0 w-full text-sm placeholder:text-slate-300" 
-                          value={item.description} 
-                          onChange={e => updateRevenue(item.id, 'description', e.target.value)}
-                          placeholder="Revenue Item Name"
-                        />
-                        <p className="text-[10px] text-slate-400 font-medium">
-                           {item.calcMode === 'QUANTITY_RATE' ? `${item.units} Units @ $${item.pricePerUnit.toLocaleString()}` : 'Lump Sum Amount'}
-                        </p>
-                     </div>
-                     <div className="text-right">
-                        <span className="block text-sm font-mono font-black text-slate-700">
-                           ${(item.calcMode === 'QUANTITY_RATE' ? item.units * item.pricePerUnit : item.pricePerUnit).toLocaleString()}
-                        </span>
-                     </div>
-                 </div>
-                 
-                 {/* Expand/Collapse Toggle */}
-                 <button 
-                    onClick={() => toggleExpanded(item.id)}
-                    className="w-full text-center py-2 bg-slate-50 rounded-lg text-xs font-bold text-slate-500 hover:bg-slate-100 transition-colors flex justify-center items-center"
-                 >
-                    {expandedRow === item.id ? 'Hide Details' : 'Edit Details'} 
-                    <i className={`fa-solid fa-chevron-down ml-2 transition-transform ${expandedRow === item.id ? 'rotate-180' : ''}`}></i>
-                 </button>
-
-                 {/* Collapsible Edit Form */}
-                 {expandedRow === item.id && (
-                    <div className="pt-4 mt-2 border-t border-slate-100 grid grid-cols-2 gap-3 animate-in slide-in-from-top-2 duration-200">
-                        <div className="col-span-2">
-                           <label className="text-[10px] font-bold text-slate-400 uppercase">Calculation Mode</label>
-                           <div className="flex bg-slate-100 p-1 rounded mt-1">
-                              <button onClick={() => updateRevenue(item.id, 'calcMode', 'QUANTITY_RATE')} className={`flex-1 py-1 rounded text-[10px] font-bold ${item.calcMode === 'QUANTITY_RATE' ? 'bg-white shadow text-indigo-600' : 'text-slate-500'}`}>Rate x Qty</button>
-                              <button onClick={() => updateRevenue(item.id, 'calcMode', 'LUMP_SUM')} className={`flex-1 py-1 rounded text-[10px] font-bold ${item.calcMode === 'LUMP_SUM' ? 'bg-white shadow text-indigo-600' : 'text-slate-500'}`}>Fixed Sum</button>
-                           </div>
-                        </div>
-                        
-                        <div>
-                           <label className="text-[10px] font-bold text-slate-400 uppercase">Amount ($)</label>
-                           <input type="number" className="w-full border-slate-200 rounded py-1.5 px-2 text-sm font-bold mt-1" value={item.pricePerUnit} onChange={e => updateRevenue(item.id, 'pricePerUnit', parseFloat(e.target.value))} />
-                        </div>
-                        
-                        {item.calcMode === 'QUANTITY_RATE' && (
-                            <div>
-                               <label className="text-[10px] font-bold text-slate-400 uppercase">Quantity</label>
-                               <input type="number" className="w-full border-slate-200 rounded py-1.5 px-2 text-sm font-bold mt-1" value={item.units} onChange={e => updateRevenue(item.id, 'units', parseFloat(e.target.value))} />
-                            </div>
-                        )}
-
-                        {!isHold ? (
-                           <>
-                              <div>
-                                 <label className="text-[10px] font-bold text-slate-400 uppercase">Rate (Mo)</label>
-                                 <input type="number" className="w-full border-slate-200 rounded py-1.5 px-2 text-sm font-bold mt-1" value={item.absorptionRate} onChange={e => updateRevenue(item.id, 'absorptionRate', parseFloat(e.target.value))} />
-                              </div>
-                              <div>
-                                 <label className="text-[10px] font-bold text-slate-400 uppercase">Offset</label>
-                                 <input type="number" className="w-full border-slate-200 rounded py-1.5 px-2 text-sm font-bold mt-1" value={item.offsetFromCompletion} onChange={e => updateRevenue(item.id, 'offsetFromCompletion', parseFloat(e.target.value))} />
-                              </div>
-                           </>
-                        ) : (
-                           <>
-                              <div>
-                                 <label className="text-[10px] font-bold text-slate-400 uppercase">Opex %</label>
-                                 <input type="number" className="w-full border-slate-200 rounded py-1.5 px-2 text-sm font-bold mt-1" value={item.opexRate} onChange={e => updateRevenue(item.id, 'opexRate', parseFloat(e.target.value))} />
-                              </div>
-                              <div>
-                                 <label className="text-[10px] font-bold text-slate-400 uppercase">Cap Rate %</label>
-                                 <input type="number" step="0.1" className="w-full border-slate-200 rounded py-1.5 px-2 text-sm font-bold mt-1" value={item.capRate} onChange={e => updateRevenue(item.id, 'capRate', parseFloat(e.target.value))} />
-                              </div>
-                           </>
-                        )}
-
-                        <div className="col-span-2 pt-2">
-                           <button onClick={() => removeRevenue(item.id)} className="w-full py-2 border border-red-200 text-red-600 rounded font-bold text-xs hover:bg-red-50">
-                              Remove Item
-                           </button>
-                        </div>
-                    </div>
-                 )}
-             </div>
-         ))}
       </div>
 
     </div>

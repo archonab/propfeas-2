@@ -4,11 +4,10 @@ import { Site, FeasibilityScenario, ScenarioStatus, LeadStatus } from '../types'
 import { FinanceEngine } from '../services/financeEngine';
 import { ScenarioComparison } from '../ScenarioComparison';
 import { ScenarioWizard } from './ScenarioWizard';
+import { useProject } from '../contexts/SiteContext';
 
 interface Props {
   site: Site;
-  onUpdateSite: (updatedSite: Site) => void;
-  onSelectScenario: (scenarioId: string) => void;
   onBack: () => void;
   onRequestEdit?: () => void;
 }
@@ -156,7 +155,16 @@ const Toast = ({ message, type, onClose }: { message: string, type: 'success' | 
 
 // --- Main Manager Component ---
 
-export const ScenarioManager: React.FC<Props> = ({ site, onUpdateSite, onSelectScenario, onBack, onRequestEdit }) => {
+export const ScenarioManager: React.FC<Props> = ({ site, onBack, onRequestEdit }) => {
+  const { 
+    addScenario, 
+    deleteScenario, 
+    duplicateScenario, 
+    selectScenario,
+    updateSiteStatus,
+    updateScenario 
+  } = useProject();
+
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isComparing, setIsComparing] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -165,7 +173,7 @@ export const ScenarioManager: React.FC<Props> = ({ site, onUpdateSite, onSelectS
   // Wizard & Prompt State
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [showLockPrompt, setShowLockPrompt] = useState(false);
-  const [pendingSiteUpdate, setPendingSiteUpdate] = useState<Site | null>(null);
+  const [pendingStatus, setPendingStatus] = useState<LeadStatus | null>(null);
 
   // --- Handlers ---
 
@@ -181,25 +189,12 @@ export const ScenarioManager: React.FC<Props> = ({ site, onUpdateSite, onSelectS
   };
 
   const handleWizardCreate = (newScenario: FeasibilityScenario) => {
-    onUpdateSite({
-        ...site,
-        scenarios: [...site.scenarios, newScenario]
-    });
+    addScenario(site.id, newScenario);
     setToast({ message: "Scenario created successfully", type: 'success' });
   };
 
-  const handleDuplicate = (scenario: FeasibilityScenario) => {
-    const newScenario: FeasibilityScenario = {
-        ...JSON.parse(JSON.stringify(scenario)), // Deep copy
-        id: `scen-${Date.now()}`,
-        name: `${scenario.name} (Copy)`,
-        lastModified: new Date().toISOString(),
-        isBaseline: false
-    };
-    onUpdateSite({
-        ...site,
-        scenarios: [...site.scenarios, newScenario]
-    });
+  const handleDuplicate = (scenarioId: string) => {
+    duplicateScenario(site.id, scenarioId);
     setToast({ message: "Scenario duplicated", type: 'success' });
   };
 
@@ -209,11 +204,7 @@ export const ScenarioManager: React.FC<Props> = ({ site, onUpdateSite, onSelectS
 
   const confirmDelete = () => {
     if (!deleteId) return;
-    const newScenarios = site.scenarios.filter(s => s.id !== deleteId);
-    onUpdateSite({
-        ...site,
-        scenarios: newScenarios
-    });
+    deleteScenario(site.id, deleteId);
     // Remove from selection if deleted
     if (selectedIds.has(deleteId)) {
         const newSet = new Set(selectedIds);
@@ -225,50 +216,35 @@ export const ScenarioManager: React.FC<Props> = ({ site, onUpdateSite, onSelectS
   };
 
   const handleStatusChange = (newStatus: LeadStatus) => {
-      const updatedSite = { ...site, status: newStatus };
-      if (newStatus === 'Acquired') {
+      if (newStatus === 'Acquired' && site.status !== 'Acquired') {
           // Trigger Lock Prompt if changing to Acquired
-          setPendingSiteUpdate(updatedSite);
+          setPendingStatus(newStatus);
           setShowLockPrompt(true);
       } else {
-          onUpdateSite(updatedSite);
+          updateSiteStatus(site.id, newStatus);
           setToast({ message: `Status updated to ${newStatus}`, type: 'success' });
       }
   };
 
   const confirmLockBaseline = () => {
-      if (!pendingSiteUpdate) return;
+      if (!pendingStatus) return;
       
-      // Find the active baseline or default to the first one
-      const scenarios = [...pendingSiteUpdate.scenarios];
-      let activeIndex = scenarios.findIndex(s => s.isBaseline);
-      if (activeIndex === -1) activeIndex = 0; // Default to first if no baseline set
-
-      if (scenarios[activeIndex]) {
-          scenarios[activeIndex] = {
-              ...scenarios[activeIndex],
-              isBaseline: true,
-              status: ScenarioStatus.LOCKED
-          };
-      }
-
-      onUpdateSite({
-          ...pendingSiteUpdate,
-          scenarios
-      });
+      // Update status via context - The context handles locking the baseline automatically
+      updateSiteStatus(site.id, pendingStatus);
+      
       setShowLockPrompt(false);
-      setPendingSiteUpdate(null);
+      setPendingStatus(null);
       setToast({ message: "Site Acquired. Baseline Scenario Locked.", type: 'success' });
   };
 
   const cancelLockBaseline = () => {
-      // Just update the status without locking
-      if (pendingSiteUpdate) {
-          onUpdateSite(pendingSiteUpdate);
-          setToast({ message: "Status updated to Acquired", type: 'success' });
-      }
+      // Just update the status without locking (manual override would be needed in context if we want this, 
+      // but strictly 'Acquired' implies locked in our rule. For now, assume user cancelled the status change entirely or we proceed without locking?
+      // Re-reading prompt: "If status becomes 'Acquired', automatically find... and set to 'LOCKED'".
+      // So if they click "No", we probably shouldn't change status to Acquired, or we change it but manually unlock?
+      // Let's assume cancel means abort status change to keep it simple and safe.
       setShowLockPrompt(false);
-      setPendingSiteUpdate(null);
+      setPendingStatus(null);
   };
 
   // Comparison Data
@@ -349,20 +325,20 @@ export const ScenarioManager: React.FC<Props> = ({ site, onUpdateSite, onSelectS
                 </div>
                 <h3 className="text-lg font-bold text-slate-800 text-center mb-2">Project Acquired</h3>
                 <p className="text-sm text-slate-500 text-center mb-6 leading-relaxed">
-                    Moving to <strong>Acquired</strong> status usually signifies the deal is done. Would you like to <strong>Lock the Baseline Scenario</strong> to prevent further edits?
+                    Moving to <strong>Acquired</strong> status signifies the deal is done. <br/>This will <strong>Lock the Baseline Scenario</strong> to prevent further edits. Proceed?
                 </p>
                 <div className="flex space-x-3">
                     <button 
                         onClick={cancelLockBaseline}
                         className="flex-1 py-2.5 bg-slate-100 text-slate-700 font-bold rounded-lg hover:bg-slate-200 transition-colors text-xs uppercase tracking-wider"
                     >
-                        No, Keep Open
+                        Cancel
                     </button>
                     <button 
                         onClick={confirmLockBaseline}
                         className="flex-1 py-2.5 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-700 transition-colors text-xs uppercase tracking-wider shadow-md"
                     >
-                        Yes, Lock Baseline
+                        Confirm & Lock
                     </button>
                 </div>
             </div>
@@ -461,8 +437,8 @@ export const ScenarioManager: React.FC<Props> = ({ site, onUpdateSite, onSelectS
                                 site={site}
                                 isSelected={selectedIds.has(scen.id)}
                                 onToggleSelect={() => handleToggleSelect(scen.id)}
-                                onOpen={() => onSelectScenario(scen.id)}
-                                onDuplicate={() => handleDuplicate(scen)}
+                                onOpen={() => selectScenario(scen.id)}
+                                onDuplicate={() => handleDuplicate(scen.id)}
                                 onDelete={() => handleDeleteClick(scen.id)}
                             />
                         ))}

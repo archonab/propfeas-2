@@ -113,24 +113,50 @@ export interface SiteMilestones {
   completionDate?: string;
 }
 
-export interface SiteDNA {
-  // Physical Attributes (Immutable per Site)
-  address: string;
-  state: TaxState; // Added: Drives default tax calculations
-  landArea: number; // in square meters
-  lga: string; // Local Government Area (Council)
-  zoning: string;
-  overlays: string[]; // e.g., "Heritage", "Flood"
-  
-  // Statutory Values
-  auv?: number; // Assessed Unimproved Value (Site Value)
-  acv?: number; // Assessed Capital Value (Improved Value)
+// Extended Asset Registry Types
+export type PermitStatus = 'Not Started' | 'Draft' | 'Lodged' | 'RFI' | 'Approved' | 'Rejected';
+export type FloodZone = 'Low' | 'Medium' | 'High';
+export type StakeholderRole = 'Investor' | 'Client' | 'Consultant' | 'Lender' | 'Authority';
 
-  // Geolocation & Enrichment
+export interface Stakeholder {
+  id: string;
+  role: StakeholderRole;
+  name: string;
+  company: string;
+  email?: string;
+  phone?: string;
+}
+
+export interface SiteDNA {
+  // Physical Attributes
+  address: string;
+  state: TaxState;
+  landArea: number; // m2
+  lga: string; // Council
+  zoning: string; // General description
+  
+  // Planning & Environment (New)
+  zoningCode?: string; // Specific code e.g., RGZ1
+  overlays: string[];
+  permitStatus?: PermitStatus;
+  floodZone?: FloodZone;
+  contaminationStatus?: string;
+
+  // Statutory Values
+  auv?: number; // Site Value
+  acv?: number; // Capital Improved Value
+
+  // Legal & Title (New)
+  titleReference?: string; // Vol/Folio
+  ownershipEntity?: string;
+  easements?: string;
+  covenants?: string;
+
+  // Geolocation
   geometry?: { lat: number, lng: number };
   propertyId?: string;
 
-  // CRM / Deal Attributes
+  // Legacy CRM (Deprecated in favor of Stakeholders array, kept for compat)
   agent: AgentContact;
   vendor: VendorProfile;
 
@@ -140,16 +166,12 @@ export interface SiteDNA {
 
 export interface FeasibilityScenario {
   id: string;
-  name: string; // e.g. "Base Case", "High Yield Option"
+  name: string;
   lastModified: string;
   isBaseline: boolean;
   status: ScenarioStatus;
-  strategy: 'SELL' | 'HOLD'; // High-level strategy intent
-  
-  // Scenario Linking (The Feastudy "Golden Thread")
-  linkedSellScenarioId?: string; // If HOLD, this points to the development basis
-  
-  // The Financial Model
+  strategy: 'SELL' | 'HOLD';
+  linkedSellScenarioId?: string;
   settings: FeasibilitySettings;
   costs: LineItem[];
   revenues: RevenueItem[];
@@ -160,17 +182,20 @@ export type LeadStatus = 'Prospect' | 'Due Diligence' | 'Acquired' | 'Archive';
 export interface Site {
   id: string;
   code: string;
-  name: string; // Project Title / Name
+  name: string;
   thumbnail: string;
   status: LeadStatus;
   
-  // Embedded Site Data
+  // Core Asset Data
   dna: SiteDNA;
   
-  // Financial Scenarios (One Site -> Many Models)
+  // Project Team (New)
+  stakeholders: Stakeholder[];
+
+  // Financial Scenarios
   scenarios: FeasibilityScenario[];
 
-  // Management Stats (Mocked for dashboard)
+  // Management Stats
   stage: 'Analysis' | 'Acquisition' | 'Planning' | 'Construction' | 'Sales';
   pm: string;
   openTasks: number;
@@ -188,19 +213,16 @@ export interface LineItem {
   description: string;
   inputType: InputType;
   amount: number;
-  
-  // Timeline
-  startDate: number; // If linked, this acts as Offset (+/-)
+  startDate: number;
   span: number;
-  linkToMilestone?: MilestoneLink; // Golden Thread Link
-
+  linkToMilestone?: MilestoneLink;
   method: DistributionMethod;
-  escalationRate: number; // Annual % (Specific Override)
+  escalationRate: number;
   gstTreatment: GstTreatment;
   sCurveSteepness?: number; 
   milestones?: Record<number, number>; 
   specialTag?: LineItemTag; 
-  calculationLink?: CalculationLink; // New Automated Logic
+  calculationLink?: CalculationLink; 
 }
 
 export type RevenueStrategy = 'Sell' | 'Hold';
@@ -210,69 +232,31 @@ export interface RevenueItem {
   id: string;
   description: string;
   strategy: RevenueStrategy;
-  calcMode: RevenueCalcMode; // New: Toggle between fixed sum or rate x units
-  
-  // Common
-  units: number; // Quantity (Units or SQM)
-  pricePerUnit: number; // Sale Price OR Annual/Weekly Rent
-  
-  // Sell Logic
-  absorptionRate?: number; // Units per month sales rate
+  calcMode: RevenueCalcMode;
+  units: number;
+  pricePerUnit: number;
+  absorptionRate?: number;
   commissionRate: number; 
   isTaxable: boolean; 
-  
-  // Hold Logic
-  weeklyRent?: number; // Legacy support, prefer pricePerUnit
-  opexRate?: number; // % of Gross Income
-  vacancyFactorPct?: number; // Permanent vacancy allowance
-  leaseUpMonths?: number; // Duration to reach stabilisation
-  isCapitalised?: boolean; // Does this income line contribute to ISP?
-  capRate?: number; // Item specific cap rate (optional override)
-
-  // Timing
-  offsetFromCompletion: number; // Months after construction ends
-  settlementSpan: number; // Legacy: used if absorptionRate is not set
-  
+  weeklyRent?: number;
+  opexRate?: number;
+  vacancyFactorPct?: number;
+  leaseUpMonths?: number;
+  isCapitalised?: boolean;
+  capRate?: number;
+  offsetFromCompletion: number;
+  settlementSpan: number;
   specialTag?: RevenueItemTag;
 }
 
-// --- ADVANCED FINANCIAL TYPES ---
+// --- ADVANCED FINANCIAL TYPES (unchanged) ---
+export enum DebtLimitMethod { FIXED = 'Fixed Amount', LVR = 'LVR Cap (%)', LTC = 'LTC Cap (%)' }
+export enum InterestRateMode { SINGLE = 'Single Rate', VARIABLE = 'Variable Rates over Time' }
+export enum FeeBase { FIXED = 'Fixed Amount ($)', PERCENT = 'Percentage of Limit (%)' }
+export enum EquityMode { SUM_OF_MONEY = 'Sum of Money (Upfront)', INSTALMENTS = 'Lump Sum Instalments', PCT_LAND = '% of Land Purchase Price', PCT_TOTAL_COST = '% of Total Costs (Pre-Interest)', PCT_MONTHLY = '% of Monthly Costs (Pari Passu)' }
 
-export enum DebtLimitMethod {
-  FIXED = 'Fixed Amount',
-  LVR = 'LVR Cap (%)',
-  LTC = 'LTC Cap (%)'
-}
-
-export enum InterestRateMode {
-  SINGLE = 'Single Rate',
-  VARIABLE = 'Variable Rates over Time'
-}
-
-export enum FeeBase {
-  FIXED = 'Fixed Amount ($)',
-  PERCENT = 'Percentage of Limit (%)'
-}
-
-export enum EquityMode {
-  SUM_OF_MONEY = 'Sum of Money (Upfront)',
-  INSTALMENTS = 'Lump Sum Instalments',
-  PCT_LAND = '% of Land Purchase Price',
-  PCT_TOTAL_COST = '% of Total Costs (Pre-Interest)',
-  PCT_MONTHLY = '% of Monthly Costs (Pari Passu)'
-}
-
-export interface DatedRate {
-  id: string;
-  month: number;
-  rate: number;
-}
-
-export interface DatedAmount {
-  id: string;
-  month: number;
-  amount: number;
-}
+export interface DatedRate { id: string; month: number; rate: number; }
+export interface DatedAmount { id: string; month: number; amount: number; }
 
 export interface CapitalTier {
   rateMode: InterestRateMode;
@@ -280,7 +264,7 @@ export interface CapitalTier {
   variableRates: DatedRate[];
   establishmentFeeBase: FeeBase;
   establishmentFee: number;
-  lineFeePct?: number; // Annual % charged on Limit
+  lineFeePct?: number;
   limitMethod?: DebtLimitMethod; 
   limit?: number; 
   activationMonth?: number; 
@@ -297,8 +281,8 @@ export interface EquityStructure {
 export interface JointVenture {
   enabled: boolean;
   partnerName: string;
-  equitySplitPct: number; // Partner's contribution %
-  profitSharePct: number; // Partner's profit share %
+  equitySplitPct: number;
+  profitSharePct: number;
 }
 
 export interface CapitalStack {
@@ -306,7 +290,7 @@ export interface CapitalStack {
   mezzanine: CapitalTier;
   equity: EquityStructure;
   jv: JointVenture;
-  surplusInterestRate: number; // Rate earned on positive cash balance
+  surplusInterestRate: number;
 }
 
 export interface AcquisitionSettings {
@@ -314,8 +298,8 @@ export interface AcquisitionSettings {
   settlementPeriod: number;
   depositPercent: number;
   stampDutyState: 'VIC' | 'NSW' | 'QLD';
-  stampDutyTiming: 'EXCHANGE' | 'SETTLEMENT'; // Precision Timing
-  stampDutyOverride?: number; // Manual override for specific exemptions
+  stampDutyTiming: 'EXCHANGE' | 'SETTLEMENT';
+  stampDutyOverride?: number;
   isForeignBuyer: boolean;
   buyersAgentFee: number;
   legalFeeEstimate: number;
@@ -337,35 +321,27 @@ export interface HoldStrategy {
 }
 
 export interface GrowthMatrix {
-  constructionEscalation: number; // % p.a.
-  rentalGrowth: number; // % p.a.
-  landAppreciation: number; // % p.a.
-  salesPriceEscalation: number; // % p.a.
-  cpi: number; // % p.a. (General)
+  constructionEscalation: number;
+  rentalGrowth: number;
+  landAppreciation: number;
+  salesPriceEscalation: number;
+  cpi: number;
 }
 
 export interface FeasibilitySettings {
-  // Scenario specifics (Site Data has moved to Parent)
   description?: string;
-  projectName?: string; // Optional override for report titles
-
-  // Deal Structure
+  projectName?: string;
   acquisition: AcquisitionSettings;
-
-  // Calculation Settings
   startDate: string;
   durationMonths: number;
   constructionDelay: number;
-  
-  growth: GrowthMatrix; // Replaces single defaultEscalationRate
+  growth: GrowthMatrix;
   holdStrategy?: HoldStrategy;
-
   discountRate: number;
   gstRate: number;
   totalUnits: number;
   useMarginScheme: boolean;
-  defaultEscalationRate?: number; // Deprecated, keep for compat
-  
+  defaultEscalationRate?: number;
   capitalStack: CapitalStack;
 }
 
@@ -389,14 +365,14 @@ export interface MonthlyFlow {
   balanceSurplus: number; 
   interestSenior: number;
   interestMezz: number;
-  lineFeeSenior: number; // New
+  lineFeeSenior: number;
   netCashflow: number;
   cumulativeCashflow: number;
   investmentBalance: number;
   investmentInterest: number;
   assetValue: number;
-  statutoryValue: number; // New: Tracks AUV growth specifically
-  landTaxLiability: number; // New: Tracks dynamic land tax
+  statutoryValue: number;
+  landTaxLiability: number;
   inflationFactor: number; 
   depreciation: number;
 }

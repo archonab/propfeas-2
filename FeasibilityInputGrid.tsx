@@ -25,7 +25,6 @@ interface Props {
 }
 
 // --- PERF OPTIMIZATION: Debounced Input Component ---
-// Prevents recalculating the entire 10-year cashflow on every keystroke
 const DebouncedInput = ({ 
   value, 
   onChange, 
@@ -100,7 +99,6 @@ const CostSection: React.FC<{
   const sectionCosts = costs.filter(c => categories.includes(c.category));
   
   const sectionTotal = sectionCosts.reduce((acc, item) => {
-    // We use the same engine calculation to display accurate totals in the header
     const amount = FinanceEngine.calculateLineItemTotal(item, settings, siteDNA, constructionTotal, estimatedRevenue, taxScales);
     return acc + amount;
   }, 0);
@@ -109,36 +107,21 @@ const CostSection: React.FC<{
 
   // --- Helper: Smart Driver Context ---
   const getSmartContext = (item: LineItem) => {
-    // If we have an automated statutory link, we show that source instead
     if (item.calculationLink && item.calculationLink !== 'NONE') {
         const state = settings.acquisition.stampDutyState;
         let driverLabel = '';
         
         switch (item.calculationLink) {
-            case 'AUTO_STAMP_DUTY':
-                driverLabel = `Automated ${state} Duty`;
-                break;
-            case 'AUTO_LAND_TAX':
-                driverLabel = `Automated ${state} Land Tax`;
-                break;
-            case 'AUTO_COUNCIL_RATES':
-                driverLabel = `Rate on Capital Value`;
-                break;
+            case 'AUTO_STAMP_DUTY': driverLabel = `Automated ${state} Duty`; break;
+            case 'AUTO_LAND_TAX': driverLabel = `Automated ${state} Land Tax`; break;
+            case 'AUTO_COUNCIL_RATES': driverLabel = `Rate on Capital Value`; break;
         }
         
-        // Calculate the effective value on the fly for display
         const calculatedValue = FinanceEngine.calculateLineItemTotal(item, settings, siteDNA, constructionTotal, estimatedRevenue, taxScales);
         
-        return { 
-            showDriver: true, 
-            driverLabel, 
-            calculatedValue, 
-            warning: null, 
-            isLinked: true 
-        };
+        return { showDriver: true, driverLabel, calculatedValue, warning: null, isLinked: true };
     }
 
-    // Normal Input Logic
     let driverValue = 0;
     let driverLabel = '';
     let isPercentage = false;
@@ -146,42 +129,27 @@ const CostSection: React.FC<{
     let warning: string | null = null;
 
     if (isOperatingLedger) {
-        // Special context for Operating Ledger
         if (item.inputType === InputType.PCT_REVENUE) {
             driverLabel = 'Gross Rental Income';
             isPercentage = true;
             showDriver = true;
-            driverValue = estimatedRevenue; // Annual Gross Rent passed in
-        } else if (item.inputType === InputType.FIXED) {
-            // Treat as Annual Amount
-            // No driver calculation needed, it's just a fixed annual sum
+            driverValue = estimatedRevenue;
         }
     } else {
-        // Standard Development Costs
         switch (item.inputType) {
             case InputType.PCT_CONSTRUCTION:
-                driverValue = constructionTotal;
-                driverLabel = 'Const. Cost';
-                isPercentage = true;
-                showDriver = true;
+                driverValue = constructionTotal; driverLabel = 'Const. Cost'; isPercentage = true; showDriver = true;
                 if (driverValue <= 0) warning = 'No Construction Cost';
                 break;
             case InputType.PCT_REVENUE:
-                driverValue = estimatedRevenue;
-                driverLabel = 'Est. Revenue';
-                isPercentage = true;
-                showDriver = true;
+                driverValue = estimatedRevenue; driverLabel = 'Est. Revenue'; isPercentage = true; showDriver = true;
                 break;
             case InputType.RATE_PER_SQM:
-                driverValue = landArea;
-                driverLabel = `${(driverValue || 0).toLocaleString()} sqm Site`;
-                showDriver = true;
+                driverValue = landArea; driverLabel = `${(driverValue || 0).toLocaleString()} sqm Site`; showDriver = true;
                 if (!driverValue || driverValue <= 0) warning = 'Missing Land Area';
                 break;
             case InputType.RATE_PER_UNIT:
-                driverValue = settings.totalUnits;
-                driverLabel = `${driverValue} Units`;
-                showDriver = true;
+                driverValue = settings.totalUnits; driverLabel = `${driverValue} Units`; showDriver = true;
                 if (!driverValue || driverValue <= 0) warning = 'No Units Defined';
                 break;
         }
@@ -194,23 +162,18 @@ const CostSection: React.FC<{
     return { showDriver, driverLabel, calculatedValue, warning, isLinked: false };
   };
 
-  // --- Shared Advanced Config Form ---
   const AdvancedConfigSection = ({ item }: { item: LineItem }) => {
     return (
       <div className="space-y-4 pt-4 border-t border-slate-100 mt-4">
         <div className="flex flex-col md:flex-row gap-4">
-           {/* Left: Phasing Chart (Hidden for Operating Ledger usually, as it's recurring) */}
            {!isOperatingLedger && (
-               <div className="flex-1">
+               <div className="flex-1 hidden md:block">
                   <label className="text-[10px] font-bold uppercase text-slate-500 mb-2 block">Cashflow Distribution</label>
                   <PhasingChart item={item} settings={settings} constructionTotal={constructionTotal} totalRevenue={estimatedRevenue} />
                </div>
            )}
 
-           {/* Right: Controls */}
            <div className="w-full md:w-64 space-y-4">
-              
-              {/* Automation Link Control */}
               <div className="space-y-1">
                  <label className="text-[10px] font-bold uppercase text-slate-500 flex items-center">
                     Automated Calculation
@@ -226,11 +189,6 @@ const CostSection: React.FC<{
                     <option value="AUTO_LAND_TAX">Land Tax (State Scale)</option>
                     <option value="AUTO_COUNCIL_RATES">Council Rates (% of Value)</option>
                  </select>
-                 {item.calculationLink && item.calculationLink !== 'NONE' && (
-                     <p className="text-[9px] text-slate-400 italic leading-tight mt-1">
-                         Overrides 'Amount' with auto-calculated value based on project metrics.
-                     </p>
-                 )}
               </div>
 
               {!isOperatingLedger && (
@@ -291,7 +249,6 @@ const CostSection: React.FC<{
                   </div>
               )}
 
-              {/* GST Override */}
               <div className="space-y-1">
                  <label className="text-[10px] font-bold uppercase text-slate-500">GST Treatment</label>
                  <select 
@@ -312,7 +269,7 @@ const CostSection: React.FC<{
      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6">
         {/* Section Header */}
         <div 
-          className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex justify-between items-center cursor-pointer hover:bg-slate-100 transition-colors"
+          className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex justify-between items-center cursor-pointer hover:bg-slate-100 transition-colors sticky top-0 z-10"
           onClick={() => setIsOpen(!isOpen)}
         >
            <div className="flex items-center space-x-3">
@@ -341,10 +298,11 @@ const CostSection: React.FC<{
 
                  return (
                     <div key={item.id} className={`bg-white transition-colors ${isExpanded ? 'bg-indigo-50/20' : 'hover:bg-slate-50'}`}>
-                       <div className="p-4 flex flex-col md:flex-row md:items-center gap-4">
-                          {/* Row Inputs */}
-                          <div className="flex-1 grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
-                             <div className="md:col-span-4">
+                       
+                       {/* DESKTOP ROW LAYOUT (>768px) */}
+                       <div className="hidden md:flex p-4 flex-row items-center gap-4">
+                          <div className="flex-1 grid grid-cols-12 gap-4 items-center">
+                             <div className="col-span-4">
                                 <DebouncedInput 
                                    type="text" 
                                    value={item.description}
@@ -354,7 +312,7 @@ const CostSection: React.FC<{
                                 />
                              </div>
                              
-                             <div className="md:col-span-3">
+                             <div className="col-span-3">
                                 {isLinked ? (
                                     <div className="flex items-center space-x-2 bg-indigo-50 px-2 py-1 rounded border border-indigo-100 w-fit">
                                         <i className="fa-solid fa-robot text-indigo-500 text-[10px]"></i>
@@ -374,10 +332,7 @@ const CostSection: React.FC<{
                                             </>
                                         ) : (
                                             Object.values(InputType).map(t => {
-                                                // Prevent Circular Logic: Construction items cannot be % of Construction
-                                                if (item.category === CostCategory.CONSTRUCTION && t === InputType.PCT_CONSTRUCTION) {
-                                                    return null;
-                                                }
+                                                if (item.category === CostCategory.CONSTRUCTION && t === InputType.PCT_CONSTRUCTION) return null;
                                                 return <option key={t} value={t}>{t}</option>
                                             })
                                         )}
@@ -391,10 +346,10 @@ const CostSection: React.FC<{
                                 )}
                              </div>
 
-                             <div className="md:col-span-3 text-right">
+                             <div className="col-span-3 text-right">
                                 <div className="flex items-center justify-end space-x-2">
                                    {isLinked ? (
-                                       <div className="text-sm font-bold text-slate-800 bg-slate-100 px-2 py-1 rounded cursor-not-allowed border border-slate-200 min-w-[80px] text-center" title="Value calculated automatically. Edit via Advanced Settings.">
+                                       <div className="text-sm font-bold text-slate-800 bg-slate-100 px-2 py-1 rounded cursor-not-allowed border border-slate-200 min-w-[80px] text-center">
                                            {calculatedValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                                        </div>
                                    ) : (
@@ -417,33 +372,96 @@ const CostSection: React.FC<{
                                 {warning && <div className="text-[9px] text-red-500 font-bold">{warning}</div>}
                              </div>
                              
-                             <div className="md:col-span-2 flex justify-end items-center space-x-2">
-                                {item.linkToMilestone && (
-                                    <div className="text-[9px] px-1.5 py-0.5 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded font-bold uppercase tracking-wider" title="Linked to Project Milestone">
-                                        Linked
-                                    </div>
-                                )}
+                             <div className="col-span-2 flex justify-end items-center space-x-2">
                                 <button 
                                    onClick={() => toggleExpanded(item.id)} 
                                    className={`p-1.5 rounded-md transition-colors ${isExpanded ? 'bg-indigo-100 text-indigo-600' : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100'}`}
-                                   title="Advanced Settings"
                                 >
                                    <i className="fa-solid fa-sliders"></i>
                                 </button>
                                 <button 
                                    onClick={() => onRemove(item.id)} 
                                    className="p-1.5 text-slate-300 hover:text-red-500 transition-colors"
-                                   title="Remove Item"
                                 >
                                    <i className="fa-solid fa-trash"></i>
                                 </button>
                              </div>
                           </div>
                        </div>
+
+                       {/* MOBILE CARD LAYOUT (<768px) */}
+                       <div className="md:hidden p-4">
+                          <div className="flex justify-between items-start mb-2" onClick={() => toggleExpanded(item.id)}>
+                             <div className="flex-1 mr-4">
+                                <div className="text-sm font-bold text-slate-800 leading-tight mb-1">{item.description}</div>
+                                <div className="flex flex-wrap gap-2">
+                                    <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded border border-slate-200">
+                                        {isLinked ? 'Automated' : (item.inputType === InputType.FIXED ? 'Fixed' : 'Variable')}
+                                    </span>
+                                    {isLinked && <span className="text-[10px] text-indigo-500 font-bold">{driverLabel}</span>}
+                                </div>
+                             </div>
+                             <div className="text-right">
+                                <div className="text-sm font-black text-slate-800">
+                                    ${calculatedValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                </div>
+                                {!isLinked && (
+                                    <div className="text-[10px] text-slate-400">
+                                        {item.amount}{item.inputType.includes('%') ? '%' : ''}
+                                    </div>
+                                )}
+                             </div>
+                          </div>
+                          
+                          {/* Mobile Edit Drawer */}
+                          {isExpanded && (
+                             <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-1 gap-4 animate-in slide-in-from-top-2">
+                                <div>
+                                   <label className="text-[10px] font-bold text-slate-400 uppercase mb-1">Description</label>
+                                   <input 
+                                      type="text" 
+                                      value={item.description}
+                                      onChange={(e) => onUpdate(item.id, 'description', e.target.value)}
+                                      className="w-full border-slate-200 rounded text-sm font-bold text-slate-800 py-2"
+                                   />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase mb-1">Type</label>
+                                        <select 
+                                            value={item.inputType} 
+                                            onChange={(e) => onUpdate(item.id, 'inputType', e.target.value)}
+                                            className="w-full border-slate-200 rounded text-sm text-slate-700 py-2"
+                                            disabled={isLinked}
+                                        >
+                                            {Object.values(InputType).map(t => <option key={t} value={t}>{t}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase mb-1">Amount</label>
+                                        <input 
+                                            type="number" 
+                                            value={item.amount}
+                                            onChange={(e) => onUpdate(item.id, 'amount', parseFloat(e.target.value))}
+                                            className="w-full border-slate-200 rounded text-sm font-bold text-slate-800 py-2"
+                                            disabled={isLinked}
+                                        />
+                                    </div>
+                                </div>
+                                
+                                {/* Re-use Advanced Config for Mobile */}
+                                <AdvancedConfigSection item={item} />
+
+                                <button onClick={() => onRemove(item.id)} className="w-full py-2 border border-red-200 text-red-600 rounded font-bold text-xs hover:bg-red-50 mt-2">
+                                    Remove Item
+                                </button>
+                             </div>
+                          )}
+                       </div>
                        
-                       {/* Expanded Panel */}
+                       {/* Expanded Panel (Desktop Only, since Mobile inlines it) */}
                        {isExpanded && (
-                          <div className="px-4 pb-4 animate-in fade-in slide-in-from-top-1 duration-200">
+                          <div className="hidden md:block px-4 pb-4 animate-in fade-in slide-in-from-top-1 duration-200">
                              <AdvancedConfigSection item={item} />
                           </div>
                        )}
@@ -451,11 +469,21 @@ const CostSection: React.FC<{
                  );
               })}
 
-              {/* Add Button */}
-              <div className="p-3 bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer" onClick={() => onAdd(categories[0])}>
+              {/* Add Button (Desktop) */}
+              <div className="hidden md:flex p-3 bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer" onClick={() => onAdd(categories[0])}>
                  <div className="flex justify-center items-center text-xs font-bold text-indigo-600">
                     <i className="fa-solid fa-plus mr-2"></i> Add Item to {title}
                  </div>
+              </div>
+
+              {/* Add Button (Mobile Floating Action Style inside section) */}
+              <div className="md:hidden p-4 border-t border-slate-100">
+                 <button 
+                    onClick={() => onAdd(categories[0])}
+                    className="w-full py-3 rounded-lg border border-dashed border-indigo-300 text-indigo-600 bg-indigo-50 font-bold text-sm flex justify-center items-center"
+                 >
+                    <i className="fa-solid fa-plus mr-2"></i> Add Item
+                 </button>
               </div>
            </div>
         )}
@@ -481,20 +509,20 @@ export const FeasibilityInputGrid: React.FC<Props> = ({
     <div className="space-y-6 pb-24">
       
       {/* Action Bar */}
-      <div className="flex justify-between items-center bg-slate-50 p-3 rounded-lg border border-slate-200">
+      <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm sticky top-14 md:static z-30">
          <div>
             <h3 className="text-sm font-bold text-slate-800">
                 {strategy === 'HOLD' ? 'Operating & Holding Costs' : 'Development Costs'}
             </h3>
-            <p className="text-xs text-slate-500">
-                {strategy === 'HOLD' ? 'Manage recurrent expenses (Opex) and statutory outgoings' : 'Manage budget line items'}
+            <p className="text-[10px] md:text-xs text-slate-500">
+                {strategy === 'HOLD' ? 'Manage recurrent expenses (Opex)' : 'Manage budget line items'}
             </p>
          </div>
          <button 
            onClick={() => setShowLibrary(true)}
-           className="px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-100 hover:text-indigo-700 transition-all shadow-sm flex items-center"
+           className="px-4 py-2 bg-slate-50 border border-slate-200 text-slate-700 rounded-lg text-xs font-bold hover:bg-white hover:text-indigo-700 transition-all shadow-sm flex items-center"
          >
-           <i className="fa-solid fa-boxes-packing mr-2 text-indigo-500"></i> Load from Template
+           <i className="fa-solid fa-boxes-packing mr-2 text-indigo-500"></i> <span className="hidden md:inline">Load Template</span><span className="md:hidden">Import</span>
          </button>
       </div>
 

@@ -170,6 +170,7 @@ export const MOCK_SITES: Site[] = [
       vendor: { name: "Private Holding Co." },
       milestones: { acquisitionDate: "2023-01-15", settlementDate: "2023-06-30" }
     },
+    stakeholders: [],
     scenarios: [createDefaultScenario("Approved Baseline")]
   },
   {
@@ -194,6 +195,7 @@ export const MOCK_SITES: Site[] = [
       vendor: { name: "InvestCorp" },
       milestones: { acquisitionDate: "2022-08-10" }
     },
+    stakeholders: [],
     scenarios: [createDefaultScenario("Construction Budget")]
   },
   {
@@ -218,6 +220,7 @@ export const MOCK_SITES: Site[] = [
       vendor: { name: "Logistics REIT" },
       milestones: {}
     },
+    stakeholders: [],
     scenarios: [createDefaultScenario("Initial Feasibility")]
   },
   {
@@ -242,6 +245,7 @@ export const MOCK_SITES: Site[] = [
       vendor: { name: "State Govt" },
       milestones: {}
     },
+    stakeholders: [],
     scenarios: []
   },
   {
@@ -266,6 +270,7 @@ export const MOCK_SITES: Site[] = [
       vendor: { name: "Private" },
       milestones: { acquisitionDate: "2024-05-01" }
     },
+    stakeholders: [],
     scenarios: [createDefaultScenario("Option A: 20 Units"), createDefaultScenario("Option B: 24 Units")]
   }
 ];

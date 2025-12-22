@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Site, SiteDNA, TaxState } from '../types';
+import { Site, SiteDNA, TaxState, PermitStatus, Stakeholder, StakeholderRole, LeadStatus, FloodZone, ScenarioStatus } from '../types';
 
 interface Props {
   site: Site;
@@ -8,375 +8,453 @@ interface Props {
   readOnly?: boolean;
 }
 
-// Simulated "Smart Data" Provider Database
-const MOCK_ADDRESS_DATABASE = {
-  "49 King St": {
-    address: "49 King Street, Dandenong VIC 3175",
-    dna: {
-      landArea: 1240,
-      state: 'VIC',
-      zoning: "GRZ1 (General Residential)",
-      lga: "City of Greater Dandenong",
-      overlays: ["Heritage Overlay (HO102)", "Vegetation Protection (VPO1)"],
-      agent: { name: "John Smith", company: "Ray White Commercial" },
-      vendor: { name: "Private Holding Co" },
-      auv: 1200000,
-      acv: 1450000
-    },
-    geometry: { lat: -37.9875, lng: 145.2146 }
-  },
-  "142 O'Riordan St": {
-    address: "142 O'Riordan Street, Mascot NSW 2020",
-    dna: {
-        landArea: 2100,
-        state: 'NSW',
-        zoning: "B4 Mixed Use",
-        lga: "Bayside Council",
-        overlays: ["Airport Height Ops"],
-        agent: { name: "Pending", company: "CBRE" },
-        vendor: { name: "Logistics REIT" },
-        auv: 4500000,
-        acv: 5200000
-    },
-    geometry: { lat: -33.928, lng: 151.188 }
-  },
-  "Default": {
-    address: "New Site Scenario",
-    dna: {
-      landArea: 1000,
-      state: 'VIC',
-      zoning: "Pending",
-      lga: "Pending",
-      overlays: [],
-      agent: { name: "", company: "" },
-      vendor: { name: "" },
-      auv: 0,
-      acv: 0
-    }
-  }
-};
+// --- CONSTANTS ---
+const PERMIT_STATUSES: PermitStatus[] = ['Not Started', 'Draft', 'Lodged', 'RFI', 'Approved', 'Rejected'];
+const FLOOD_ZONES: FloodZone[] = ['Low', 'Medium', 'High'];
+const STAKEHOLDER_ROLES: StakeholderRole[] = ['Client', 'Investor', 'Lender', 'Consultant', 'Authority'];
 
-type Tab = 'physical' | 'statutory' | 'team';
+type Tab = 'overview' | 'dna' | 'stakeholders' | 'documents';
 
 export const SiteDNAHub: React.FC<Props> = ({ site, onUpdate, readOnly = false }) => {
-  const [activeTab, setActiveTab] = useState<Tab>('physical');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
+  const [activeTab, setActiveTab] = useState<Tab>('overview');
 
-  // -- Smart Fetch Logic --
-  const handleSimulatedFetch = (query: string) => {
-    setIsSearching(true);
-    
-    // Simulate API Latency
-    setTimeout(() => {
-      setIsSearching(false);
-      
-      // Simple matching logic
-      let match = MOCK_ADDRESS_DATABASE["Default"];
-      const lowerQuery = query.toLowerCase();
-      if (lowerQuery.includes("49 king")) match = MOCK_ADDRESS_DATABASE["49 King St"];
-      if (lowerQuery.includes("riordan")) match = MOCK_ADDRESS_DATABASE["142 O'Riordan St"];
-      
-      // Update Global Site DNA
-      const newDNA: SiteDNA = {
-        ...site.dna,
-        ...match.dna as SiteDNA // Apply matched data
-      };
-
-      onUpdate({
-        ...site,
-        name: match.address.split(',')[0], // Auto-update project name
-        dna: newDNA
-      });
-      
-      setSearchQuery(match.address);
-    }, 800);
+  // --- Handlers ---
+  const updateSiteField = (field: keyof Site, value: any) => {
+    if (readOnly) return;
+    onUpdate({ ...site, [field]: value });
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleSimulatedFetch(searchQuery);
-    }
-  };
-
-  const updateField = (field: keyof SiteDNA, value: any) => {
+  const updateDNAField = (field: keyof SiteDNA, value: any) => {
+    if (readOnly) return;
     onUpdate({
       ...site,
       dna: { ...site.dna, [field]: value }
     });
   };
 
-  const updateNested = (parent: 'agent' | 'vendor', field: string, value: any) => {
+  // Stakeholder CRUD
+  const addStakeholder = () => {
+    if (readOnly) return;
+    const newPerson: Stakeholder = {
+        id: `sh-${Date.now()}`,
+        role: 'Consultant',
+        name: 'New Contact',
+        company: 'Unassigned'
+    };
     onUpdate({
-      ...site,
-      dna: {
-        ...site.dna,
-        [parent]: { ...site.dna[parent], [field]: value }
-      }
+        ...site,
+        stakeholders: [...(site.stakeholders || []), newPerson]
     });
   };
 
+  const updateStakeholder = (id: string, field: keyof Stakeholder, value: any) => {
+    if (readOnly) return;
+    const updatedList = (site.stakeholders || []).map(s => 
+        s.id === id ? { ...s, [field]: value } : s
+    );
+    onUpdate({ ...site, stakeholders: updatedList });
+  };
+
+  const removeStakeholder = (id: string) => {
+    if (readOnly) return;
+    const updatedList = (site.stakeholders || []).filter(s => s.id !== id);
+    onUpdate({ ...site, stakeholders: updatedList });
+  };
+
   return (
-    <div className="flex flex-col md:flex-row h-full min-h-[500px] bg-slate-50 overflow-hidden">
+    <div className="flex flex-col lg:flex-row h-full bg-slate-50 overflow-hidden">
         
-        {/* LEFT PANEL: Form Inputs */}
-        <div className="flex-1 flex flex-col border-r border-slate-200">
-            {/* Header: Smart Search */}
-            <div className="bg-white p-6 border-b border-slate-200">
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Project Address (Smart Search)</label>
-                <div className="relative">
-                    <div className="absolute left-4 top-3.5 text-slate-400">
-                        {isSearching ? <i className="fa-solid fa-circle-notch fa-spin text-indigo-500"></i> : <i className="fa-solid fa-magnifying-glass"></i>}
-                    </div>
-                    <input 
-                        type="text" 
+        {/* --- LEFT COLUMN: SITE PROFILE (MASTER) --- */}
+        <aside className="w-full lg:w-80 bg-white border-b lg:border-b-0 lg:border-r border-slate-200 flex flex-col shrink-0 lg:h-full z-10 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
+            
+            {/* Visual Identity */}
+            <div className="relative h-48 bg-slate-200 group">
+                <img 
+                    src={site.thumbnail} 
+                    className="w-full h-full object-cover opacity-90 transition-opacity" 
+                    alt="Asset Thumbnail"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 to-transparent flex flex-col justify-end p-6">
+                    <span className="text-[10px] font-mono font-bold text-slate-300 uppercase tracking-widest mb-1">
+                        {site.code}
+                    </span>
+                    <h2 className="text-xl font-black text-white leading-none shadow-black drop-shadow-md">
+                        {site.name}
+                    </h2>
+                </div>
+                {/* Status Badge - Floating */}
+                <div className="absolute top-4 right-4">
+                    <select 
+                        value={site.status}
                         disabled={readOnly}
-                        value={searchQuery || site.dna.address}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        placeholder="Search address to auto-populate..."
-                        className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all outline-none disabled:bg-slate-100 disabled:text-slate-500"
-                    />
+                        onChange={(e) => updateSiteField('status', e.target.value as LeadStatus)}
+                        className={`text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full border-none cursor-pointer focus:ring-2 focus:ring-white/50 shadow-lg appearance-none ${
+                            site.status === 'Acquired' ? 'bg-emerald-500 text-white' : 
+                            site.status === 'Due Diligence' ? 'bg-purple-500 text-white' : 'bg-amber-500 text-white'
+                        }`}
+                    >
+                        <option value="Prospect">Prospect</option>
+                        <option value="Due Diligence">Due Diligence</option>
+                        <option value="Acquired">Acquired</option>
+                        <option value="Archive">Archive</option>
+                    </select>
                 </div>
             </div>
 
-            {/* Navigation Tabs */}
-            <div className="flex border-b border-slate-200 bg-white px-6">
-                {(['physical', 'statutory', 'team'] as Tab[]).map(tab => (
-                    <button
-                        key={tab}
-                        onClick={() => setActiveTab(tab)}
-                        className={`py-4 mr-6 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors ${
-                            activeTab === tab 
-                            ? 'border-indigo-600 text-indigo-600' 
-                            : 'border-transparent text-slate-400 hover:text-slate-600'
-                        }`}
-                    >
-                        {tab}
-                    </button>
-                ))}
-            </div>
-
-            {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto p-6 bg-white">
-                
-                {/* TAB: PHYSICAL */}
-                {activeTab === 'physical' && (
-                    <div className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-300">
-                        <div className="grid grid-cols-2 gap-6">
-                            <div>
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Land Area (m²)</label>
-                                <input 
-                                    type="number" 
-                                    disabled={readOnly}
-                                    value={site.dna.landArea}
-                                    onChange={(e) => updateField('landArea', parseFloat(e.target.value))}
-                                    className="w-full border-slate-200 rounded-lg p-2.5 font-mono font-bold text-slate-800 focus:ring-indigo-500"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Zoning</label>
-                                <input 
-                                    type="text" 
-                                    disabled={readOnly}
-                                    value={site.dna.zoning}
-                                    onChange={(e) => updateField('zoning', e.target.value)}
-                                    className="w-full border-slate-200 rounded-lg p-2.5 font-bold text-slate-800 focus:ring-indigo-500"
-                                />
-                            </div>
-                        </div>
-                        <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Local Government (LGA)</label>
-                            <input 
-                                type="text" 
-                                disabled={readOnly}
-                                value={site.dna.lga}
-                                onChange={(e) => updateField('lga', e.target.value)}
-                                className="w-full border-slate-200 rounded-lg p-2.5 font-medium text-slate-700 focus:ring-indigo-500"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Planning Overlays</label>
-                            <div className="flex flex-wrap gap-2">
-                                {site.dna.overlays.map((ov, i) => (
-                                    <span key={i} className="px-3 py-1.5 bg-amber-50 border border-amber-100 text-amber-800 rounded-lg text-xs font-bold flex items-center shadow-sm">
-                                        <i className="fa-solid fa-layer-group mr-2 opacity-50"></i> {ov}
-                                    </span>
-                                ))}
-                                {site.dna.overlays.length === 0 && (
-                                    <span className="text-xs text-slate-400 italic py-2">No overlays detected.</span>
-                                )}
-                            </div>
-                        </div>
+            {/* Quick Stats */}
+            <div className="p-6 space-y-6 flex-1 overflow-y-auto">
+                <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Primary Address</label>
+                    <div className="flex items-start">
+                        <i className="fa-solid fa-location-dot mt-1 mr-3 text-indigo-500"></i>
+                        <p className="text-sm font-bold text-slate-700 leading-snug">{site.dna.address}</p>
                     </div>
-                )}
+                </div>
 
-                {/* TAB: STATUTORY */}
-                {activeTab === 'statutory' && (
-                    <div className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-300">
-                        <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 mb-6">
-                            <div className="flex items-center space-x-3 mb-2">
-                                <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center text-indigo-600 shadow-sm">
-                                    <i className="fa-solid fa-scale-balanced"></i>
-                                </div>
-                                <div>
-                                    <h4 className="text-sm font-bold text-indigo-900">Tax Jurisdiction</h4>
-                                    <p className="text-[10px] text-indigo-600">Determines Stamp Duty & Land Tax Rates.</p>
-                                </div>
-                            </div>
-                            <select 
-                                value={site.dna.state || 'VIC'}
-                                disabled={readOnly}
-                                onChange={(e) => updateField('state', e.target.value as TaxState)}
-                                className="w-full mt-2 border-indigo-200 rounded-lg p-2.5 font-bold text-indigo-900 focus:ring-indigo-500 bg-white shadow-sm"
-                            >
-                                <option value="VIC">Victoria (VIC)</option>
-                                <option value="NSW">New South Wales (NSW)</option>
-                                <option value="QLD">Queensland (QLD)</option>
-                            </select>
-                        </div>
-
-                        <div className="grid grid-cols-1 gap-6">
-                            <div>
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Site Value (AUV)</label>
-                                <div className="relative">
-                                    <span className="absolute left-3 top-2.5 text-slate-400 font-bold">$</span>
-                                    <input 
-                                        type="number" 
-                                        disabled={readOnly}
-                                        value={site.dna.auv || 0}
-                                        onChange={(e) => updateField('auv', parseFloat(e.target.value))}
-                                        className="w-full pl-8 border-slate-200 rounded-lg p-2.5 font-mono font-bold text-slate-800 focus:ring-indigo-500"
-                                    />
-                                </div>
-                                <p className="text-[10px] text-slate-400 mt-1">Used for Land Tax calculations.</p>
-                            </div>
-                            <div>
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Capital Improved Value (ACV)</label>
-                                <div className="relative">
-                                    <span className="absolute left-3 top-2.5 text-slate-400 font-bold">$</span>
-                                    <input 
-                                        type="number" 
-                                        disabled={readOnly}
-                                        value={site.dna.acv || 0}
-                                        onChange={(e) => updateField('acv', parseFloat(e.target.value))}
-                                        className="w-full pl-8 border-slate-200 rounded-lg p-2.5 font-mono font-bold text-slate-800 focus:ring-indigo-500"
-                                    />
-                                </div>
-                                <p className="text-[10px] text-slate-400 mt-1">Used for Council Rates.</p>
-                            </div>
-                        </div>
+                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100">
+                    <div>
+                        <span className="block text-[10px] text-slate-400 font-bold uppercase">Land Area</span>
+                        <span className="text-sm font-mono font-bold text-slate-800">{site.dna.landArea.toLocaleString()} m²</span>
                     </div>
-                )}
-
-                {/* TAB: TEAM */}
-                {activeTab === 'team' && (
-                    <div className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-300">
-                        <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/50">
-                            <h4 className="text-xs font-bold text-slate-800 uppercase mb-4 flex items-center">
-                                <i className="fa-solid fa-user-tie mr-2 text-blue-500"></i> Selling Agent
-                            </h4>
-                            <div className="space-y-3">
-                                <input 
-                                    type="text" placeholder="Name"
-                                    disabled={readOnly}
-                                    value={site.dna.agent.name}
-                                    onChange={(e) => updateNested('agent', 'name', e.target.value)}
-                                    className="w-full text-sm border-slate-200 rounded-lg focus:ring-blue-500"
-                                />
-                                <input 
-                                    type="text" placeholder="Agency"
-                                    disabled={readOnly}
-                                    value={site.dna.agent.company}
-                                    onChange={(e) => updateNested('agent', 'company', e.target.value)}
-                                    className="w-full text-sm border-slate-200 rounded-lg focus:ring-blue-500"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/50">
-                            <h4 className="text-xs font-bold text-slate-800 uppercase mb-4 flex items-center">
-                                <i className="fa-solid fa-handshake mr-2 text-emerald-500"></i> Vendor
-                            </h4>
-                            <div className="space-y-3">
-                                <input 
-                                    type="text" placeholder="Entity Name"
-                                    disabled={readOnly}
-                                    value={site.dna.vendor.name}
-                                    onChange={(e) => updateNested('vendor', 'name', e.target.value)}
-                                    className="w-full text-sm border-slate-200 rounded-lg focus:ring-emerald-500"
-                                />
-                                <input 
-                                    type="text" placeholder="Solicitor / Rep"
-                                    disabled={readOnly}
-                                    value={site.dna.vendor.company}
-                                    onChange={(e) => updateNested('vendor', 'company', e.target.value)}
-                                    className="w-full text-sm border-slate-200 rounded-lg focus:ring-emerald-500"
-                                />
-                            </div>
-                        </div>
+                    <div>
+                        <span className="block text-[10px] text-slate-400 font-bold uppercase">Zone</span>
+                        <span className="text-sm font-bold text-slate-800">{site.dna.zoningCode || 'Pending'}</span>
                     </div>
-                )}
-
-            </div>
-        </div>
-
-        {/* RIGHT PANEL: Intelligence & Map */}
-        <div className="w-full md:w-80 bg-slate-50 border-l border-slate-200 flex flex-col shrink-0">
-            
-            {/* Map Placeholder */}
-            <div className="h-48 relative group overflow-hidden bg-slate-200">
-                <img 
-                    src="https://images.unsplash.com/photo-1524813686514-a5756c97759e?q=80&w=600&auto=format&fit=crop" 
-                    className="w-full h-full object-cover opacity-80 group-hover:opacity-60 transition-opacity"
-                    alt="Map Location" 
-                />
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div className="bg-white/90 backdrop-blur px-3 py-1.5 rounded-lg shadow-sm">
-                        <span className="text-[10px] font-bold text-slate-700 flex items-center">
-                            <i className="fa-solid fa-location-dot mr-1.5 text-red-500"></i>
-                            {site.dna.geometry ? `${site.dna.geometry.lat}, ${site.dna.geometry.lng}` : 'Locating...'}
+                    <div>
+                        <span className="block text-[10px] text-slate-400 font-bold uppercase">Council</span>
+                        <span className="text-xs font-bold text-slate-800 truncate" title={site.dna.lga}>{site.dna.lga}</span>
+                    </div>
+                    <div>
+                        <span className="block text-[10px] text-slate-400 font-bold uppercase">Permit</span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${site.dna.permitStatus === 'Approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                            {site.dna.permitStatus || 'N/A'}
                         </span>
                     </div>
                 </div>
-            </div>
 
-            {/* High Level Stats */}
-            <div className="p-6 space-y-6 flex-1 overflow-y-auto">
-                <div>
-                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Site DNA Summary</h4>
-                    <div className="space-y-3">
-                        <div className="flex justify-between items-center text-xs">
-                            <span className="text-slate-500">Project Code</span>
-                            <span className="font-mono font-bold text-slate-700">{site.code}</span>
+                <div className="pt-4 border-t border-slate-100">
+                    <div className="bg-indigo-50 rounded-xl p-4 border border-indigo-100">
+                        <div className="flex justify-between items-center mb-2">
+                            <span className="text-[10px] font-bold text-indigo-400 uppercase">Models Active</span>
+                            <span className="text-xs font-bold text-indigo-800">{site.scenarios.length}</span>
                         </div>
-                        <div className="flex justify-between items-center text-xs">
-                            <span className="text-slate-500">Jurisdiction</span>
-                            <span className="font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">{site.dna.state || 'VIC'}</span>
-                        </div>
-                        <div className="flex justify-between items-center text-xs">
-                            <span className="text-slate-500">Status</span>
-                            <span className={`font-bold px-2 py-0.5 rounded ${
-                                site.status === 'Acquired' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                            }`}>{site.status}</span>
+                        <div className="w-full bg-white h-1.5 rounded-full overflow-hidden">
+                            <div className="h-full bg-indigo-500 w-3/4"></div>
                         </div>
                     </div>
                 </div>
+            </div>
+        </aside>
 
-                <div className="pt-6 border-t border-slate-200">
-                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Planning Constraints</h4>
-                    <div className="p-3 bg-white border border-slate-200 rounded-lg shadow-sm">
-                        <div className="flex items-center space-x-2 mb-2">
-                            <i className="fa-solid fa-ruler-combined text-slate-400 text-xs"></i>
-                            <span className="text-xs font-bold text-slate-700">Yield Analysis</span>
-                        </div>
-                        <p className="text-[10px] text-slate-500 leading-relaxed">
-                            Based on <strong>{site.dna.zoning || 'current zoning'}</strong> and a land area of <strong>{site.dna.landArea.toLocaleString()}m²</strong>, estimated yield is approx <strong>{Math.floor(site.dna.landArea / 60)} - {Math.floor(site.dna.landArea / 40)}</strong> units (STCA).
-                        </p>
-                    </div>
+        {/* --- RIGHT COLUMN: WORKSPACE (DETAIL) --- */}
+        <div className="flex-1 flex flex-col h-full overflow-hidden">
+            
+            {/* Tabs Header */}
+            <div className="bg-white border-b border-slate-200 px-6 overflow-x-auto no-scrollbar shrink-0">
+                <div className="flex space-x-8">
+                    {(['overview', 'dna', 'stakeholders', 'documents'] as Tab[]).map(tab => (
+                        <button
+                            key={tab}
+                            onClick={() => setActiveTab(tab)}
+                            className={`py-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all whitespace-nowrap ${
+                                activeTab === tab 
+                                ? 'border-indigo-600 text-indigo-600' 
+                                : 'border-transparent text-slate-400 hover:text-slate-600 hover:border-slate-300'
+                            }`}
+                        >
+                            {tab === 'dna' ? 'Asset DNA' : tab}
+                        </button>
+                    ))}
                 </div>
             </div>
 
+            {/* Tab Content */}
+            <div className="flex-1 overflow-y-auto p-6 md:p-8 bg-slate-50/50">
+                <div className="max-w-5xl mx-auto">
+                    
+                    {/* TAB 1: OVERVIEW (Scenarios) */}
+                    {activeTab === 'overview' && (
+                        <div className="animate-in fade-in duration-300">
+                            <div className="flex justify-between items-center mb-6">
+                                <h3 className="text-lg font-bold text-slate-800">Feasibility Scenarios</h3>
+                                {/* Note: Adding scenarios happens in ScenarioManager, usually accessed via parent */}
+                            </div>
+                            
+                            {site.scenarios.length === 0 ? (
+                                <div className="text-center py-12 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50">
+                                    <i className="fa-solid fa-calculator text-3xl text-slate-300 mb-3"></i>
+                                    <p className="text-slate-500 font-medium text-sm">No models created yet.</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {site.scenarios.map(scen => (
+                                        <div key={scen.id} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+                                            {scen.isBaseline && (
+                                                <div className="absolute top-0 right-0 bg-emerald-500 text-white text-[9px] font-bold px-2 py-1 rounded-bl-lg uppercase tracking-widest">
+                                                    Baseline
+                                                </div>
+                                            )}
+                                            <div className="flex items-center space-x-3 mb-4">
+                                                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm ${scen.strategy === 'SELL' ? 'bg-blue-600' : 'bg-indigo-600'}`}>
+                                                    <i className={`fa-solid ${scen.strategy === 'SELL' ? 'fa-tags' : 'fa-building-user'}`}></i>
+                                                </div>
+                                                <div>
+                                                    <h4 className="font-bold text-slate-800 text-sm leading-tight">{scen.name}</h4>
+                                                    <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wide mt-0.5">{scen.strategy}</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex justify-between items-center pt-3 border-t border-slate-100">
+                                                <span className="text-[10px] text-slate-400 font-mono">Last Mod: {new Date(scen.lastModified).toLocaleDateString()}</span>
+                                                <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
+                                                    scen.status === ScenarioStatus.LOCKED ? 'bg-slate-100 text-slate-500' : 'bg-blue-50 text-blue-600'
+                                                }`}>
+                                                    {scen.status}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* TAB 2: ASSET DNA (Forms) */}
+                    {activeTab === 'dna' && (
+                        <div className="animate-in fade-in duration-300 space-y-8">
+                            
+                            {/* Section: Statutory */}
+                            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                                <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 font-bold text-slate-800 text-sm flex items-center">
+                                    <i className="fa-solid fa-gavel mr-2 text-slate-400"></i> Statutory & Planning
+                                </div>
+                                <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Tax Jurisdiction</label>
+                                        <select 
+                                            value={site.dna.state}
+                                            disabled={readOnly}
+                                            onChange={(e) => updateDNAField('state', e.target.value as TaxState)}
+                                            className="w-full border-slate-200 rounded-lg text-sm font-bold text-slate-700"
+                                        >
+                                            <option value="VIC">Victoria</option>
+                                            <option value="NSW">New South Wales</option>
+                                            <option value="QLD">Queensland</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Permit Status</label>
+                                        <select 
+                                            value={site.dna.permitStatus || 'Not Started'}
+                                            disabled={readOnly}
+                                            onChange={(e) => updateDNAField('permitStatus', e.target.value)}
+                                            className="w-full border-slate-200 rounded-lg text-sm"
+                                        >
+                                            {PERMIT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Zoning Code</label>
+                                        <input 
+                                            type="text"
+                                            disabled={readOnly}
+                                            value={site.dna.zoningCode || ''}
+                                            onChange={(e) => updateDNAField('zoningCode', e.target.value)}
+                                            className="w-full border-slate-200 rounded-lg text-sm font-mono uppercase"
+                                            placeholder="e.g. RGZ1"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Flood Zone</label>
+                                        <select 
+                                            value={site.dna.floodZone || 'Low'}
+                                            disabled={readOnly}
+                                            onChange={(e) => updateDNAField('floodZone', e.target.value)}
+                                            className="w-full border-slate-200 rounded-lg text-sm"
+                                        >
+                                            {FLOOD_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Assessed Site Value (AUV)</label>
+                                        <div className="relative">
+                                            <span className="absolute left-3 top-2 text-slate-400 text-xs">$</span>
+                                            <input 
+                                                type="number"
+                                                disabled={readOnly}
+                                                value={site.dna.auv || ''}
+                                                onChange={(e) => updateDNAField('auv', parseFloat(e.target.value))}
+                                                className="w-full border-slate-200 rounded-lg pl-6 text-sm font-bold text-slate-700"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Capital Improved Value (ACV)</label>
+                                        <div className="relative">
+                                            <span className="absolute left-3 top-2 text-slate-400 text-xs">$</span>
+                                            <input 
+                                                type="number"
+                                                disabled={readOnly}
+                                                value={site.dna.acv || ''}
+                                                onChange={(e) => updateDNAField('acv', parseFloat(e.target.value))}
+                                                className="w-full border-slate-200 rounded-lg pl-6 text-sm font-bold text-slate-700"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Section: Legal & Title */}
+                            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                                <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 font-bold text-slate-800 text-sm flex items-center">
+                                    <i className="fa-solid fa-file-contract mr-2 text-slate-400"></i> Legal & Title
+                                </div>
+                                <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="col-span-1 md:col-span-2">
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Ownership Entity</label>
+                                        <input 
+                                            type="text"
+                                            disabled={readOnly}
+                                            value={site.dna.ownershipEntity || ''}
+                                            onChange={(e) => updateDNAField('ownershipEntity', e.target.value)}
+                                            className="w-full border-slate-200 rounded-lg text-sm"
+                                            placeholder="e.g. Project SPV Pty Ltd"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Title Reference (Vol/Folio)</label>
+                                        <input 
+                                            type="text"
+                                            disabled={readOnly}
+                                            value={site.dna.titleReference || ''}
+                                            onChange={(e) => updateDNAField('titleReference', e.target.value)}
+                                            className="w-full border-slate-200 rounded-lg text-sm font-mono"
+                                            placeholder="e.g. 12345/678"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Contamination Status</label>
+                                        <input 
+                                            type="text"
+                                            disabled={readOnly}
+                                            value={site.dna.contaminationStatus || ''}
+                                            onChange={(e) => updateDNAField('contaminationStatus', e.target.value)}
+                                            className="w-full border-slate-200 rounded-lg text-sm"
+                                            placeholder="e.g. Clean / Audited"
+                                        />
+                                    </div>
+                                    <div className="col-span-1 md:col-span-2">
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Easements & Covenants</label>
+                                        <textarea 
+                                            disabled={readOnly}
+                                            value={site.dna.easements || ''}
+                                            onChange={(e) => updateDNAField('easements', e.target.value)}
+                                            className="w-full border-slate-200 rounded-lg text-sm h-20"
+                                            placeholder="List any easements or restrictive covenants..."
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                    )}
+
+                    {/* TAB 3: STAKEHOLDERS */}
+                    {activeTab === 'stakeholders' && (
+                        <div className="animate-in fade-in duration-300">
+                            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                                <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                                    <h3 className="font-bold text-slate-800 text-sm">Project Stakeholders</h3>
+                                    {!readOnly && (
+                                        <button onClick={addStakeholder} className="text-[10px] font-bold bg-indigo-600 text-white px-3 py-1.5 rounded hover:bg-indigo-700 transition-colors">
+                                            <i className="fa-solid fa-plus mr-1"></i> Add Person
+                                        </button>
+                                    )}
+                                </div>
+                                <div className="divide-y divide-slate-100">
+                                    {(!site.stakeholders || site.stakeholders.length === 0) && (
+                                        <div className="p-8 text-center text-slate-400 text-sm italic">
+                                            No stakeholders linked to this asset.
+                                        </div>
+                                    )}
+                                    {(site.stakeholders || []).map(person => (
+                                        <div key={person.id} className="p-4 grid grid-cols-1 md:grid-cols-12 gap-4 items-center hover:bg-slate-50 transition-colors group">
+                                            <div className="md:col-span-2">
+                                                <select 
+                                                    value={person.role}
+                                                    disabled={readOnly}
+                                                    onChange={(e) => updateStakeholder(person.id, 'role', e.target.value)}
+                                                    className="w-full text-xs font-bold border-slate-200 rounded uppercase bg-slate-50"
+                                                >
+                                                    {STAKEHOLDER_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                                                </select>
+                                            </div>
+                                            <div className="md:col-span-3">
+                                                <input 
+                                                    type="text" 
+                                                    value={person.name}
+                                                    disabled={readOnly}
+                                                    onChange={(e) => updateStakeholder(person.id, 'name', e.target.value)}
+                                                    className="w-full text-sm font-bold border-transparent bg-transparent hover:border-slate-200 rounded px-2"
+                                                    placeholder="Name"
+                                                />
+                                            </div>
+                                            <div className="md:col-span-3">
+                                                <input 
+                                                    type="text" 
+                                                    value={person.company}
+                                                    disabled={readOnly}
+                                                    onChange={(e) => updateStakeholder(person.id, 'company', e.target.value)}
+                                                    className="w-full text-sm text-slate-500 border-transparent bg-transparent hover:border-slate-200 rounded px-2"
+                                                    placeholder="Company"
+                                                />
+                                            </div>
+                                            <div className="md:col-span-3">
+                                                <input 
+                                                    type="text" 
+                                                    value={person.email || ''}
+                                                    disabled={readOnly}
+                                                    onChange={(e) => updateStakeholder(person.id, 'email', e.target.value)}
+                                                    className="w-full text-xs text-slate-400 border-transparent bg-transparent hover:border-slate-200 rounded px-2"
+                                                    placeholder="Email Address"
+                                                />
+                                            </div>
+                                            <div className="md:col-span-1 text-right opacity-0 group-hover:opacity-100 transition-opacity">
+                                                {!readOnly && (
+                                                    <button onClick={() => removeStakeholder(person.id)} className="text-slate-300 hover:text-red-500">
+                                                        <i className="fa-solid fa-trash"></i>
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* TAB 4: DOCUMENTS (Placeholder) */}
+                    {activeTab === 'documents' && (
+                        <div className="animate-in fade-in duration-300">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                                {['Contract of Sale', 'Title Search', 'Planning Permit', 'Feature Survey'].map((doc, i) => (
+                                    <div key={i} className="bg-white border border-slate-200 rounded-xl p-6 flex flex-col items-center justify-center text-center cursor-pointer hover:border-indigo-300 hover:shadow-md transition-all group h-40">
+                                        <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-600 mb-3 transition-colors">
+                                            <i className="fa-solid fa-file-pdf text-xl"></i>
+                                        </div>
+                                        <span className="text-sm font-bold text-slate-700 group-hover:text-indigo-900">{doc}</span>
+                                        <span className="text-[10px] text-slate-400 mt-1">PDF • 2.4 MB</span>
+                                    </div>
+                                ))}
+                                <div className="border-2 border-dashed border-slate-300 rounded-xl p-6 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-slate-50 transition-colors h-40">
+                                    <i className="fa-solid fa-cloud-arrow-up text-2xl text-slate-300 mb-2"></i>
+                                    <span className="text-xs font-bold text-slate-500">Upload New File</span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                </div>
+            </div>
         </div>
     </div>
   );

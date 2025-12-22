@@ -30,38 +30,49 @@ interface Props {
   taxScales?: TaxConfiguration;
 }
 
-// --- SUB-COMPONENT: KPI HUD (Heads-Up Display) ---
-const StickyKpiHeader = ({ stats, strategy }: { stats: any, strategy: 'SELL' | 'HOLD' }) => (
-  <div className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm px-6 py-3 flex items-center justify-between">
-      <div className="flex space-x-6 overflow-x-auto no-scrollbar">
+// --- SUB-COMPONENT: KPI HUD (Mini-Header) ---
+const StickyKpiHeader = ({ stats, strategy, siteName }: { stats: any, strategy: 'SELL' | 'HOLD', siteName: string }) => (
+  <div className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-200 shadow-sm px-4 md:px-6 py-2 md:py-3 flex flex-col md:flex-row md:items-center justify-between transition-all">
+      
+      {/* Mobile Context Line */}
+      <div className="md:hidden flex justify-between items-center mb-2 border-b border-slate-100 pb-1">
+          <span className="text-[10px] font-bold text-slate-500 uppercase truncate max-w-[200px]">{siteName}</span>
+          <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wide ${
+              stats.margin > 15 ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
+          }`}>
+              {stats.margin > 15 ? 'Feasible' : 'Review'}
+          </span>
+      </div>
+
+      <div className="flex justify-between md:justify-start md:space-x-8 overflow-x-auto no-scrollbar items-end">
           <div className="flex flex-col">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Net Profit</span>
-              <span className={`text-lg font-black font-mono leading-none ${stats.profit > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+              <span className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-widest">Net Profit</span>
+              <span className={`text-base md:text-lg font-black font-mono leading-none ${stats.profit > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                   ${(stats.profit/1000000).toFixed(2)}m
               </span>
           </div>
-          <div className="w-px h-8 bg-slate-100"></div>
+          <div className="w-px h-6 bg-slate-100 mx-2 md:mx-0"></div>
           <div className="flex flex-col">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center">
-                  Margin <HelpTooltip term="MDC" className="ml-1 text-slate-300" />
+              <span className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center">
+                  Margin <span className="hidden md:inline"><HelpTooltip term="MDC" className="ml-1 text-slate-300" /></span>
               </span>
-              <span className={`text-lg font-black font-mono leading-none ${stats.margin > 15 ? 'text-slate-800' : 'text-amber-500'}`}>
+              <span className={`text-base md:text-lg font-black font-mono leading-none ${stats.margin > 15 ? 'text-slate-800' : 'text-amber-500'}`}>
                   {stats.margin.toFixed(2)}%
               </span>
           </div>
-          <div className="w-px h-8 bg-slate-100"></div>
+          <div className="w-px h-6 bg-slate-100 mx-2 md:mx-0"></div>
           <div className="flex flex-col">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center">
-                  IRR <HelpTooltip term="IRR" className="ml-1 text-slate-300" />
+              <span className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center">
+                  IRR <span className="hidden md:inline"><HelpTooltip term="IRR" className="ml-1 text-slate-300" /></span>
               </span>
-              <span className="text-lg font-black font-mono leading-none text-indigo-600">
+              <span className="text-base md:text-lg font-black font-mono leading-none text-indigo-600">
                   {stats.irr.toFixed(1)}%
               </span>
           </div>
           {strategy === 'SELL' && (
               <>
-                <div className="w-px h-8 bg-slate-100"></div>
-                <div className="flex flex-col">
+                <div className="w-px h-6 bg-slate-100 mx-2 md:mx-0 hidden md:block"></div>
+                <div className="flex flex-col hidden md:flex">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Peak Equity</span>
                     <span className="text-lg font-black font-mono leading-none text-slate-700">
                         ${(stats.peakEquity/1000000).toFixed(1)}m
@@ -70,9 +81,13 @@ const StickyKpiHeader = ({ stats, strategy }: { stats: any, strategy: 'SELL' | '
               </>
           )}
       </div>
+      
+      {/* Desktop Badge */}
       <div className="hidden md:flex items-center space-x-2">
-          <span className={`px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest ${
-              stats.margin > 15 ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
+          <span className={`px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest border ${
+              stats.margin > 15 
+              ? 'bg-emerald-50 text-emerald-600 border-emerald-100' 
+              : 'bg-amber-50 text-amber-600 border-amber-100'
           }`}>
               {stats.margin > 15 ? 'Feasible' : 'Review'}
           </span>
@@ -241,7 +256,7 @@ export const FeasibilityEngine: React.FC<Props> = ({
     <div className="flex flex-col lg:flex-row h-full overflow-hidden">
       
       {/* 1. SECONDARY SIDEBAR (Desktop Navigation & Site Context) */}
-      <aside className="hidden lg:flex w-64 bg-slate-50 border-r border-slate-200 flex-col shrink-0 overflow-y-auto z-40">
+      <aside className="hidden lg:flex w-64 bg-slate-50 border-r border-slate-200 flex-col shrink-0 overflow-y-auto z-30">
         <div className="p-6">
            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Model Navigation</h3>
            <nav className="space-y-1">
@@ -316,10 +331,10 @@ export const FeasibilityEngine: React.FC<Props> = ({
         </div>
 
         {/* Sticky KPI Header (Desktop & Mobile) */}
-        <StickyKpiHeader stats={stats} strategy={activeScenario.strategy} />
+        <StickyKpiHeader stats={stats} strategy={activeScenario.strategy} siteName={site.name} />
 
-        <div className="flex-1 overflow-y-auto p-4 lg:p-8">
-          <div className="max-w-6xl mx-auto pb-20">
+        <div className="flex-1 overflow-y-auto p-3 lg:p-8">
+          <div className="max-w-6xl mx-auto pb-24 md:pb-20">
             
             {/* TAB: SITE CONTEXT (Now Using DNA Hub in Read-Only Mode) */}
             {activeTab === 'site' && (

@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState } from 'react';
-import { Site, FeasibilityScenario, ScenarioStatus } from '../types';
+import { Site, FeasibilityScenario, ScenarioStatus, LeadStatus } from '../types';
 import { FinanceEngine } from '../services/financeEngine';
 import { ScenarioComparison } from '../ScenarioComparison';
 import { ScenarioWizard } from './ScenarioWizard';
@@ -10,6 +10,7 @@ interface Props {
   onUpdateSite: (updatedSite: Site) => void;
   onSelectScenario: (scenarioId: string) => void;
   onBack: () => void;
+  onRequestEdit?: () => void;
 }
 
 interface ScenarioCardProps {
@@ -138,15 +139,33 @@ const ScenarioCard: React.FC<ScenarioCardProps> = ({
   );
 };
 
+// --- Toast Component ---
+const Toast = ({ message, type, onClose }: { message: string, type: 'success' | 'error', onClose: () => void }) => {
+    React.useEffect(() => {
+        const timer = setTimeout(onClose, 3000);
+        return () => clearTimeout(timer);
+    }, [onClose]);
+
+    return (
+        <div className={`fixed bottom-4 right-4 z-[200] px-4 py-3 rounded-lg shadow-xl text-white font-bold text-sm flex items-center animate-in slide-in-from-right-10 duration-300 ${type === 'success' ? 'bg-emerald-600' : 'bg-red-600'}`}>
+            <i className={`fa-solid ${type === 'success' ? 'fa-check-circle' : 'fa-triangle-exclamation'} mr-2`}></i>
+            {message}
+        </div>
+    );
+};
+
 // --- Main Manager Component ---
 
-export const ScenarioManager: React.FC<Props> = ({ site, onUpdateSite, onSelectScenario, onBack }) => {
+export const ScenarioManager: React.FC<Props> = ({ site, onUpdateSite, onSelectScenario, onBack, onRequestEdit }) => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isComparing, setIsComparing] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
   
-  // Wizard State
+  // Wizard & Prompt State
   const [isWizardOpen, setIsWizardOpen] = useState(false);
+  const [showLockPrompt, setShowLockPrompt] = useState(false);
+  const [pendingSiteUpdate, setPendingSiteUpdate] = useState<Site | null>(null);
 
   // --- Handlers ---
 
@@ -166,6 +185,7 @@ export const ScenarioManager: React.FC<Props> = ({ site, onUpdateSite, onSelectS
         ...site,
         scenarios: [...site.scenarios, newScenario]
     });
+    setToast({ message: "Scenario created successfully", type: 'success' });
   };
 
   const handleDuplicate = (scenario: FeasibilityScenario) => {
@@ -180,6 +200,7 @@ export const ScenarioManager: React.FC<Props> = ({ site, onUpdateSite, onSelectS
         ...site,
         scenarios: [...site.scenarios, newScenario]
     });
+    setToast({ message: "Scenario duplicated", type: 'success' });
   };
 
   const handleDeleteClick = (id: string) => {
@@ -200,6 +221,54 @@ export const ScenarioManager: React.FC<Props> = ({ site, onUpdateSite, onSelectS
         setSelectedIds(newSet);
     }
     setDeleteId(null);
+    setToast({ message: "Scenario deleted", type: 'success' });
+  };
+
+  const handleStatusChange = (newStatus: LeadStatus) => {
+      const updatedSite = { ...site, status: newStatus };
+      if (newStatus === 'Acquired') {
+          // Trigger Lock Prompt if changing to Acquired
+          setPendingSiteUpdate(updatedSite);
+          setShowLockPrompt(true);
+      } else {
+          onUpdateSite(updatedSite);
+          setToast({ message: `Status updated to ${newStatus}`, type: 'success' });
+      }
+  };
+
+  const confirmLockBaseline = () => {
+      if (!pendingSiteUpdate) return;
+      
+      // Find the active baseline or default to the first one
+      const scenarios = [...pendingSiteUpdate.scenarios];
+      let activeIndex = scenarios.findIndex(s => s.isBaseline);
+      if (activeIndex === -1) activeIndex = 0; // Default to first if no baseline set
+
+      if (scenarios[activeIndex]) {
+          scenarios[activeIndex] = {
+              ...scenarios[activeIndex],
+              isBaseline: true,
+              status: ScenarioStatus.LOCKED
+          };
+      }
+
+      onUpdateSite({
+          ...pendingSiteUpdate,
+          scenarios
+      });
+      setShowLockPrompt(false);
+      setPendingSiteUpdate(null);
+      setToast({ message: "Site Acquired. Baseline Scenario Locked.", type: 'success' });
+  };
+
+  const cancelLockBaseline = () => {
+      // Just update the status without locking
+      if (pendingSiteUpdate) {
+          onUpdateSite(pendingSiteUpdate);
+          setToast({ message: "Status updated to Acquired", type: 'success' });
+      }
+      setShowLockPrompt(false);
+      setPendingSiteUpdate(null);
   };
 
   // Comparison Data
@@ -232,6 +301,8 @@ export const ScenarioManager: React.FC<Props> = ({ site, onUpdateSite, onSelectS
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 animate-in fade-in duration-300 relative">
       
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+
       <ScenarioWizard 
         isOpen={isWizardOpen} 
         onClose={() => setIsWizardOpen(false)}
@@ -269,6 +340,35 @@ export const ScenarioManager: React.FC<Props> = ({ site, onUpdateSite, onSelectS
         </div>
       )}
 
+      {/* Baseline Lock Prompt */}
+      {showLockPrompt && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-slate-200 animate-in zoom-in-95">
+                <div className="flex items-center justify-center w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 mb-4 mx-auto">
+                    <i className="fa-solid fa-lock text-xl"></i>
+                </div>
+                <h3 className="text-lg font-bold text-slate-800 text-center mb-2">Project Acquired</h3>
+                <p className="text-sm text-slate-500 text-center mb-6 leading-relaxed">
+                    Moving to <strong>Acquired</strong> status usually signifies the deal is done. Would you like to <strong>Lock the Baseline Scenario</strong> to prevent further edits?
+                </p>
+                <div className="flex space-x-3">
+                    <button 
+                        onClick={cancelLockBaseline}
+                        className="flex-1 py-2.5 bg-slate-100 text-slate-700 font-bold rounded-lg hover:bg-slate-200 transition-colors text-xs uppercase tracking-wider"
+                    >
+                        No, Keep Open
+                    </button>
+                    <button 
+                        onClick={confirmLockBaseline}
+                        className="flex-1 py-2.5 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-700 transition-colors text-xs uppercase tracking-wider shadow-md"
+                    >
+                        Yes, Lock Baseline
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
       {/* 1. Site DNA Header (Permanent) */}
       <div className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shrink-0 shadow-sm z-10">
          <div>
@@ -276,12 +376,31 @@ export const ScenarioManager: React.FC<Props> = ({ site, onUpdateSite, onSelectS
                 <button onClick={onBack} className="text-slate-400 hover:text-blue-600 transition-colors mr-2">
                     <i className="fa-solid fa-arrow-left"></i>
                 </button>
-                <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded ${site.status === 'Acquired' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                    {site.status}
-                </span>
+                
+                {/* Status Dropdown */}
+                <select 
+                    value={site.status}
+                    onChange={(e) => handleStatusChange(e.target.value as LeadStatus)}
+                    className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded border-none cursor-pointer focus:ring-2 focus:ring-blue-500 ${
+                        site.status === 'Acquired' ? 'bg-emerald-100 text-emerald-700' : 
+                        site.status === 'Due Diligence' ? 'bg-purple-100 text-purple-700' : 'bg-amber-100 text-amber-700'
+                    }`}
+                >
+                    <option value="Prospect">Prospect</option>
+                    <option value="Due Diligence">Due Diligence</option>
+                    <option value="Acquired">Acquired</option>
+                    <option value="Archive">Archive</option>
+                </select>
+
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2 border-l border-slate-200">
                     {site.code}
                 </span>
+                
+                {onRequestEdit && (
+                    <button onClick={onRequestEdit} className="text-slate-300 hover:text-blue-600 transition-colors ml-1" title="Edit Site Details">
+                        <i className="fa-solid fa-pen text-xs"></i>
+                    </button>
+                )}
             </div>
             <h1 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight leading-tight">{site.name}</h1>
             <div className="flex items-center text-xs text-slate-500 mt-1 space-x-4">

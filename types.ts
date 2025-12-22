@@ -116,6 +116,7 @@ export interface SiteMilestones {
 export interface SiteDNA {
   // Physical Attributes (Immutable per Site)
   address: string;
+  state: TaxState; // Added: Drives default tax calculations
   landArea: number; // in square meters
   lga: string; // Local Government Area (Council)
   zoning: string;

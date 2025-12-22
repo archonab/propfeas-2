@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { CostCategory, DistributionMethod, InputType, LineItem, FeasibilitySettings, LineItemTag, MilestoneLink, SiteDNA, TaxConfiguration, CalculationLink, GstTreatment } from './types';
 import { PhasingChart } from './PhasingChart';
 import { CostLibraryModal } from './CostLibraryModal';
@@ -23,6 +23,54 @@ interface Props {
   siteDNA?: SiteDNA;
   taxScales?: TaxConfiguration;
 }
+
+// --- PERF OPTIMIZATION: Debounced Input Component ---
+// Prevents recalculating the entire 10-year cashflow on every keystroke
+const DebouncedInput = ({ 
+  value, 
+  onChange, 
+  type = "text", 
+  className,
+  placeholder 
+}: { 
+  value: string | number; 
+  onChange: (val: string | number) => void; 
+  type?: string; 
+  className?: string;
+  placeholder?: string;
+}) => {
+  const [localValue, setLocalValue] = useState(value);
+  const initialRender = useRef(true);
+
+  useEffect(() => {
+    setLocalValue(value);
+  }, [value]);
+
+  const handleBlur = () => {
+    if (localValue !== value) {
+      onChange(type === 'number' ? parseFloat(localValue.toString()) : localValue);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleBlur();
+      (e.target as HTMLInputElement).blur();
+    }
+  };
+
+  return (
+    <input 
+      type={type}
+      value={localValue}
+      onChange={(e) => setLocalValue(e.target.value)}
+      onBlur={handleBlur}
+      onKeyDown={handleKeyDown}
+      className={className}
+      placeholder={placeholder}
+    />
+  );
+};
 
 // --- SUB-COMPONENT: COST SECTION ---
 const CostSection: React.FC<{
@@ -65,7 +113,6 @@ const CostSection: React.FC<{
     if (item.calculationLink && item.calculationLink !== 'NONE') {
         const state = settings.acquisition.stampDutyState;
         let driverLabel = '';
-        let driverValue = 0;
         
         switch (item.calculationLink) {
             case 'AUTO_STAMP_DUTY':
@@ -167,7 +214,7 @@ const CostSection: React.FC<{
               <div className="space-y-1">
                  <label className="text-[10px] font-bold uppercase text-slate-500 flex items-center">
                     Automated Calculation
-                    <i className="fa-solid fa-robot ml-1.5 text-blue-400"></i>
+                    <i className="fa-solid fa-robot ml-1.5 text-indigo-400"></i>
                  </label>
                  <select 
                     value={item.calculationLink || 'NONE'} 
@@ -190,7 +237,7 @@ const CostSection: React.FC<{
                   <div className="space-y-1">
                      <label className="text-[10px] font-bold uppercase text-slate-500 flex items-center">
                         Timing Link
-                        <i className="fa-solid fa-link ml-1.5 text-blue-400"></i>
+                        <i className="fa-solid fa-link ml-1.5 text-indigo-400"></i>
                      </label>
                      <select 
                         value={item.linkToMilestone || ''} 
@@ -262,7 +309,7 @@ const CostSection: React.FC<{
   };
 
   return (
-     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6">
         {/* Section Header */}
         <div 
           className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex justify-between items-center cursor-pointer hover:bg-slate-100 transition-colors"
@@ -293,25 +340,25 @@ const CostSection: React.FC<{
                  const isExpanded = expandedRow === item.id;
 
                  return (
-                    <div key={item.id} className={`bg-white transition-colors ${isExpanded ? 'bg-blue-50/20' : 'hover:bg-slate-50'}`}>
+                    <div key={item.id} className={`bg-white transition-colors ${isExpanded ? 'bg-indigo-50/20' : 'hover:bg-slate-50'}`}>
                        <div className="p-4 flex flex-col md:flex-row md:items-center gap-4">
                           {/* Row Inputs */}
                           <div className="flex-1 grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
                              <div className="md:col-span-4">
-                                <input 
+                                <DebouncedInput 
                                    type="text" 
                                    value={item.description}
-                                   onChange={(e) => onUpdate(item.id, 'description', e.target.value)}
-                                   className="w-full bg-transparent border-b border-transparent hover:border-slate-200 focus:border-blue-500 focus:ring-0 px-0 py-1 text-sm font-bold text-slate-800"
+                                   onChange={(val) => onUpdate(item.id, 'description', val)}
+                                   className="w-full bg-transparent border-b border-transparent hover:border-slate-200 focus:border-indigo-500 focus:ring-0 px-0 py-1 text-sm font-bold text-slate-800"
                                    placeholder="Item Description"
                                 />
                              </div>
                              
                              <div className="md:col-span-3">
                                 {isLinked ? (
-                                    <div className="flex items-center space-x-2 bg-blue-50 px-2 py-1 rounded border border-blue-100 w-fit">
-                                        <i className="fa-solid fa-robot text-blue-500 text-[10px]"></i>
-                                        <span className="text-[10px] font-bold text-blue-700 uppercase">{driverLabel}</span>
+                                    <div className="flex items-center space-x-2 bg-indigo-50 px-2 py-1 rounded border border-indigo-100 w-fit">
+                                        <i className="fa-solid fa-robot text-indigo-500 text-[10px]"></i>
+                                        <span className="text-[10px] font-bold text-indigo-700 uppercase">{driverLabel}</span>
                                     </div>
                                 ) : (
                                     <select 
@@ -338,7 +385,7 @@ const CostSection: React.FC<{
                                 )}
                                 
                                 {showDriver && !isLinked && (
-                                   <div className="text-[9px] text-blue-600 font-medium truncate" title={driverLabel}>
+                                   <div className="text-[9px] text-indigo-600 font-medium truncate" title={driverLabel}>
                                       Linked to {driverLabel}
                                    </div>
                                 )}
@@ -351,11 +398,11 @@ const CostSection: React.FC<{
                                            {calculatedValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                                        </div>
                                    ) : (
-                                       <input 
+                                       <DebouncedInput 
                                           type="number" 
                                           value={item.amount}
-                                          onChange={(e) => onUpdate(item.id, 'amount', parseFloat(e.target.value))}
-                                          className="w-24 text-right bg-transparent border-b border-slate-200 focus:border-blue-500 focus:ring-0 px-1 py-1 text-sm font-bold text-slate-800"
+                                          onChange={(val) => onUpdate(item.id, 'amount', val)}
+                                          className="w-24 text-right bg-transparent border-b border-slate-200 focus:border-indigo-500 focus:ring-0 px-1 py-1 text-sm font-bold text-slate-800"
                                        />
                                    )}
                                    <span className="text-xs text-slate-400 font-bold">
@@ -378,7 +425,7 @@ const CostSection: React.FC<{
                                 )}
                                 <button 
                                    onClick={() => toggleExpanded(item.id)} 
-                                   className={`p-1.5 rounded-md transition-colors ${isExpanded ? 'bg-blue-100 text-blue-600' : 'text-slate-400 hover:text-blue-600 hover:bg-slate-100'}`}
+                                   className={`p-1.5 rounded-md transition-colors ${isExpanded ? 'bg-indigo-100 text-indigo-600' : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100'}`}
                                    title="Advanced Settings"
                                 >
                                    <i className="fa-solid fa-sliders"></i>
@@ -406,7 +453,7 @@ const CostSection: React.FC<{
 
               {/* Add Button */}
               <div className="p-3 bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer" onClick={() => onAdd(categories[0])}>
-                 <div className="flex justify-center items-center text-xs font-bold text-blue-600">
+                 <div className="flex justify-center items-center text-xs font-bold text-indigo-600">
                     <i className="fa-solid fa-plus mr-2"></i> Add Item to {title}
                  </div>
               </div>
@@ -420,7 +467,9 @@ const CostSection: React.FC<{
 
 export const FeasibilityInputGrid: React.FC<Props> = ({ 
   costs, settings, constructionTotal, estimatedRevenue = 0,
-  onUpdate, onAdd, onBulkAdd, onRemove, smartRates, libraryData, landArea, strategy = 'SELL', siteDNA = { address: '', landArea: 0, lga: '', zoning: '', overlays: [], agent: {name:'', company:''}, vendor: {name:''}, milestones: {}}, taxScales = DEFAULT_TAX_SCALES
+  onUpdate, onAdd, onBulkAdd, onRemove, smartRates, libraryData, landArea, strategy = 'SELL', 
+  siteDNA = { address: '', state: 'VIC', landArea: 0, lga: '', zoning: '', overlays: [], agent: {name:'', company:''}, vendor: {name:''}, milestones: {}}, 
+  taxScales = DEFAULT_TAX_SCALES
 }) => {
   const [showLibrary, setShowLibrary] = useState(false);
 
@@ -443,9 +492,9 @@ export const FeasibilityInputGrid: React.FC<Props> = ({
          </div>
          <button 
            onClick={() => setShowLibrary(true)}
-           className="px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-100 hover:text-blue-700 transition-all shadow-sm flex items-center"
+           className="px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-100 hover:text-indigo-700 transition-all shadow-sm flex items-center"
          >
-           <i className="fa-solid fa-boxes-packing mr-2 text-blue-500"></i> Load from Template
+           <i className="fa-solid fa-boxes-packing mr-2 text-indigo-500"></i> Load from Template
          </button>
       </div>
 

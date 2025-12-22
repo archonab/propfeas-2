@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Site, SiteDNA } from '../types';
+import { Site, SiteDNA, LeadStatus } from '../types';
 
 interface Props {
   site: Site;
@@ -106,6 +106,13 @@ export const SiteSettings: React.FC<Props> = ({ site, onUpdate }) => {
     });
   };
 
+  const handleStatusChange = (newStatus: LeadStatus) => {
+      onUpdate({
+          ...site,
+          status: newStatus
+      });
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       
@@ -116,26 +123,46 @@ export const SiteSettings: React.FC<Props> = ({ site, onUpdate }) => {
         </p>
       </div>
 
-      {/* 1. Smart Address Search */}
-      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-        <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Search Property Address</label>
-        <div className="relative">
-          <div className="absolute left-4 top-3.5 text-slate-400">
-            {isSearching ? (
-              <i className="fa-solid fa-circle-notch fa-spin text-blue-500 text-lg"></i>
-            ) : (
-              <i className="fa-solid fa-magnifying-glass text-lg"></i>
-            )}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Status & Identity */}
+          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+             <h3 className="font-bold text-slate-800 text-sm uppercase mb-4">Project Status</h3>
+             <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Current Phase</label>
+                <select 
+                    value={site.status}
+                    onChange={(e) => handleStatusChange(e.target.value as LeadStatus)}
+                    className="w-full border-slate-200 rounded-lg text-sm font-bold text-slate-700 focus:ring-blue-500"
+                >
+                    <option value="Prospect">Prospect</option>
+                    <option value="Due Diligence">Due Diligence</option>
+                    <option value="Acquired">Acquired</option>
+                    <option value="Archive">Archive</option>
+                </select>
+             </div>
           </div>
-          <input 
-            type="text" 
-            value={searchQuery || site.dna.address}
-            onChange={handleSearchChange}
-            onKeyDown={handleKeyDown}
-            placeholder="Start typing address (e.g. 49 King St)..."
-            className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-xl font-semibold focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-          />
-        </div>
+
+          {/* 1. Smart Address Search */}
+          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Search Property Address</label>
+            <div className="relative">
+            <div className="absolute left-4 top-3.5 text-slate-400">
+                {isSearching ? (
+                <i className="fa-solid fa-circle-notch fa-spin text-blue-500 text-lg"></i>
+                ) : (
+                <i className="fa-solid fa-magnifying-glass text-lg"></i>
+                )}
+            </div>
+            <input 
+                type="text" 
+                value={searchQuery || site.dna.address}
+                onChange={handleSearchChange}
+                onKeyDown={handleKeyDown}
+                placeholder="Start typing address (e.g. 49 King St)..."
+                className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-xl font-semibold focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+            />
+            </div>
+          </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

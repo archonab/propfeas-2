@@ -74,11 +74,7 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
 
         relevant.forEach(r => {
             const multiplier = r.calcMode === 'QUANTITY_RATE' ? r.units : 1;
-            // Assuming pricePerUnit is Annual Rent if mode is QUANTITY_RATE, or Lump Sum if not.
-            // Wait, we need to clarify input. For Hold, usually it's $ per annum or $ per week.
-            // Let's assume pricePerUnit is ANNUAL in this grid for clarity.
             const grossItem = r.pricePerUnit * multiplier;
-            
             const netItem = grossItem * (1 - (r.opexRate || 0)/100) * (1 - (r.vacancyFactorPct || 0)/100);
             
             potentialGross += grossItem;
@@ -96,7 +92,7 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
   const isHold = strategy === 'Hold';
 
   return (
-    <div className="bg-slate-50 md:bg-white md:rounded-xl md:shadow-sm md:border border-slate-200 overflow-hidden mb-8 relative flex flex-col h-full">
+    <div className="bg-white md:rounded-xl md:shadow-sm md:border border-slate-200 overflow-hidden mb-8 relative flex flex-col h-full">
       
       {/* HEADER */}
       <div className="hidden md:flex bg-slate-50 px-6 py-4 border-b border-slate-200 justify-between items-center shrink-0">
@@ -104,16 +100,16 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
           <h3 className="font-bold text-slate-800">{isHold ? 'Rental Mix & Valuation' : 'Sales Mix & Absorption'}</h3>
           <p className="text-xs text-slate-500 mt-0.5">{isHold ? 'Define rent roll, lease-up and capitalisation parameters' : 'Define unit pricing, quantity and sales rate (units/mo)'}</p>
         </div>
-        <button onClick={addRevenue} className="flex items-center text-xs font-bold bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700 transition-colors shadow-sm">
+        <button onClick={addRevenue} className="flex items-center text-xs font-bold bg-indigo-600 text-white px-3 py-1.5 rounded hover:bg-indigo-700 transition-colors shadow-sm">
             <i className="fa-solid fa-plus mr-1.5"></i> Add Row
         </button>
       </div>
 
-      {/* TABLE */}
-      <div className="hidden md:block flex-1 overflow-auto">
-        <table className="w-full text-left text-sm border-collapse">
+      {/* TABLE (Desktop) */}
+      <div className="hidden md:block flex-1 overflow-x-auto shadow-inner rounded-xl border border-slate-100 m-4">
+        <table className="w-full text-left text-sm border-collapse min-w-[800px]">
           <thead>
-            <tr className="bg-slate-50/50 border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-widest font-bold sticky top-0 z-10 backdrop-blur-sm">
+            <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-widest font-bold sticky top-0 z-10">
               <th className="px-4 py-3 w-48 bg-slate-50">Description</th>
               <th className="px-4 py-3 w-20 text-center bg-slate-50">Mode</th>
               
@@ -139,7 +135,7 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
               <th className="px-4 py-3 w-10 bg-slate-50"></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-slate-100 bg-white">
             {revenues.filter(r => r.strategy === strategy).map((item) => {
               const isQtyMode = item.calcMode === 'QUANTITY_RATE';
               const grossTotal = isQtyMode ? item.units * item.pricePerUnit : item.pricePerUnit;
@@ -161,7 +157,7 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
                 <td className="px-4 py-2 text-center">
                    <button 
                      onClick={() => updateRevenue(item.id, 'calcMode', isQtyMode ? 'LUMP_SUM' : 'QUANTITY_RATE')}
-                     className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase ${isQtyMode ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}
+                     className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase ${isQtyMode ? 'bg-indigo-50 text-indigo-600 border-indigo-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}
                    >
                       {isQtyMode ? 'Rate' : 'Sum'}
                    </button>
@@ -176,7 +172,7 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
                                 type="number" 
                                 value={item.units}
                                 onChange={(e) => updateRevenue(item.id, 'units', parseFloat(e.target.value))}
-                                className="w-16 bg-slate-50 text-center border-slate-200 focus:ring-blue-500 text-xs font-bold rounded py-1"
+                                className="w-16 bg-slate-50 text-center border-slate-200 focus:ring-indigo-500 text-xs font-bold rounded py-1"
                             />
                         ) : <span className="text-slate-300">-</span>}
                       </td>
@@ -197,7 +193,7 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
                            type="number" 
                            value={item.absorptionRate}
                            onChange={(e) => updateRevenue(item.id, 'absorptionRate', parseFloat(e.target.value))}
-                           className="w-16 bg-slate-50 text-center border-slate-200 focus:ring-blue-500 text-xs font-bold rounded py-1"
+                           className="w-16 bg-slate-50 text-center border-slate-200 focus:ring-indigo-500 text-xs font-bold rounded py-1"
                            placeholder="1"
                          />
                       </td>
@@ -208,7 +204,7 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
                            type="number" 
                            value={item.offsetFromCompletion}
                            onChange={(e) => updateRevenue(item.id, 'offsetFromCompletion', parseFloat(e.target.value))}
-                           className="w-16 bg-slate-50 text-center border-slate-200 focus:ring-blue-500 text-xs font-bold rounded py-1"
+                           className="w-16 bg-slate-50 text-center border-slate-200 focus:ring-indigo-500 text-xs font-bold rounded py-1"
                          />
                       </td>
 
@@ -312,8 +308,7 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
       {/* FOOTER: LIVE VALUATION */}
       <div className="bg-slate-900 text-white p-4 shrink-0">
          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-            
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-3">
                 <div className={`w-8 h-8 rounded flex items-center justify-center ${isHold ? 'bg-indigo-500' : 'bg-blue-500'}`}>
                     <i className={`fa-solid ${isHold ? 'fa-building' : 'fa-tags'}`}></i>
                 </div>
@@ -324,8 +319,8 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
                     </p>
                 </div>
             </div>
-
-            <div className="flex space-x-8 text-xs">
+            {/* Desktop Metrics */}
+            <div className="hidden md:flex space-x-8 text-xs">
                 {!isHold ? (
                     <>
                         <div className="text-right">
@@ -350,39 +345,103 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
                     </>
                 )}
             </div>
-
          </div>
       </div>
 
-      {/* MOBILE LIST (Fallback) */}
+      {/* MOBILE: CARD STACK */}
       <div className="md:hidden p-4 space-y-4 pb-24">
+         <div className="flex justify-between items-center mb-2">
+            <h3 className="font-bold text-slate-800 text-sm">Revenue Mix</h3>
+            <button onClick={addRevenue} className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100">
+               + Add
+            </button>
+         </div>
          {revenues.filter(r => r.strategy === strategy).map(item => (
-             <div key={item.id} className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm">
-                 <div className="flex justify-between items-start mb-2">
-                     <input 
-                       className="font-bold text-slate-800 border-none p-0 focus:ring-0 w-2/3" 
-                       value={item.description} 
-                       onChange={e => updateRevenue(item.id, 'description', e.target.value)}
-                     />
-                     <span className="text-xs font-mono font-bold text-slate-500">
-                        ${(item.calcMode === 'QUANTITY_RATE' ? item.units * item.pricePerUnit : item.pricePerUnit).toLocaleString()}
-                     </span>
-                 </div>
-                 <div className="grid grid-cols-2 gap-2 text-xs">
-                     <div>
-                        <label className="text-slate-400 font-bold uppercase text-[10px]">Amount</label>
-                        <input type="number" className="w-full border-slate-200 rounded py-1 px-2" value={item.pricePerUnit} onChange={e => updateRevenue(item.id, 'pricePerUnit', parseFloat(e.target.value))} />
+             <div key={item.id} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm relative overflow-hidden">
+                 <div className="flex justify-between items-start mb-3">
+                     <div className="flex-1">
+                        <input 
+                          className="font-bold text-slate-800 border-none p-0 focus:ring-0 w-full text-sm placeholder:text-slate-300" 
+                          value={item.description} 
+                          onChange={e => updateRevenue(item.id, 'description', e.target.value)}
+                          placeholder="Revenue Item Name"
+                        />
+                        <p className="text-[10px] text-slate-400 font-medium">
+                           {item.calcMode === 'QUANTITY_RATE' ? `${item.units} Units @ $${item.pricePerUnit.toLocaleString()}` : 'Lump Sum Amount'}
+                        </p>
                      </div>
-                     {item.calcMode === 'QUANTITY_RATE' && (
-                         <div>
-                            <label className="text-slate-400 font-bold uppercase text-[10px]">Qty</label>
-                            <input type="number" className="w-full border-slate-200 rounded py-1 px-2" value={item.units} onChange={e => updateRevenue(item.id, 'units', parseFloat(e.target.value))} />
-                         </div>
-                     )}
+                     <div className="text-right">
+                        <span className="block text-sm font-mono font-black text-slate-700">
+                           ${(item.calcMode === 'QUANTITY_RATE' ? item.units * item.pricePerUnit : item.pricePerUnit).toLocaleString()}
+                        </span>
+                     </div>
                  </div>
+                 
+                 {/* Expand/Collapse Toggle */}
+                 <button 
+                    onClick={() => toggleExpanded(item.id)}
+                    className="w-full text-center py-2 bg-slate-50 rounded-lg text-xs font-bold text-slate-500 hover:bg-slate-100 transition-colors flex justify-center items-center"
+                 >
+                    {expandedRow === item.id ? 'Hide Details' : 'Edit Details'} 
+                    <i className={`fa-solid fa-chevron-down ml-2 transition-transform ${expandedRow === item.id ? 'rotate-180' : ''}`}></i>
+                 </button>
+
+                 {/* Collapsible Edit Form */}
+                 {expandedRow === item.id && (
+                    <div className="pt-4 mt-2 border-t border-slate-100 grid grid-cols-2 gap-3 animate-in slide-in-from-top-2 duration-200">
+                        <div className="col-span-2">
+                           <label className="text-[10px] font-bold text-slate-400 uppercase">Calculation Mode</label>
+                           <div className="flex bg-slate-100 p-1 rounded mt-1">
+                              <button onClick={() => updateRevenue(item.id, 'calcMode', 'QUANTITY_RATE')} className={`flex-1 py-1 rounded text-[10px] font-bold ${item.calcMode === 'QUANTITY_RATE' ? 'bg-white shadow text-indigo-600' : 'text-slate-500'}`}>Rate x Qty</button>
+                              <button onClick={() => updateRevenue(item.id, 'calcMode', 'LUMP_SUM')} className={`flex-1 py-1 rounded text-[10px] font-bold ${item.calcMode === 'LUMP_SUM' ? 'bg-white shadow text-indigo-600' : 'text-slate-500'}`}>Fixed Sum</button>
+                           </div>
+                        </div>
+                        
+                        <div>
+                           <label className="text-[10px] font-bold text-slate-400 uppercase">Amount ($)</label>
+                           <input type="number" className="w-full border-slate-200 rounded py-1.5 px-2 text-sm font-bold mt-1" value={item.pricePerUnit} onChange={e => updateRevenue(item.id, 'pricePerUnit', parseFloat(e.target.value))} />
+                        </div>
+                        
+                        {item.calcMode === 'QUANTITY_RATE' && (
+                            <div>
+                               <label className="text-[10px] font-bold text-slate-400 uppercase">Quantity</label>
+                               <input type="number" className="w-full border-slate-200 rounded py-1.5 px-2 text-sm font-bold mt-1" value={item.units} onChange={e => updateRevenue(item.id, 'units', parseFloat(e.target.value))} />
+                            </div>
+                        )}
+
+                        {!isHold ? (
+                           <>
+                              <div>
+                                 <label className="text-[10px] font-bold text-slate-400 uppercase">Rate (Mo)</label>
+                                 <input type="number" className="w-full border-slate-200 rounded py-1.5 px-2 text-sm font-bold mt-1" value={item.absorptionRate} onChange={e => updateRevenue(item.id, 'absorptionRate', parseFloat(e.target.value))} />
+                              </div>
+                              <div>
+                                 <label className="text-[10px] font-bold text-slate-400 uppercase">Offset</label>
+                                 <input type="number" className="w-full border-slate-200 rounded py-1.5 px-2 text-sm font-bold mt-1" value={item.offsetFromCompletion} onChange={e => updateRevenue(item.id, 'offsetFromCompletion', parseFloat(e.target.value))} />
+                              </div>
+                           </>
+                        ) : (
+                           <>
+                              <div>
+                                 <label className="text-[10px] font-bold text-slate-400 uppercase">Opex %</label>
+                                 <input type="number" className="w-full border-slate-200 rounded py-1.5 px-2 text-sm font-bold mt-1" value={item.opexRate} onChange={e => updateRevenue(item.id, 'opexRate', parseFloat(e.target.value))} />
+                              </div>
+                              <div>
+                                 <label className="text-[10px] font-bold text-slate-400 uppercase">Cap Rate %</label>
+                                 <input type="number" step="0.1" className="w-full border-slate-200 rounded py-1.5 px-2 text-sm font-bold mt-1" value={item.capRate} onChange={e => updateRevenue(item.id, 'capRate', parseFloat(e.target.value))} />
+                              </div>
+                           </>
+                        )}
+
+                        <div className="col-span-2 pt-2">
+                           <button onClick={() => removeRevenue(item.id)} className="w-full py-2 border border-red-200 text-red-600 rounded font-bold text-xs hover:bg-red-50">
+                              Remove Item
+                           </button>
+                        </div>
+                    </div>
+                 )}
              </div>
          ))}
-         <button onClick={addRevenue} className="w-full py-3 bg-blue-600 text-white rounded-lg font-bold shadow-md">Add Item</button>
       </div>
 
     </div>

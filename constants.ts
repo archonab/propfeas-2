@@ -1,3 +1,4 @@
+
 import { CostCategory, DistributionMethod, FeasibilitySettings, LineItem, RevenueItem, InputType, ScenarioStatus, Site, EquityMode, InterestRateMode, FeeBase, DebtLimitMethod, GstTreatment, SmartRates, FeasibilityScenario, TaxConfiguration } from './types';
 import { TaxLibrary } from './services/TaxLibrary';
 
@@ -160,6 +161,7 @@ export const MOCK_SITES: Site[] = [
     conditions: 8,
     dna: {
       address: "Kings Hill, NSW",
+      state: 'NSW',
       landArea: 1250,
       lga: "Sydney City Council",
       zoning: "R4 High Density",
@@ -183,6 +185,7 @@ export const MOCK_SITES: Site[] = [
     conditions: 2,
     dna: {
       address: "St Kilda, VIC",
+      state: 'VIC',
       landArea: 840,
       lga: "Port Phillip",
       zoning: "Mixed Use",
@@ -206,6 +209,7 @@ export const MOCK_SITES: Site[] = [
     conditions: 0,
     dna: {
       address: "Mascot, NSW",
+      state: 'NSW',
       landArea: 2100,
       lga: "Bayside Council",
       zoning: "B4 Mixed Use",
@@ -229,6 +233,7 @@ export const MOCK_SITES: Site[] = [
     conditions: 0,
     dna: {
       address: "Bowden, SA",
+      state: 'VIC', // Default to VIC as SA is not a supported tax state yet
       landArea: 4500,
       lga: "Charles Sturt",
       zoning: "Urban Corridor",
@@ -252,6 +257,7 @@ export const MOCK_SITES: Site[] = [
     conditions: 0,
     dna: {
       address: "Gold Coast, QLD",
+      state: 'QLD',
       landArea: 600,
       lga: "Gold Coast City",
       zoning: "High Density Res",

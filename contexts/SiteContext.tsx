@@ -113,7 +113,13 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const addSite = useCallback((site: Site) => {
-    setSites(prev => [site, ...prev]);
+    // Auto-timestamp on creation
+    const stampedSite = {
+        ...site,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+    };
+    setSites(prev => [stampedSite, ...prev]);
     triggerSave();
   }, []);
 
@@ -123,7 +129,11 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
         if (index === -1) return prev;
 
         const oldSite = prev[index];
-        const newSite = { ...oldSite, ...updates };
+        const newSite = { 
+            ...oldSite, 
+            ...updates,
+            updatedAt: new Date().toISOString() // Audit Timestamp
+        };
 
         // ERP Logic: If Site State (Tax Jurisdiction) changes, sync to all scenarios
         if (updates.dna && updates.dna.state && updates.dna.state !== oldSite.dna.state) {
@@ -136,7 +146,8 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
                         ...scen.settings.acquisition,
                         stampDutyState: newState
                     }
-                }
+                },
+                updatedAt: new Date().toISOString() // Update children too
              }));
         }
 
@@ -166,7 +177,11 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
             if (status === 'Acquired') {
                 updatedScenarios = site.scenarios.map(s => {
                     if (s.isBaseline) {
-                        return { ...s, status: ScenarioStatus.LOCKED };
+                        return { 
+                            ...s, 
+                            status: ScenarioStatus.LOCKED,
+                            updatedAt: new Date().toISOString() 
+                        };
                     }
                     return s;
                 });
@@ -175,7 +190,8 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
             return { 
                 ...site, 
                 status, 
-                scenarios: updatedScenarios 
+                scenarios: updatedScenarios,
+                updatedAt: new Date().toISOString()
             };
         });
     });
@@ -183,7 +199,20 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const addScenario = useCallback((siteId: string, scenario: FeasibilityScenario) => {
-    setSites(prev => prev.map(s => s.id === siteId ? { ...s, scenarios: [...s.scenarios, scenario] } : s));
+    const stampedScenario = {
+        ...scenario,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+    };
+    
+    setSites(prev => prev.map(s => {
+        if (s.id !== siteId) return s;
+        return { 
+            ...s, 
+            scenarios: [...s.scenarios, stampedScenario],
+            updatedAt: new Date().toISOString() // Parent site updated
+        };
+    }));
     triggerSave();
   }, []);
 
@@ -192,9 +221,10 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
         if (site.id !== siteId) return site;
         return {
             ...site,
+            updatedAt: new Date().toISOString(), // Parent site update
             scenarios: site.scenarios.map(s => {
                 if (s.id !== scenarioId) return s;
-                return { ...s, ...updates, lastModified: new Date().toISOString() };
+                return { ...s, ...updates, updatedAt: new Date().toISOString() };
             })
         };
     }));
@@ -206,6 +236,7 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
         if (site.id !== siteId) return site;
         return {
             ...site,
+            updatedAt: new Date().toISOString(),
             scenarios: site.scenarios.filter(s => s.id !== scenarioId)
         };
     }));
@@ -227,11 +258,13 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
             name: `${source.name} (Copy)`,
             isBaseline: false, // Copies are never baseline by default
             status: ScenarioStatus.DRAFT,
-            lastModified: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
         };
 
         return {
             ...site,
+            updatedAt: new Date().toISOString(),
             scenarios: [...site.scenarios, copy]
         };
     }));

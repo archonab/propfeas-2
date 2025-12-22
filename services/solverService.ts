@@ -1,4 +1,3 @@
-
 import { FeasibilitySettings, LineItem, RevenueItem, SiteDNA, FeasibilityScenario, ScenarioStatus } from '../types';
 import { FinanceEngine } from './financeEngine';
 
@@ -51,7 +50,8 @@ export const SolverService = {
       const simScenario: FeasibilityScenario = {
         id: 'sim',
         name: 'Simulation',
-        lastModified: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         isBaseline: false,
         status: ScenarioStatus.DRAFT,
         strategy: 'SELL', // Defaulting to SELL for RLV solver

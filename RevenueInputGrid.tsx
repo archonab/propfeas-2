@@ -1,16 +1,18 @@
 
 import React, { useMemo, useState } from 'react';
-import { RevenueItem, RevenueStrategy, RevenueCalcMode } from './types';
+import { RevenueItem, RevenueStrategy, RevenueCalcMode, InputScale } from './types';
 import { HelpTooltip } from './components/HelpTooltip';
+import { SmartCurrencyInput } from './components/SmartCurrencyInput';
 
 interface Props {
   revenues: RevenueItem[];
   setRevenues: React.Dispatch<React.SetStateAction<RevenueItem[]>>;
   projectDuration: number;
   strategy: RevenueStrategy;
+  inputScale?: InputScale; // New prop
 }
 
-export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, projectDuration, strategy }) => {
+export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, projectDuration, strategy, inputScale = InputScale.ONES }) => {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
   const toggleExpanded = (id: string) => {
@@ -90,6 +92,7 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
   }, [revenues, strategy]);
 
   const isHold = strategy === 'Hold';
+  const scaleLabel = inputScale === InputScale.THOUSANDS ? "'000s" : (inputScale === InputScale.MILLIONS ? "'Ms" : "");
 
   return (
     <div className="bg-white md:rounded-xl md:shadow-sm md:border border-slate-200 overflow-hidden mb-8 relative flex flex-col h-full">
@@ -97,7 +100,14 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
       {/* HEADER */}
       <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center shrink-0 sticky top-14 md:static z-20">
         <div>
-          <h3 className="font-bold text-slate-800 text-sm md:text-base">{isHold ? 'Rental Mix & Valuation' : 'Sales Mix & Absorption'}</h3>
+          <h3 className="font-bold text-slate-800 text-sm md:text-base flex items-center">
+              {isHold ? 'Rental Mix & Valuation' : 'Sales Mix & Absorption'}
+              {scaleLabel && (
+                  <span className="ml-3 text-[9px] font-bold uppercase bg-blue-100 text-blue-700 px-2 py-0.5 rounded border border-blue-200">
+                      Figures in {scaleLabel}
+                  </span>
+              )}
+          </h3>
           <p className="text-[10px] md:text-xs text-slate-500 mt-0.5">{isHold ? 'Define rent roll, lease-up and capitalisation parameters' : 'Define unit pricing, quantity and sales rate'}</p>
         </div>
         <button onClick={addRevenue} className="flex items-center text-xs font-bold bg-indigo-600 text-white px-3 py-1.5 rounded hover:bg-indigo-700 transition-colors shadow-sm">
@@ -177,12 +187,12 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
                         ) : <span className="text-slate-300">-</span>}
                       </td>
                       
-                      {/* Price */}
+                      {/* Price (SMART INPUT) */}
                       <td className="px-2 py-1 text-right">
-                         <input 
-                           type="number" 
+                         <SmartCurrencyInput
                            value={item.pricePerUnit}
-                           onChange={(e) => updateRevenue(item.id, 'pricePerUnit', parseFloat(e.target.value))}
+                           onChange={(val) => updateRevenue(item.id, 'pricePerUnit', val)}
+                           scale={inputScale}
                            className="w-full bg-transparent text-right border-none focus:ring-0 font-mono font-bold text-slate-700 hover:bg-slate-100 rounded"
                          />
                       </td>
@@ -229,12 +239,12 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
                          ) : <span className="text-slate-300">-</span>}
                       </td>
 
-                      {/* Rent (Annual) */}
+                      {/* Rent (Annual) - SMART INPUT */}
                       <td className="px-2 py-1 text-right">
-                         <input 
-                           type="number" 
+                         <SmartCurrencyInput
                            value={item.pricePerUnit}
-                           onChange={(e) => updateRevenue(item.id, 'pricePerUnit', parseFloat(e.target.value))}
+                           onChange={(val) => updateRevenue(item.id, 'pricePerUnit', val)}
+                           scale={inputScale}
                            className="w-full bg-transparent text-right border-none focus:ring-0 font-mono font-bold text-slate-700 hover:bg-slate-100 rounded"
                          />
                       </td>
@@ -360,7 +370,12 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
                         
                         <div>
                            <label className="text-[10px] font-bold text-slate-400 uppercase">Amount ($)</label>
-                           <input type="number" className="w-full border-slate-200 rounded py-1.5 px-2 text-sm font-bold mt-1" value={item.pricePerUnit} onChange={e => updateRevenue(item.id, 'pricePerUnit', parseFloat(e.target.value))} />
+                           <SmartCurrencyInput 
+                                value={item.pricePerUnit}
+                                onChange={(val) => updateRevenue(item.id, 'pricePerUnit', val)}
+                                scale={inputScale}
+                                className="w-full border-slate-200 rounded py-1.5 px-2 text-sm font-bold mt-1"
+                           />
                         </div>
                         
                         {item.calcMode === 'QUANTITY_RATE' && (

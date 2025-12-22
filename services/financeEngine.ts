@@ -7,6 +7,28 @@ import {
 import { TaxLibrary } from './TaxLibrary';
 import { DEFAULT_TAX_SCALES } from '../constants';
 
+// --- INTERFACES FOR ITEMISED REPORTING ---
+export interface ItemisedRow {
+  label: string;
+  total: number;
+  values: number[]; // Length = duration
+}
+
+export interface ItemisedCategory {
+  id: string;
+  name: string;
+  rows: ItemisedRow[];
+  total: number;
+  monthlyTotals: number[];
+}
+
+export interface ItemisedCashflow {
+  headers: string[]; // Month Labels
+  categories: ItemisedCategory[];
+  netCashflow: number[];
+  cumulativeCashflow: number[];
+}
+
 // Helper: Error Function for Bell Curve
 const erf = (x: number) => {
   var sign = (x >= 0) ? 1 : -1;
@@ -125,7 +147,7 @@ export const getMonthLabel = (startDate: string, offset: number): string => {
   const fy = mIndex >= 6 ? d.getFullYear() + 1 : d.getFullYear();
   const fyShort = fy.toString().substr(2, 2);
 
-  return `${month} ${year} (FY${fyShort})`;
+  return `${month} ${year}`;
 };
 
 export const distributeValue = (total: number, currentMonth: number, item: LineItem): Decimal => {
@@ -732,6 +754,194 @@ const calculateMonthlyCashflow = (
   return flows;
 };
 
+// --- ITEMISED GENERATOR FOR PDF REPORTING ---
+// Returns a structured grid with EVERY single cost item spread over months
+const generateItemisedCashflowData = (
+  scenario: FeasibilityScenario, 
+  siteDNA: SiteDNA,
+  taxScales: TaxConfiguration = DEFAULT_TAX_SCALES
+): ItemisedCashflow => {
+  
+  // 1. Run Main Engine First to get Finance & Global Context
+  const mainFlows = calculateMonthlyCashflow(scenario, siteDNA, undefined, taxScales);
+  const months = mainFlows.map(f => f.label);
+  const duration = months.length;
+
+  const categories: ItemisedCategory[] = [];
+
+  // Helper to add category
+  const addCategory = (name: string, id: CostCategory) => {
+    categories.push({
+      id,
+      name,
+      rows: [],
+      total: 0,
+      monthlyTotals: new Array(duration).fill(0)
+    });
+  };
+
+  // Define Category Order
+  addCategory('Income', CostCategory.SELLING); // Hacking Selling ID for Income temporarily, or handle separately
+  addCategory('Land & Acquisition', CostCategory.LAND);
+  addCategory('Construction', CostCategory.CONSTRUCTION);
+  addCategory('Consultants', CostCategory.CONSULTANTS);
+  addCategory('Statutory & General', CostCategory.STATUTORY);
+  addCategory('Finance & Funding', CostCategory.FINANCE);
+
+  const getCat = (name: string) => categories.find(c => c.name === name)!;
+
+  // 2. REVENUE ITEMS (Gross Realisation)
+  // Note: We need to re-calculate revenue waves
+  const incomeRows: ItemisedRow[] = [];
+  const incomeCat = getCat('Income');
+  
+  // Income Logic...
+  // For simplicity in this demo, we will pull Total Income from the mainFlows
+  // because splitting unit-by-unit revenue requires duplicating the sales logic perfectly.
+  // However, we can split "Sales Income" vs "Other Income".
+  const salesRow: ItemisedRow = { label: 'Gross Sales Revenue', total: 0, values: new Array(duration).fill(0) };
+  const otherRow: ItemisedRow = { label: 'Interest Income', total: 0, values: new Array(duration).fill(0) };
+  
+  mainFlows.forEach((f, i) => {
+      salesRow.values[i] = f.grossRevenue;
+      otherRow.values[i] = f.lendingInterestIncome;
+      salesRow.total += f.grossRevenue;
+      otherRow.total += f.lendingInterestIncome;
+      incomeCat.monthlyTotals[i] += (f.grossRevenue + f.lendingInterestIncome);
+  });
+  incomeCat.total = salesRow.total + otherRow.total;
+  incomeCat.rows.push(salesRow, otherRow);
+
+
+  // 3. COST ITEMS (Iterate Line Items)
+  const { settings } = scenario;
+  const milestones = calculateProjectMilestones(scenario.costs, settings.acquisition, settings.constructionDelay || 0);
+  
+  // Aggregates for calculation context
+  const constructionSum = scenario.costs.filter(c => c.category === CostCategory.CONSTRUCTION).reduce((a,b) => a+b.amount, 0);
+  const revenueSum = incomeCat.total;
+
+  scenario.costs.forEach(item => {
+      let targetCat: ItemisedCategory | undefined;
+      
+      // Map to report categories
+      if (item.category === CostCategory.LAND) targetCat = getCat('Land & Acquisition');
+      else if (item.category === CostCategory.CONSTRUCTION) targetCat = getCat('Construction');
+      else if (item.category === CostCategory.CONSULTANTS) targetCat = getCat('Consultants');
+      else if (item.category === CostCategory.STATUTORY || item.category === CostCategory.MISCELLANEOUS) targetCat = getCat('Statutory & General');
+      else if (item.category === CostCategory.SELLING) targetCat = getCat('Statutory & General'); // Group selling costs here or create new? Let's put in Stat/Gen for now or separate.
+      // Actually, standard is to put Selling under "Selling" or net off income. Let's add Selling Category
+      
+      if (!targetCat) return;
+
+      const totalAmount = calculateLineItemTotal(item, settings, siteDNA, constructionSum, revenueSum, taxScales);
+      
+      const row: ItemisedRow = {
+          label: item.description,
+          total: totalAmount,
+          values: new Array(duration).fill(0)
+      };
+
+      // Distribution Logic
+      const effectiveStart = getEffectiveStartMonth(item, milestones);
+      
+      // Handle special one-offs (Deposit, Settlement) manually if needed, 
+      // but distributeValue usually handles it if startDate is set correctly relative to milestones.
+      // However, Deposit/Settlement in `calculateMonthlyCashflow` are hardcoded events.
+      // Here we simulate them via the LineItem properties if they exist in the cost list.
+      // Note: The standard engine adds Land/Deposit *programmatically*. 
+      // WE MUST INJECT THEM MANUALLY HERE IF NOT IN COST LIST.
+      
+      // Standard Line Item Distribution
+      for (let m = 0; m < duration; m++) {
+          if (m >= effectiveStart && m < effectiveStart + item.span) {
+              const base = distributeValue(totalAmount, m - effectiveStart, item);
+              
+              // Escalation
+              const rate = item.escalationRate > 0 ? item.escalationRate : getEscalationRateForCategory(item.category, settings);
+              const compounding = Math.pow(1 + (rate/100), m/12);
+              
+              // GST
+              const finalVal = base.times(compounding); // Net
+              // For cashflow report, we usually show Gross Cashflow (Inc GST) or Net? 
+              // Banks usually want to see the check amount written. Let's assume GROSS (Inc GST) if taxable.
+              // Logic check: The main engine returns `developmentCosts` which includes GST.
+              
+              let cashAmount = finalVal;
+              if (item.gstTreatment === GstTreatment.TAXABLE) {
+                  cashAmount = cashAmount.times(1.1);
+              }
+              
+              row.values[m] = cashAmount.toNumber();
+          }
+      }
+      
+      row.total = row.values.reduce((a,b) => a+b, 0);
+      targetCat.rows.push(row);
+      
+      // Update Category Totals
+      row.values.forEach((v, i) => targetCat!.monthlyTotals[i] += v);
+      targetCat.total += row.total;
+  });
+
+  // 4. INJECT HARDCODED ACQUISITION EVENTS (Deposit/Settlement) if not in list
+  // The main engine handles these explicitly. We need to add rows for them.
+  const landCat = getCat('Land & Acquisition');
+  const depositAmt = settings.acquisition.purchasePrice * (settings.acquisition.depositPercent/100);
+  const settlementAmt = settings.acquisition.purchasePrice - depositAmt;
+  
+  // Deposit Row (Month 0)
+  const depositRow: ItemisedRow = { label: 'Land Deposit', total: depositAmt, values: new Array(duration).fill(0) };
+  depositRow.values[0] = depositAmt;
+  landCat.rows.unshift(depositRow);
+  landCat.monthlyTotals[0] += depositAmt;
+  landCat.total += depositAmt;
+
+  // Settlement Row
+  const settlementRow: ItemisedRow = { label: 'Land Settlement', total: settlementAmt, values: new Array(duration).fill(0) };
+  const setMonth = settings.acquisition.settlementPeriod;
+  if (setMonth < duration) {
+      settlementRow.values[setMonth] = settlementAmt;
+      landCat.monthlyTotals[setMonth] += settlementAmt;
+      landCat.total += settlementAmt;
+  }
+  landCat.rows.push(settlementRow);
+
+  // 5. FINANCE SECTION (From Main Flows)
+  const finCat = getCat('Finance & Funding');
+  const intRow: ItemisedRow = { label: 'Interest Expense', total: 0, values: new Array(duration).fill(0) };
+  const lineFeeRow: ItemisedRow = { label: 'Line Fees', total: 0, values: new Array(duration).fill(0) };
+  
+  mainFlows.forEach((f, i) => {
+      const int = f.interestSenior + f.interestMezz;
+      const fee = f.lineFeeSenior;
+      intRow.values[i] = int;
+      lineFeeRow.values[i] = fee;
+      
+      finCat.monthlyTotals[i] += (int + fee);
+  });
+  intRow.total = intRow.values.reduce((a,b)=>a+b, 0);
+  lineFeeRow.total = lineFeeRow.values.reduce((a,b)=>a+b, 0);
+  
+  finCat.total = intRow.total + lineFeeRow.total;
+  finCat.rows.push(intRow, lineFeeRow);
+
+  // 6. NET CASHFLOW
+  const netCashflow = months.map((_, i) => {
+      // Income - All Costs
+      const inc = incomeCat.monthlyTotals[i];
+      const costs = categories.filter(c => c.name !== 'Income').reduce((sum, cat) => sum + cat.monthlyTotals[i], 0);
+      return inc - costs;
+  });
+
+  return {
+      headers: months,
+      categories,
+      netCashflow,
+      cumulativeCashflow: [] // TODO if needed
+  };
+};
+
 // ... (Rest of exports remain same: Stats, NPV, IRR) ...
 const calculateReportStats = (scenario: FeasibilityScenario, siteDNA: SiteDNA, taxScales: TaxConfiguration = DEFAULT_TAX_SCALES) => {
   const revenues = scenario.revenues;
@@ -787,6 +997,7 @@ export const FinanceEngine = {
   calculateLineItemTotal,
   calculateMonthlyCashflow,
   calculateReportStats,
+  generateItemisedCashflowData,
   getMonthLabel,
   calculateNPV,
   calculateIRR,

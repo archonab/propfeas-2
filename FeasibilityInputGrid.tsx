@@ -1,11 +1,12 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { CostCategory, DistributionMethod, InputType, LineItem, FeasibilitySettings, LineItemTag, MilestoneLink, SiteDNA, TaxConfiguration, CalculationLink, GstTreatment } from './types';
+import { CostCategory, DistributionMethod, InputType, LineItem, FeasibilitySettings, LineItemTag, MilestoneLink, SiteDNA, TaxConfiguration, CalculationLink, GstTreatment, InputScale } from './types';
 import { PhasingChart } from './PhasingChart';
 import { CostLibraryModal } from './CostLibraryModal';
 import { HelpTooltip } from './components/HelpTooltip';
 import { FinanceEngine } from './services/financeEngine';
 import { DEFAULT_TAX_SCALES } from './constants';
+import { SmartCurrencyInput } from './components/SmartCurrencyInput';
 
 interface Props {
   costs: LineItem[];
@@ -264,6 +265,8 @@ const CostSection: React.FC<{
     );
   };
 
+  const scaleLabel = settings.inputScale === InputScale.THOUSANDS ? "'000s" : (settings.inputScale === InputScale.MILLIONS ? "'Ms" : "");
+
   return (
      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6">
         {/* Section Header */}
@@ -279,6 +282,11 @@ const CostSection: React.FC<{
                  <h3 className="text-sm font-bold text-slate-800 flex items-center">
                     {title}
                     {tooltipTerm && <HelpTooltip text={tooltipTerm} />}
+                    {scaleLabel && isOpen && (
+                        <span className="ml-3 text-[9px] font-bold uppercase bg-blue-100 text-blue-700 px-2 py-0.5 rounded border border-blue-200">
+                            Figures in {scaleLabel}
+                        </span>
+                    )}
                  </h3>
                  <p className="text-[10px] text-slate-500 font-medium">
                    {sectionCosts.length} Items • Total: ${sectionTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
@@ -294,6 +302,7 @@ const CostSection: React.FC<{
               {sectionCosts.map(item => {
                  const { showDriver, driverLabel, calculatedValue, warning, isLinked } = getSmartContext(item);
                  const isExpanded = expandedRow === item.id;
+                 const isPercent = item.inputType.includes('Pct') || item.inputType.includes('%');
 
                  return (
                     <div key={item.id} className={`bg-white transition-colors group ${isExpanded ? 'bg-indigo-50/20' : 'hover:bg-slate-50'}`}>
@@ -344,15 +353,26 @@ const CostSection: React.FC<{
                           <div className="w-32 text-right">
                              <div className="flex items-center justify-end group/input relative">
                                 {!isLinked && (
-                                   <DebouncedInput 
-                                      type="number" 
-                                      value={item.amount}
-                                      onChange={(val) => onUpdate(item.id, 'amount', val)}
-                                      className="w-full text-right bg-transparent border-transparent hover:border-slate-200 focus:border-indigo-500 focus:ring-0 px-2 py-1 font-bold text-slate-800 font-mono rounded"
-                                   />
+                                   isPercent ? (
+                                      // Standard Input for Percentages
+                                      <DebouncedInput 
+                                        type="number" 
+                                        value={item.amount}
+                                        onChange={(val) => onUpdate(item.id, 'amount', val)}
+                                        className="w-full text-right bg-transparent border-transparent hover:border-slate-200 focus:border-indigo-500 focus:ring-0 px-2 py-1 font-bold text-slate-800 font-mono rounded"
+                                      />
+                                   ) : (
+                                      // Smart Currency Input for Dollar amounts
+                                      <SmartCurrencyInput
+                                        value={item.amount}
+                                        onChange={(val) => onUpdate(item.id, 'amount', val)}
+                                        scale={settings.inputScale}
+                                        className="w-full text-right bg-transparent border-transparent hover:border-slate-200 focus:border-indigo-500 focus:ring-0 px-2 py-1 font-bold text-slate-800 font-mono rounded"
+                                      />
+                                   )
                                 )}
                                 <span className={`text-xs text-slate-400 font-bold ml-1 ${isLinked ? 'opacity-0' : ''}`}>
-                                   {item.inputType.includes('Pct') || item.inputType.includes('%') ? '%' : '$'}
+                                   {isPercent ? '%' : '$'}
                                 </span>
                              </div>
                           </div>
@@ -404,7 +424,7 @@ const CostSection: React.FC<{
                                 </div>
                                 {!isLinked && (
                                     <div className="text-[10px] text-slate-400 font-mono">
-                                        {item.amount}{item.inputType.includes('%') ? '%' : ''}
+                                        {item.amount}{isPercent ? '%' : ''}
                                     </div>
                                 )}
                              </div>
@@ -436,13 +456,23 @@ const CostSection: React.FC<{
                                     </div>
                                     <div>
                                         <label className="text-[10px] font-bold text-slate-400 uppercase mb-1">Amount</label>
-                                        <input 
-                                            type="number" 
-                                            value={item.amount}
-                                            onChange={(e) => onUpdate(item.id, 'amount', parseFloat(e.target.value))}
-                                            className="w-full border-slate-200 rounded text-sm font-bold text-slate-800 py-2 font-mono"
-                                            disabled={isLinked}
-                                        />
+                                        {isPercent ? (
+                                            <input 
+                                                type="number" 
+                                                value={item.amount}
+                                                onChange={(e) => onUpdate(item.id, 'amount', parseFloat(e.target.value))}
+                                                className="w-full border-slate-200 rounded text-sm font-bold text-slate-800 py-2 font-mono"
+                                                disabled={isLinked}
+                                            />
+                                        ) : (
+                                            <SmartCurrencyInput
+                                                value={item.amount}
+                                                onChange={(val) => onUpdate(item.id, 'amount', val)}
+                                                scale={settings.inputScale}
+                                                disabled={isLinked}
+                                                className="w-full border-slate-200 rounded text-sm font-bold text-slate-800 py-2 font-mono"
+                                            />
+                                        )}
                                     </div>
                                 </div>
                                 

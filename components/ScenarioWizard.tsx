@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { FeasibilityScenario, ScenarioStatus } from '../types';
 import { BASE_SELL_TEMPLATE, BASE_HOLD_TEMPLATE } from '../constants';
@@ -29,7 +28,7 @@ export const ScenarioWizard: React.FC<Props> = ({ isOpen, onClose, onCreate, pro
       ...JSON.parse(JSON.stringify(template)),
       id: `scen-${Date.now()}`,
       name: name || (strategy === 'SELL' ? 'New Trading Scenario' : 'New Hold Scenario'),
-      lastModified: new Date().toISOString(),
+      lastUpdated: new Date().toISOString(),
       isBaseline: false, 
       status: ScenarioStatus.DRAFT,
       strategy: strategy

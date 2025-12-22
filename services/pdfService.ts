@@ -1,274 +1,429 @@
 
 import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
-import { Site, FeasibilityScenario, CostCategory } from "../types";
-import { FinanceEngine } from "./financeEngine";
+import autoTable, { UserOptions } from "jspdf-autotable";
+import { Site, FeasibilityScenario, CostCategory, SiteDNA, MonthlyFlow, RevenueItem, LineItem, GstTreatment } from "../types";
+import { FinanceEngine, ItemisedCashflow } from "./financeEngine";
+import { SensitivityService } from "./sensitivityService";
+
+// --- THEME CONSTANTS ---
+const THEME = {
+  primary: "#1e293b", // Slate 800 (Feastudy is Black/Dark Grey)
+  secondary: "#334155", // Slate 700
+  accent: "#4f46e5", // Indigo (Branding)
+  headerFill: "#e2e8f0", // Slate 200 (The "Gray Bar" for headers)
+  text: "#0f172a", // Slate 900
+  line: "#cbd5e1" // Slate 300
+};
 
 // --- HELPERS ---
-const formatCurrency = (val: number) => {
-  return `$${val.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+const formatCurrency = (val: number, decimals = 0) => {
+  if (val === 0) return "-";
+  const absVal = Math.abs(val).toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  return val < 0 ? `(${absVal})` : `${absVal}`;
 };
 
-const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' });
-};
+const formatPct = (val: number) => `${val.toFixed(2)}%`;
 
-// Helper to load image as base64
-const getBase64ImageFromUrl = async (imageUrl: string): Promise<string | null> => {
-  try {
-    const res = await fetch(imageUrl);
-    const blob = await res.blob();
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.readAsDataURL(blob);
-    });
-  } catch (error) {
-    console.warn("Failed to load image for PDF", error);
-    return null;
-  }
-};
+// --- TYPES FOR RENDERER ---
+type RowType = 'header' | 'item' | 'subtotal' | 'total' | 'spacer';
+
+interface ReportRow {
+  type: RowType;
+  label: string;
+  values: (string | number)[];
+  indent?: number; // 0, 1, 2
+  bold?: boolean;
+  fill?: boolean;
+}
 
 export class PdfService {
-  
-  static async generateExecutiveSummary(site: Site, scenario: FeasibilityScenario, stats: any) {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.width;
-    const pageHeight = doc.internal.pageSize.height;
+  private doc: jsPDF;
+  private pageWidth: number;
+  private pageHeight: number;
+  private currentY: number = 0;
+
+  constructor() {
+    this.doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    this.pageWidth = this.doc.internal.pageSize.width;
+    this.pageHeight = this.doc.internal.pageSize.height;
+  }
+
+  // --- PUBLIC ORCHESTRATOR ---
+  public static async generateBoardReport(
+    site: Site,
+    scenario: FeasibilityScenario,
+    stats: any,
+    cashflow: MonthlyFlow[],
+    siteDNA: SiteDNA
+  ) {
+    const service = new PdfService();
+    const itemisedData = FinanceEngine.generateItemisedCashflowData(scenario, siteDNA);
+    await service.buildDocument(site, scenario, stats, cashflow, siteDNA, itemisedData);
+  }
+
+  private async buildDocument(
+    site: Site,
+    scenario: FeasibilityScenario,
+    stats: any,
+    cashflow: MonthlyFlow[],
+    siteDNA: SiteDNA,
+    itemisedData: ItemisedCashflow
+  ) {
+    // 1. Executive Summary (Portrait)
+    this.addExecutiveSummary(site, scenario, stats);
+    this.addFooter(1, site.name);
+
+    // 2. Valuer's P&L (Portrait - Detailed 3-Column)
+    this.doc.addPage();
+    this.addValuersPnL(scenario, siteDNA, stats);
+    this.addFooter(2, site.name);
+
+    // 3. Itemised Cashflow (Landscape - 12 Month Chunks)
+    this.addItemisedCashflow(itemisedData, site.name, 3);
+
+    // Save
+    this.doc.save(`Feastudy_Report_${site.code}.pdf`);
+  }
+
+  // --- HEADER & FOOTER ---
+  private addHeader(title: string, subtitle: string, landscape = false) {
+    const width = landscape ? this.doc.internal.pageSize.height : this.pageWidth; // Swap dimensions logic for header line if landscape
+    const effectiveWidth = landscape ? 297 : 210;
+
+    this.doc.setFont("helvetica", "bold");
+    this.doc.setFontSize(14);
+    this.doc.setTextColor(THEME.text);
+    this.doc.text("PROPERTY DEVELOPMENT FEASIBILITY STUDY", effectiveWidth / 2, 15, { align: "center" });
     
-    // Brand Colors (Indigo-600)
-    const brandColor = "#4f46e5";
-    const secondaryColor = "#1e293b"; // Slate-800
-    const lightBg = "#f8fafc"; // Slate-50
+    this.doc.setDrawColor(0);
+    this.doc.setLineWidth(0.5);
+    this.doc.line(10, 18, effectiveWidth - 10, 18);
 
-    // --- PAGE 1: DEAL SHEET ---
+    this.doc.setFontSize(10);
+    this.doc.text(`Development:`, 10, 25);
+    this.doc.setFont("helvetica", "normal");
+    this.doc.text(title, 40, 25);
+
+    this.doc.setFont("helvetica", "bold");
+    this.doc.text(`Description:`, 10, 30);
+    this.doc.setFont("helvetica", "normal");
+    this.doc.text(subtitle, 40, 30);
+
+    this.doc.line(10, 35, effectiveWidth - 10, 35);
+    this.currentY = 45;
+  }
+
+  private addFooter(pageNumber: number, projectName: string) {
+    const totalPages = this.doc.getNumberOfPages();
+    const width = this.doc.internal.pageSize.width;
+    const height = this.doc.internal.pageSize.height;
+
+    this.doc.setFontSize(8);
+    this.doc.setFont("helvetica", "italic");
+    this.doc.setTextColor(100);
     
-    // 1. Header
-    doc.setFillColor(brandColor);
-    doc.rect(0, 0, pageWidth, 20, "F");
-    doc.setTextColor("#ffffff");
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
-    doc.text("INVESTMENT MEMORANDUM", pageWidth - 20, 13, { align: "right" });
-    doc.text("DevFeas Pro", 20, 13);
+    this.doc.line(10, height - 15, width - 10, height - 15);
+    this.doc.text("Generated by DevFeas Pro | Professional Edition", 10, height - 10);
+    this.doc.text(`Page ${pageNumber}`, width - 10, height - 10, { align: "right" });
+  }
 
-    // 2. Hero Section (Project Title)
-    doc.setTextColor(secondaryColor);
-    doc.setFontSize(24);
-    doc.setFont("helvetica", "bold");
-    doc.text(site.name, 20, 40);
+  // --- PAGE 1: EXECUTIVE SUMMARY ---
+  private addExecutiveSummary(site: Site, scenario: FeasibilityScenario, stats: any) {
+    this.addHeader(scenario.name, site.name);
     
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor("#64748b");
-    doc.text(site.dna.address, 20, 48);
+    this.doc.setFont("helvetica", "bold");
+    this.doc.setFontSize(12);
+    this.doc.text("Executive Dashboard", 10, this.currentY);
+    this.currentY += 10;
 
-    // 3. Site Image (Async Load)
-    try {
-        if (site.thumbnail) {
-            const base64Img = await getBase64ImageFromUrl(site.thumbnail);
-            if (base64Img) {
-                // Aspect Ratio 16:9 approx
-                const imgHeight = 60;
-                doc.addImage(base64Img, "JPEG", 20, 60, pageWidth - 40, imgHeight, undefined, 'FAST');
-            } else {
-                // Placeholder
-                doc.setFillColor("#e2e8f0");
-                doc.rect(20, 60, pageWidth - 40, 60, "F");
-                doc.setTextColor("#94a3b8");
-                doc.text("Image Unavailable", pageWidth/2, 90, { align: 'center' });
-            }
-        }
-    } catch (e) {
-        // Fallback if image fails
-        doc.setFillColor("#e2e8f0");
-        doc.rect(20, 60, pageWidth - 40, 60, "F");
-    }
-
-    // 4. Key Metrics Grid
-    const startY = 135;
-    const boxW = (pageWidth - 40 - 15) / 4; // 4 boxes, 5mm gap
-    const boxH = 25;
-
-    const metrics = [
-        { label: "Net Profit", value: formatCurrency(stats.profit), color: "#10b981" }, // Green
-        { label: "Dev Margin", value: `${stats.margin.toFixed(2)}%`, color: secondaryColor },
-        { label: "Equity IRR", value: `${stats.irr.toFixed(1)}%`, color: brandColor },
-        { label: "Peak Equity", value: formatCurrency(stats.peakEquity), color: secondaryColor }
+    // KPI Grid
+    const kpis = [
+      ["Net Profit", formatCurrency(stats.profit)],
+      ["Dev Margin", formatPct(stats.margin)],
+      ["Equity IRR", formatPct(stats.irr)],
+      ["Peak Debt", formatCurrency(stats.peakTotalDebt)],
+      ["Total Cost", formatCurrency(stats.totalOut)],
+      ["Duration", `${scenario.settings.durationMonths} Months`]
     ];
 
-    metrics.forEach((m, i) => {
-        const x = 20 + (i * (boxW + 5));
-        
-        // Background
-        doc.setFillColor("#ffffff");
-        doc.setDrawColor("#e2e8f0");
-        doc.rect(x, startY, boxW, boxH, "FD");
-        
-        // Label
-        doc.setFontSize(8);
-        doc.setTextColor("#64748b");
-        doc.text(m.label.toUpperCase(), x + 5, startY + 8);
-        
-        // Value
-        doc.setFontSize(14);
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(m.color);
-        doc.text(m.value, x + 5, startY + 18);
+    autoTable(this.doc, {
+      startY: this.currentY,
+      head: [['Metric', 'Value', 'Metric', 'Value']],
+      body: [
+        [kpis[0][0], kpis[0][1], kpis[1][0], kpis[1][1]],
+        [kpis[2][0], kpis[2][1], kpis[3][0], kpis[3][1]],
+        [kpis[4][0], kpis[4][1], kpis[5][0], kpis[5][1]],
+      ],
+      theme: 'grid',
+      headStyles: { fillColor: THEME.primary, textColor: 255, fontStyle: 'bold' },
+      styles: { font: "courier", fontSize: 10, cellPadding: 4 },
+      columnStyles: {
+        0: { font: "helvetica", fontStyle: "bold", fillColor: 245 },
+        2: { font: "helvetica", fontStyle: "bold", fillColor: 245 }
+      }
     });
 
-    // 5. Executive Summary Text
-    doc.setFontSize(14);
-    doc.setTextColor(secondaryColor);
-    doc.text("Executive Summary", 20, 180);
+    this.currentY = (this.doc as any).lastAutoTable.finalY + 15;
+
+    // Narrative
+    this.doc.setFont("helvetica", "bold");
+    this.doc.text("Project Commentary", 10, this.currentY);
+    this.currentY += 6;
+    this.doc.setFont("helvetica", "normal");
+    this.doc.setFontSize(10);
+    const desc = scenario.settings.description || "No description provided.";
+    const splitDesc = this.doc.splitTextToSize(desc, 190);
+    this.doc.text(splitDesc, 10, this.currentY);
+  }
+
+  // --- PAGE 2: VALUER'S P&L (The Feastudy Style) ---
+  private addValuersPnL(scenario: FeasibilityScenario, siteDNA: SiteDNA, stats: any) {
+    this.addHeader(scenario.name, "Itemised Profit & Loss (Valuer's Style)");
+
+    // Pre-Process Data Structure for 3-Column Table
+    // Col 1: Description (Indented)
+    // Col 2: Inner Amount (Individual Items)
+    // Col 3: Outer Amount (Subtotals/Totals)
+
+    const rows: any[] = [];
+    const pushRow = (desc: string, inner: string | null, outer: string | null, style: 'header'|'item'|'total'|'spacer' = 'item') => {
+        rows.push({ desc, inner, outer, style });
+    };
+
+    const reportStats = FinanceEngine.calculateReportStats(scenario, siteDNA);
+
+    // 1. REVENUE SECTION
+    pushRow("INCOME", null, null, 'header');
+    pushRow("Gross Sales Revenue", formatCurrency(reportStats.totalRevenueGross), null);
+    pushRow("Less: GST Liability", formatCurrency(reportStats.gstCollected * -1), null);
+    pushRow("NET REALISATION", null, formatCurrency(reportStats.netRealisation), 'total');
+    pushRow("", null, null, 'spacer');
+
+    // 2. COSTS SECTION
+    pushRow("LESS DEVELOPMENT COSTS", null, null, 'header');
+
+    // Helper to process a category
+    const processCategory = (catName: string, catId: CostCategory) => {
+        const items = scenario.costs.filter(c => c.category === catId);
+        if (items.length === 0) return;
+
+        // Calculate Category Total
+        const constructionSum = scenario.costs.filter(c => c.category === CostCategory.CONSTRUCTION).reduce((a,b)=>a+b.amount,0);
+        const revenueSum = reportStats.totalRevenueGross;
+        const total = items.reduce((sum, item) => sum + FinanceEngine.calculateLineItemTotal(item, scenario.settings, siteDNA, constructionSum, revenueSum), 0);
+
+        pushRow(catName, null, null, 'header');
+        items.forEach(item => {
+            const val = FinanceEngine.calculateLineItemTotal(item, scenario.settings, siteDNA, constructionSum, revenueSum);
+            pushRow(item.description, formatCurrency(val), null);
+        });
+        pushRow(`Total ${catName}`, null, formatCurrency(total), 'total');
+        pushRow("", null, null, 'spacer');
+    };
+
+    processCategory("Acquisition Costs", CostCategory.LAND);
+    processCategory("Construction Costs", CostCategory.CONSTRUCTION);
+    processCategory("Consultant Fees", CostCategory.CONSULTANTS);
+    processCategory("Statutory & Authorities", CostCategory.STATUTORY);
+    processCategory("Selling & Marketing", CostCategory.SELLING);
+    processCategory("Miscellaneous", CostCategory.MISCELLANEOUS);
+
+    // Finance
+    pushRow("Finance Costs", null, null, 'header');
+    pushRow("Interest & Line Fees", null, formatCurrency(stats.interestTotal), 'total');
     
-    doc.setFontSize(10);
-    doc.setTextColor("#334155");
-    doc.setFont("helvetica", "normal");
+    // Bottom Line
+    pushRow("", null, null, 'spacer');
+    pushRow("TOTAL DEVELOPMENT COST", null, formatCurrency(stats.totalOut), 'header');
+    pushRow("", null, null, 'spacer');
     
-    const desc = scenario.settings.description || "No description provided for this scenario.";
-    const splitDesc = doc.splitTextToSize(desc, pageWidth - 40);
-    doc.text(splitDesc, 20, 190);
+    // Profit
+    pushRow("NET DEVELOPMENT PROFIT", null, formatCurrency(stats.profit), 'header');
+    pushRow("DEVELOPMENT MARGIN", null, formatPct(stats.margin), 'total');
 
-    // Scenario Details
-    doc.setFontSize(10);
-    doc.setTextColor("#64748b");
-    doc.text(`Scenario: ${scenario.name}`, 20, 230);
-    doc.text(`Strategy: ${scenario.strategy}`, 20, 236);
-    doc.text(`Status: ${scenario.status}`, 20, 242);
-    doc.text(`Date: ${formatDate(new Date().toISOString())}`, 20, 248);
-
-    // Footer Page 1
-    doc.setFontSize(8);
-    doc.setTextColor("#94a3b8");
-    doc.text("Generated by DevFeas Pro | Commercial in Confidence", pageWidth / 2, pageHeight - 10, { align: "center" });
-
-
-    // --- PAGE 2: FINANCIAL STRUCTURE ---
-    doc.addPage();
-
-    // Header Page 2
-    doc.setFillColor(brandColor);
-    doc.rect(0, 0, pageWidth, 20, "F");
-    doc.setTextColor("#ffffff");
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
-    doc.text("FINANCIAL STRUCTURE", pageWidth - 20, 13, { align: "right" });
-    doc.text("DevFeas Pro", 20, 13);
-
-    // Calculate Sources & Uses Data
-    // Uses
-    const acquisition = scenario.settings.acquisition;
-    const landCost = acquisition.purchasePrice;
-    const acqCosts = FinanceEngine.calculateStampDuty(landCost, acquisition.stampDutyState, acquisition.isForeignBuyer) + acquisition.legalFeeEstimate + (landCost * acquisition.buyersAgentFee/100);
-    
-    // Aggregates
-    const costsByCategory: Record<string, number> = {};
-    scenario.costs.forEach(c => {
-        // Simple aggregate for display - simplistic calculation
-        const total = c.amount * (c.inputType.includes('%') ? (c.inputType.includes('Revenue') ? stats.totalIn : stats.constructionTotal)/c.amount : 1);
-        costsByCategory[c.category] = (costsByCategory[c.category] || 0) + total; 
-    });
-
-    const construction = stats.constructionTotal;
-    const consultants = costsByCategory[CostCategory.CONSULTANTS] || 0;
-    const statutory = costsByCategory[CostCategory.STATUTORY] || 0;
-    const selling = costsByCategory[CostCategory.SELLING] || 0;
-    const finance = stats.interestTotal; // From engine stats
-    const misc = costsByCategory[CostCategory.MISCELLANEOUS] || 0;
-
-    const totalUses = stats.totalOut;
-
-    // Sources (Approximation based on Peak Debt/Equity)
-    // Note: Actual sources sum to Total Uses in a balanced model. 
-    // We use Peak Debt + Peak Equity as the "Funding Requirement".
-    // Sales Revenue is technically a source if recycling, but for S&U table usually we show Initial Funding.
-    // However, usually Sources = Debt + Equity + Net Sales Recycled.
-    // For simplicity in this static report, we'll just list the Capital Stack limits or Peaks.
-    
-    const seniorDebt = stats.peakSenior;
-    const mezzDebt = stats.peakMezz;
-    const equity = stats.peakEquity;
-    
-    // Gap/Sales Recycling (Balancing item)
-    const totalSources = seniorDebt + mezzDebt + equity;
-    const recycling = Math.max(0, totalUses - totalSources); 
-
-    // Render "Sources & Uses" Table
-    doc.setFontSize(14);
-    doc.setTextColor(secondaryColor);
-    doc.text("Sources & Uses of Funds", 20, 40);
-
-    autoTable(doc, {
-        startY: 45,
-        head: [['Uses of Funds', 'Amount', '%', 'Sources of Funds', 'Amount', '%']],
-        body: [
-            ['Land Purchase', formatCurrency(landCost), `${(landCost/totalUses*100).toFixed(1)}%`, 'Senior Debt', formatCurrency(seniorDebt), `${(seniorDebt/totalUses*100).toFixed(1)}%`],
-            ['Acquisition Costs', formatCurrency(acqCosts), `${(acqCosts/totalUses*100).toFixed(1)}%`, 'Mezzanine Debt', formatCurrency(mezzDebt), `${(mezzDebt/totalUses*100).toFixed(1)}%`],
-            ['Construction', formatCurrency(construction), `${(construction/totalUses*100).toFixed(1)}%`, 'Developer Equity', formatCurrency(equity), `${(equity/totalUses*100).toFixed(1)}%`],
-            ['Professional Fees', formatCurrency(consultants), `${(consultants/totalUses*100).toFixed(1)}%`, 'Sales Recycling', formatCurrency(recycling), `${(recycling/totalUses*100).toFixed(1)}%`],
-            ['Statutory Authority', formatCurrency(statutory), `${(statutory/totalUses*100).toFixed(1)}%`, '', '', ''],
-            ['Finance Costs', formatCurrency(finance), `${(finance/totalUses*100).toFixed(1)}%`, '', '', ''],
-            ['Marketing & Sales', formatCurrency(selling), `${(selling/totalUses*100).toFixed(1)}%`, '', '', ''],
-            ['Contingency / Misc', formatCurrency(misc), `${(misc/totalUses*100).toFixed(1)}%`, '', '', ''],
-            ['TOTAL USES', formatCurrency(totalUses), '100%', 'TOTAL SOURCES', formatCurrency(totalUses), '100%']
-        ],
-        theme: 'striped',
-        headStyles: { fillColor: brandColor, textColor: '#ffffff', fontStyle: 'bold' },
+    // RENDER TABLE
+    autoTable(this.doc, {
+        startY: this.currentY,
+        head: [['Description', 'Amount', 'Subtotal']],
+        body: rows.map(r => [r.desc, r.inner, r.outer]),
+        theme: 'plain',
+        styles: { fontSize: 9, cellPadding: 2, font: "helvetica" },
         columnStyles: {
-            0: { cellWidth: 40, fontStyle: 'bold' },
-            1: { cellWidth: 30, halign: 'right' },
-            2: { cellWidth: 15, halign: 'right' },
-            3: { cellWidth: 40, fontStyle: 'bold' },
-            4: { cellWidth: 30, halign: 'right' },
-            5: { cellWidth: 15, halign: 'right' },
+            0: { cellWidth: 110 },
+            1: { cellWidth: 40, halign: 'right', font: "courier" },
+            2: { cellWidth: 40, halign: 'right', font: "courier", fontStyle: 'bold' }
         },
-        footStyles: { fillColor: secondaryColor, textColor: '#ffffff', fontStyle: 'bold' }
-    });
+        didParseCell: (data) => {
+            const rowIdx = data.row.index;
+            const style = rows[rowIdx].style;
 
-    // Risk Covenants
-    const finalY = (doc as any).lastAutoTable.finalY + 20;
-    
-    doc.setFontSize(14);
-    doc.setTextColor(secondaryColor);
-    doc.text("Risk & Covenants", 20, finalY);
+            if (data.section === 'head') {
+                data.cell.styles.fillColor = THEME.primary;
+                data.cell.styles.textColor = 255;
+            }
 
-    autoTable(doc, {
-        startY: finalY + 5,
-        head: [['Metric', 'Result', 'Target / Covenant', 'Status']],
-        body: [
-            ['Development Margin', `${stats.margin.toFixed(2)}%`, '> 18.00%', stats.margin > 18 ? 'PASS' : 'REVIEW'],
-            ['Loan to Cost (LTC)', `${stats.ltc.toFixed(2)}%`, '< 85.00%', stats.ltc < 85 ? 'PASS' : 'REVIEW'],
-            ['Loan to Value (LVR)', `${stats.lvr.toFixed(2)}%`, '< 65.00%', stats.lvr < 65 ? 'PASS' : 'REVIEW'],
-            ['Profit Share (Equity)', `${(stats.profit/stats.peakEquity).toFixed(2)}x`, '> 1.50x', (stats.profit/stats.peakEquity) > 1.5 ? 'PASS' : 'REVIEW'],
-        ],
-        theme: 'grid',
-        headStyles: { fillColor: secondaryColor, textColor: '#ffffff' },
-        columnStyles: {
-            1: { fontStyle: 'bold', halign: 'right' },
-            2: { halign: 'right' },
-            3: { halign: 'center', fontStyle: 'bold' }
-        },
-        didParseCell: function(data) {
-            if (data.column.index === 3 && data.section === 'body') {
-                if (data.cell.raw === 'PASS') {
-                    data.cell.styles.textColor = '#10b981'; // Green
-                } else {
-                    data.cell.styles.textColor = '#f59e0b'; // Amber
+            if (data.section === 'body') {
+                if (style === 'header') {
+                    if (data.column.index === 0) data.cell.styles.fontStyle = 'bold';
+                    data.cell.styles.fillColor = THEME.headerFill;
+                } else if (style === 'item') {
+                    if (data.column.index === 0) data.cell.styles.cellPadding = { top: 2, bottom: 2, left: 8, right: 2 };
+                } else if (style === 'total') {
+                    data.cell.styles.fontStyle = 'bold';
+                    if (data.column.index === 2) data.cell.styles.lineWidth = { top: 0.1, bottom: 0, left: 0, right: 0 };
                 }
             }
         }
     });
+  }
 
-    // Disclaimer
-    doc.setFontSize(8);
-    doc.setTextColor("#94a3b8");
-    doc.text("Disclaimer: This report is for feasibility analysis purposes only and does not constitute financial advice. All figures are estimates.", 20, pageHeight - 20);
+  // --- PAGE 3: ITEMISED CASHFLOW (Chunked) ---
+  private addItemisedCashflow(data: ItemisedCashflow, projectName: string, startPageNum: number) {
+    const monthsPerPage = 12; // Strictly 12 months for readable A4 landscape
+    const totalMonths = data.headers.length;
+    const totalPagesHorizontal = Math.ceil(totalMonths / monthsPerPage);
+    let currentPageNum = startPageNum;
 
-    // Footer Page 2
-    doc.text("Generated by DevFeas Pro | Commercial in Confidence", pageWidth / 2, pageHeight - 10, { align: "center" });
+    for (let i = 0; i < totalPagesHorizontal; i++) {
+        this.doc.addPage("a4", "landscape");
+        const pageWidth = 297;
+        
+        // Custom Header for Cashflow Pages
+        this.doc.setFont("helvetica", "bold");
+        this.doc.setFontSize(14);
+        this.doc.text("ITEMISED COST CASHFLOW", pageWidth / 2, 15, { align: "center" });
+        this.doc.setFontSize(10);
+        this.doc.setFont("helvetica", "normal");
+        const startM = i * monthsPerPage;
+        const endM = Math.min((i + 1) * monthsPerPage, totalMonths);
+        this.doc.text(`Period: Month ${startM + 1} to Month ${endM}`, pageWidth / 2, 20, { align: "center" });
+        this.currentY = 30;
 
-    // Save
-    doc.save(`Investment_Memo_${site.code}_${new Date().toISOString().split('T')[0]}.pdf`);
+        // Slice Data
+        const currentHeaders = data.headers.slice(startM, endM);
+        
+        // Build Pre-Processed Rows for AutoTable
+        const tableBody: any[] = [];
+        
+        // Helper to push stylized rows
+        const addHeaderRow = (label: string) => {
+            tableBody.push({ 0: label, type: 'header' });
+        };
+        const addItemRow = (label: string, values: number[]) => {
+            // Filter out empty rows? No, bankers want to see zeros if the item exists.
+            const rowObj: any = { 0: label, type: 'item' };
+            values.forEach((v, idx) => {
+                rowObj[idx + 1] = v === 0 ? '-' : Math.round(v).toLocaleString();
+            });
+            // Total Column (Only on last page? Or running total? Feastudy usually sums the visible range or has a total column at very end)
+            // We will add a "Page Total" or just keep it simple.
+            // Feastudy screenshot shows "Subtotals" column.
+            const rowSum = values.reduce((a,b) => a+b, 0);
+            rowObj[currentHeaders.length + 1] = formatCurrency(rowSum);
+            
+            tableBody.push(rowObj);
+        };
+
+        // Iterate Categories
+        data.categories.forEach(cat => {
+            // Only add category if it has non-zero total in this chunk OR generally not empty?
+            // Cleanest report removes zero-sum lines for the period.
+            const catSliceTotal = cat.monthlyTotals.slice(startM, endM).reduce((a,b)=>a+b, 0);
+            
+            // Allow printing empty categories if they are major ones (Construction), otherwise skip
+            if (catSliceTotal === 0 && cat.total === 0) return;
+
+            addHeaderRow(cat.name.toUpperCase());
+            
+            cat.rows.forEach(row => {
+                const slice = row.values.slice(startM, endM);
+                const sliceTotal = slice.reduce((a,b) => a+b, 0);
+                if (row.total > 0 || sliceTotal > 0) {
+                    addItemRow(row.label, slice);
+                }
+            });
+
+            // Category Subtotal Row
+            const catRow: any = { 0: `Total ${cat.name}`, type: 'subtotal' };
+            cat.monthlyTotals.slice(startM, endM).forEach((v, idx) => {
+                catRow[idx + 1] = formatCurrency(v);
+            });
+            catRow[currentHeaders.length + 1] = formatCurrency(catSliceTotal);
+            tableBody.push(catRow);
+        });
+
+        // Net Cashflow Row
+        const netSlice = data.netCashflow.slice(startM, endM);
+        const netRow: any = { 0: "NET MONTHLY FLOW", type: 'net' };
+        netSlice.forEach((v, idx) => netRow[idx + 1] = formatCurrency(v));
+        netRow[currentHeaders.length + 1] = formatCurrency(netSlice.reduce((a,b)=>a+b, 0));
+        tableBody.push(netRow);
+
+        // Columns
+        const columns = [
+            { header: 'Item', dataKey: '0' },
+            ...currentHeaders.map((h, idx) => ({ header: h, dataKey: (idx + 1).toString() })),
+            { header: 'Period Total', dataKey: (currentHeaders.length + 1).toString() }
+        ];
+
+        // Render
+        autoTable(this.doc, {
+            startY: this.currentY,
+            columns: columns,
+            body: tableBody,
+            theme: 'plain',
+            styles: { fontSize: 7, cellPadding: 1.5, font: "courier", halign: 'right' },
+            columnStyles: { 
+                0: { halign: 'left', cellWidth: 50, font: "helvetica" } // Description Col
+            },
+            headStyles: { fillColor: THEME.primary, textColor: 255, halign: 'center', font: "helvetica", fontStyle: "bold" },
+            didParseCell: (data) => {
+                if (data.section === 'body') {
+                    const type = data.row.raw.type;
+                    
+                    if (type === 'header') {
+                        data.cell.styles.font = "helvetica";
+                        data.cell.styles.fontStyle = 'bold';
+                        data.cell.styles.fillColor = THEME.headerFill;
+                        data.cell.styles.halign = 'left';
+                    } 
+                    else if (type === 'item') {
+                        if (data.column.index === 0) {
+                            data.cell.styles.cellPadding = { top: 1, bottom: 1, left: 6, right: 2 }; // Indent
+                        }
+                    }
+                    else if (type === 'subtotal') {
+                        data.cell.styles.fontStyle = 'bold';
+                        data.cell.styles.fillColor = 250; // Very light grey
+                        if (data.column.index === 0) data.cell.styles.halign = 'right'; // Align "Total X" to right of label col
+                        // Top border for sums
+                        data.cell.styles.lineWidth = { top: 0.1, bottom: 0, left: 0, right: 0 };
+                    }
+                    else if (type === 'net') {
+                        data.cell.styles.fontStyle = 'bold';
+                        data.cell.styles.fillColor = THEME.primary;
+                        data.cell.styles.textColor = 255;
+                    }
+                }
+            }
+        });
+
+        // Add Footer to Landscape Page
+        const footerText = `Generated by DevFeas Pro | ${projectName} | Page ${currentPageNum} (Months ${startM+1}-${endM})`;
+        this.doc.setFontSize(8);
+        this.doc.setTextColor(100);
+        this.doc.text(footerText, 10, 200); // 210 is height, so 200 is near bottom
+        
+        currentPageNum++;
+    }
+  }
+
+  // --- UTILS ---
+  private renderPlaceholderImage(x: number, y: number, w: number, h: number) {
+    this.doc.setFillColor(240);
+    this.doc.rect(x, y, w, h, "F");
+    this.doc.setTextColor(150);
+    this.doc.setFontSize(10);
+    this.doc.text("Map / Visual Unavailable", x + w/2, y + h/2, { align: "center" });
   }
 }

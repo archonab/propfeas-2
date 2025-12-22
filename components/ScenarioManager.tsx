@@ -75,7 +75,7 @@ const ScenarioCard: React.FC<ScenarioCardProps> = ({
                 )}
             </div>
             <h3 className="font-bold text-slate-800 text-lg group-hover:text-blue-600 transition-colors">{scenario.name}</h3>
-            <p className="text-xs text-slate-400 mt-0.5">Updated {new Date(scenario.lastModified).toLocaleDateString()}</p>
+            <p className="text-xs text-slate-400 mt-0.5">Updated {new Date(scenario.updatedAt).toLocaleDateString()}</p>
          </div>
          
          <div onClick={(e) => e.stopPropagation()}>

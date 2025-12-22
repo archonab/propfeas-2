@@ -8,6 +8,36 @@ import { SiteDNAHub } from './components/SiteDNAHub';
 import { GlobalFeasibilityList } from './components/GlobalFeasibilityList';
 import { useProject } from './contexts/SiteContext';
 
+// --- Sort Types & Helper ---
+type SortOption = 'updated' | 'created' | 'settlement' | 'eoi' | 'name';
+type SortDirection = 'asc' | 'desc';
+
+// Helper to calculate "Time Ago" string
+const getTimeAgo = (isoDate: string) => {
+  const diff = Date.now() - new Date(isoDate).getTime();
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days < 7) return `${days}d ago`;
+  return new Date(isoDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+};
+
+// Helper to determine deadline urgency color
+const getDeadlineStatus = (isoDate?: string) => {
+    if (!isoDate) return null;
+    const diff = new Date(isoDate).getTime() - Date.now();
+    const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+    
+    if (days < 0) return { color: 'text-slate-400', label: 'Past', bg: 'bg-slate-100' };
+    if (days <= 7) return { color: 'text-red-600', label: `${days} Days`, bg: 'bg-red-50 border-red-100' };
+    if (days <= 30) return { color: 'text-amber-600', label: `${days} Days`, bg: 'bg-amber-50 border-amber-100' };
+    return { color: 'text-slate-500', label: new Date(isoDate).toLocaleDateString(), bg: 'bg-slate-50' };
+};
+
 export default function App() {
   const { 
     sites, 
@@ -28,6 +58,11 @@ export default function App() {
 
   const [view, setView] = useState<GlobalView>('sites');
   const [siteFilter, setSiteFilter] = useState<'ALL' | 'PIPELINE' | 'PORTFOLIO'>('ALL');
+  
+  // Sorting State
+  const [sortOption, setSortOption] = useState<SortOption>('updated');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+
   const [isEditingSite, setIsEditingSite] = useState(false);
   const [pendingSite, setPendingSite] = useState<Site | null>(null);
 
@@ -57,6 +92,8 @@ export default function App() {
       openTasks: 0,
       openRFIs: 0,
       conditions: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       dna: {
         address: "Enter Site Address...",
         state: 'VIC', // Default
@@ -105,18 +142,59 @@ export default function App() {
       }
   };
 
-  // Determine which site to show in the Edit Modal
   const siteToEdit = pendingSite || selectedSite;
 
-  // Filter Logic for Site List
-  const filteredSites = useMemo(() => {
-      return sites.filter(site => {
+  // Filter & Sort Logic
+  const processedSites = useMemo(() => {
+      // 1. Filter
+      let result = sites.filter(site => {
           if (siteFilter === 'ALL') return true;
           if (siteFilter === 'PIPELINE') return site.status === 'Prospect' || site.status === 'Due Diligence';
           if (siteFilter === 'PORTFOLIO') return site.status === 'Acquired';
           return true;
       });
-  }, [sites, siteFilter]);
+
+      // 2. Sort
+      result.sort((a, b) => {
+          let valA: number | string | undefined;
+          let valB: number | string | undefined;
+
+          switch (sortOption) {
+              case 'updated':
+                  valA = new Date(a.updatedAt).getTime();
+                  valB = new Date(b.updatedAt).getTime();
+                  break;
+              case 'created':
+                  valA = new Date(a.createdAt).getTime();
+                  valB = new Date(b.createdAt).getTime();
+                  break;
+              case 'settlement':
+                  valA = a.dna.milestones.settlementDate ? new Date(a.dna.milestones.settlementDate).getTime() : 0;
+                  valB = b.dna.milestones.settlementDate ? new Date(b.dna.milestones.settlementDate).getTime() : 0;
+                  break;
+              case 'eoi':
+                  valA = a.dna.milestones.eoiCloseDate ? new Date(a.dna.milestones.eoiCloseDate).getTime() : 0;
+                  valB = b.dna.milestones.eoiCloseDate ? new Date(b.dna.milestones.eoiCloseDate).getTime() : 0;
+                  break;
+              case 'name':
+                  valA = a.name.toLowerCase();
+                  valB = b.name.toLowerCase();
+                  break;
+          }
+
+          // Push null dates to bottom regardless of order if sorting by date
+          if (sortOption !== 'name') {
+              if (!valA) return 1;
+              if (!valB) return -1;
+          }
+
+          if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+          if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+          return 0;
+      });
+
+      return result;
+  }, [sites, siteFilter, sortOption, sortDirection]);
 
   // -- Render Helpers --
   const NavItemDesktop = ({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: string, label: string }) => (
@@ -216,26 +294,49 @@ export default function App() {
               </button>
             </header>
 
-            {/* View Filter Toggle */}
-            <div className="mb-6 flex">
-                <div className="bg-slate-200 p-1 rounded-lg flex space-x-1">
+            {/* View Filter & Sort Toolbar */}
+            <div className="mb-6 flex flex-col md:flex-row gap-3">
+                <div className="bg-slate-200 p-1 rounded-lg flex space-x-1 w-full md:w-auto overflow-x-auto no-scrollbar">
                     <button 
                         onClick={() => setSiteFilter('ALL')}
-                        className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase transition-all ${siteFilter === 'ALL' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                        className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase transition-all whitespace-nowrap ${siteFilter === 'ALL' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                     >
                         All Sites
                     </button>
                     <button 
                         onClick={() => setSiteFilter('PIPELINE')}
-                        className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase transition-all ${siteFilter === 'PIPELINE' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                        className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase transition-all whitespace-nowrap ${siteFilter === 'PIPELINE' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                     >
                         Pipeline (Prospects)
                     </button>
                     <button 
                         onClick={() => setSiteFilter('PORTFOLIO')}
-                        className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase transition-all ${siteFilter === 'PORTFOLIO' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                        className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase transition-all whitespace-nowrap ${siteFilter === 'PORTFOLIO' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                     >
                         Portfolio (Active)
+                    </button>
+                </div>
+
+                {/* Advanced Sorting Control */}
+                <div className="flex items-center space-x-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm ml-auto">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase mr-1">Sort By</span>
+                    <select 
+                        value={sortOption}
+                        onChange={(e) => setSortOption(e.target.value as SortOption)}
+                        className="text-xs font-bold text-slate-700 border-none bg-transparent focus:ring-0 cursor-pointer pr-6 py-0"
+                    >
+                        <option value="updated">Recently Updated</option>
+                        <option value="created">Date Created</option>
+                        <option value="settlement">Settlement (Soonest)</option>
+                        <option value="eoi">EOI Closing</option>
+                        <option value="name">Name (A-Z)</option>
+                    </select>
+                    <button 
+                        onClick={() => setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')}
+                        className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-indigo-600 rounded bg-slate-50 hover:bg-indigo-50 transition-colors"
+                        title={sortDirection === 'asc' ? 'Ascending' : 'Descending'}
+                    >
+                        <i className={`fa-solid ${sortDirection === 'asc' ? 'fa-arrow-up-wide-short' : 'fa-arrow-down-short-wide'} text-xs`}></i>
                     </button>
                 </div>
             </div>
@@ -245,25 +346,57 @@ export default function App() {
                 <table className="w-full text-left text-sm whitespace-nowrap md:whitespace-normal">
                   <thead className="bg-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100">
                     <tr>
-                      <th className="px-4 py-3">Site Code</th>
+                      <th className="px-4 py-3 w-32">Site Code</th>
                       <th className="px-4 py-3">Project Name</th>
-                      <th className="px-4 py-3">Location</th>
-                      <th className="px-4 py-3">Models</th>
+                      <th className="px-4 py-3">Key Dates</th>
+                      <th className="px-4 py-3 text-center">Models</th>
                       <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3 text-right">Updated</th>
                       <th className="px-4 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {filteredSites.map(site => (
+                    {processedSites.map(site => {
+                        const settlement = getDeadlineStatus(site.dna.milestones.settlementDate);
+                        const eoi = getDeadlineStatus(site.dna.milestones.eoiCloseDate);
+                        
+                        return (
                       <tr 
                         key={site.id} 
                         className="hover:bg-indigo-50/50 cursor-pointer transition-colors group"
                         onClick={() => handleOpenSite(site.id)}
                       >
                         <td className="px-4 py-3 mono text-xs text-slate-400 font-bold">{site.code}</td>
-                        <td className="px-4 py-3 font-bold text-slate-700">{site.name}</td>
-                        <td className="px-4 py-3 text-slate-500">{site.dna.address}</td>
                         <td className="px-4 py-3">
+                            <div className="font-bold text-slate-700">{site.name}</div>
+                            <div className="text-[10px] text-slate-400 flex items-center mt-0.5">
+                                <i className="fa-solid fa-location-dot mr-1"></i> {site.dna.address}
+                            </div>
+                        </td>
+                        <td className="px-4 py-3">
+                            <div className="flex flex-col space-y-1">
+                                {site.dna.milestones.settlementDate && settlement && (
+                                    <div className="flex items-center text-[10px]">
+                                        <span className="text-slate-400 w-16">Settlement:</span>
+                                        <span className={`font-bold px-1.5 py-0.5 rounded border ${settlement.bg} ${settlement.color}`}>
+                                            {settlement.label}
+                                        </span>
+                                    </div>
+                                )}
+                                {site.dna.milestones.eoiCloseDate && eoi && (
+                                    <div className="flex items-center text-[10px]">
+                                        <span className="text-slate-400 w-16">EOI Close:</span>
+                                        <span className={`font-bold px-1.5 py-0.5 rounded border ${eoi.bg} ${eoi.color}`}>
+                                            {eoi.label}
+                                        </span>
+                                    </div>
+                                )}
+                                {!site.dna.milestones.settlementDate && !site.dna.milestones.eoiCloseDate && (
+                                    <span className="text-[10px] text-slate-300 italic">-</span>
+                                )}
+                            </div>
+                        </td>
+                        <td className="px-4 py-3 text-center">
                            <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold">{site.scenarios.length}</span>
                         </td>
                         <td className="px-4 py-3">
@@ -275,6 +408,9 @@ export default function App() {
                             </span>
                         </td>
                         <td className="px-4 py-3 text-right">
+                            <div className="text-xs font-medium text-slate-500">{getTimeAgo(site.updatedAt)}</div>
+                        </td>
+                        <td className="px-4 py-3 text-right">
                           <div className="flex justify-end items-center space-x-3">
                              <button 
                                 onClick={(e) => handleDeleteSite(e, site.id)}
@@ -284,15 +420,15 @@ export default function App() {
                                 <i className="fa-solid fa-trash"></i>
                              </button>
                              <button className="text-indigo-600 font-bold text-xs hover:underline flex items-center bg-indigo-50 px-3 py-1.5 rounded-full group-hover:bg-indigo-600 group-hover:text-white transition-all">
-                                Open Cockpit <i className="fa-solid fa-arrow-right ml-2"></i>
+                                Open <i className="fa-solid fa-arrow-right ml-2"></i>
                              </button>
                           </div>
                         </td>
                       </tr>
-                    ))}
-                    {filteredSites.length === 0 && (
+                    )})}
+                    {processedSites.length === 0 && (
                         <tr>
-                            <td colSpan={6} className="p-8 text-center text-slate-400 italic">No sites found matching filter.</td>
+                            <td colSpan={7} className="p-8 text-center text-slate-400 italic">No sites found matching filter.</td>
                         </tr>
                     )}
                   </tbody>

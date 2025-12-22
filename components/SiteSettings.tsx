@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Site, SiteDNA, LeadStatus } from '../types';
+import { Site, SiteDNA, LeadStatus, InputScale } from '../types';
 
 interface Props {
   site: Site;
@@ -113,6 +113,21 @@ export const SiteSettings: React.FC<Props> = ({ site, onUpdate }) => {
       });
   };
 
+  const handleScaleChange = (newScale: InputScale) => {
+      // We update the scale on ALL scenarios for consistency across the site project
+      const updatedScenarios = site.scenarios.map(s => ({
+          ...s,
+          settings: {
+              ...s.settings,
+              inputScale: newScale
+          }
+      }));
+      onUpdate({ ...site, scenarios: updatedScenarios });
+  };
+
+  // Get current scale from first scenario or default
+  const currentScale = site.scenarios[0]?.settings.inputScale || InputScale.ONES;
+
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       
@@ -125,10 +140,9 @@ export const SiteSettings: React.FC<Props> = ({ site, onUpdate }) => {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Status & Identity */}
-          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-             <h3 className="font-bold text-slate-800 text-sm uppercase mb-4">Project Status</h3>
+          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Current Phase</label>
+                <h3 className="font-bold text-slate-800 text-sm uppercase mb-1">Project Status</h3>
                 <select 
                     value={site.status}
                     onChange={(e) => handleStatusChange(e.target.value as LeadStatus)}
@@ -139,6 +153,23 @@ export const SiteSettings: React.FC<Props> = ({ site, onUpdate }) => {
                     <option value="Acquired">Acquired</option>
                     <option value="Archive">Archive</option>
                 </select>
+             </div>
+
+             <div>
+                <h3 className="font-bold text-slate-800 text-sm uppercase mb-1 flex items-center">
+                    Data Entry Scale
+                    <span className="ml-2 text-[9px] bg-indigo-100 text-indigo-700 px-1.5 rounded border border-indigo-200">Global</span>
+                </h3>
+                <select 
+                    value={currentScale}
+                    onChange={(e) => handleScaleChange(e.target.value as InputScale)}
+                    className="w-full border-slate-200 rounded-lg text-sm font-bold text-slate-700 focus:ring-blue-500"
+                >
+                    <option value={InputScale.ONES}>Ones (e.g. 50,000)</option>
+                    <option value={InputScale.THOUSANDS}>Thousands (e.g. 50k)</option>
+                    <option value={InputScale.MILLIONS}>Millions (e.g. 50m)</option>
+                </select>
+                <p className="text-[10px] text-slate-400 mt-1">Controls how currency inputs are displayed and entered in all grids.</p>
              </div>
           </div>
 

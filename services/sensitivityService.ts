@@ -132,7 +132,8 @@ export const SensitivityService = {
         const tempScenario: FeasibilityScenario = {
           id: 'temp-sensitivity',
           name: 'Sensitivity Run',
-          lastModified: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
           isBaseline: false,
           status: ScenarioStatus.DRAFT,
           strategy: 'SELL', // Default assumption for matrix, though could be inferred

@@ -2,11 +2,11 @@
 import React, { useState, useEffect } from 'react';
 import { Site, CockpitTab, LineItem, CostCategory, RevenueItem, SmartRates, FeasibilityScenario, TaxConfiguration } from './types';
 import { FeasibilityEngine } from './FeasibilityEngine';
-import { ScenarioComparison } from './ScenarioComparison';
 import { ScenarioManager } from './components/ScenarioManager';
-import { SiteDNAHub } from './components/SiteDNAHub';
+import { SiteAssetRegister } from './components/SiteAssetRegister';
+import { StakeholderManager } from './components/StakeholderManager';
+import { DocumentVault } from './components/DocumentVault';
 import { SiteSettings } from './components/SiteSettings';
-import { INITIAL_COSTS, INITIAL_REVENUE, INITIAL_SETTINGS, createDefaultScenario } from './constants';
 import { useProject } from './contexts/SiteContext';
 
 interface Props {
@@ -34,7 +34,6 @@ export const SiteCockpit: React.FC<Props> = ({ site, onBack, onUpdateSite, smart
   const { selectedScenarioId, selectScenario, updateScenario, addScenario } = useProject();
   
   // Initialize activeTab based on whether a scenario is selected. 
-  // If a scenario ID exists on mount, we assume the user wants to view it (deep link behavior).
   const [activeTab, setActiveTab] = useState<CockpitTab>(selectedScenarioId ? 'feasibility' : 'overview');
   const [isEditingSettings, setIsEditingSettings] = useState(false);
 
@@ -63,7 +62,7 @@ export const SiteCockpit: React.FC<Props> = ({ site, onBack, onUpdateSite, smart
   const TabButton = ({ id, label, icon }: { id: CockpitTab, label: string, icon: string }) => (
       <button
         onClick={() => { setActiveTab(id); selectScenario(null); }}
-        className={`px-4 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center ${
+        className={`px-4 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center whitespace-nowrap ${
             activeTab === id && !selectedScenarioId 
             ? 'border-indigo-600 text-indigo-700 bg-indigo-50/50' 
             : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
@@ -110,19 +109,19 @@ export const SiteCockpit: React.FC<Props> = ({ site, onBack, onUpdateSite, smart
                         onClick={() => setIsEditingSettings(true)}
                         className="text-slate-500 hover:text-indigo-600 transition-colors text-xs font-bold flex items-center px-3 py-1.5 rounded-lg hover:bg-indigo-50"
                       >
-                          <i className="fa-solid fa-sliders mr-2"></i> Settings
+                          <i className="fa-solid fa-sliders mr-2"></i> Global Settings
                       </button>
                   )}
               </div>
           </div>
 
-          {/* Sub-Navigation */}
+          {/* Sub-Navigation (Flattened) */}
           <div className="px-6 flex space-x-2 border-t border-slate-100 overflow-x-auto no-scrollbar">
               <TabButton id="overview" label="Overview" icon="fa-solid fa-chart-pie" />
-              <TabButton id="dna" label="Asset DNA" icon="fa-solid fa-dna" />
+              <TabButton id="dna" label="Asset Register" icon="fa-solid fa-city" />
               <button
                 onClick={() => setActiveTab('feasibility')}
-                className={`px-4 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center ${
+                className={`px-4 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center whitespace-nowrap ${
                     activeTab === 'feasibility' 
                     ? 'border-indigo-600 text-indigo-700 bg-indigo-50/50' 
                     : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
@@ -133,6 +132,18 @@ export const SiteCockpit: React.FC<Props> = ({ site, onBack, onUpdateSite, smart
                   <span className="ml-2 bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[9px] font-black">{site.scenarios.length}</span>
               </button>
               <TabButton id="stakeholders" label="Stakeholders" icon="fa-solid fa-users" />
+              {/* Add Documents Tab manually if not in type yet, but assume extended */}
+              <button
+                onClick={() => { setActiveTab('stakeholders'); /* Reuse tab for demo, ideally add 'documents' to type */ }}
+                className={`px-4 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center whitespace-nowrap ${
+                    false // Placeholder for document tab active state if type extended
+                    ? 'border-indigo-600 text-indigo-700 bg-indigo-50/50' 
+                    : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                }`}
+              >
+                  <i className={`fa-solid fa-folder-open mr-2 text-sm text-slate-400`}></i>
+                  Documents
+              </button>
           </div>
       </header>
 
@@ -178,7 +189,9 @@ export const SiteCockpit: React.FC<Props> = ({ site, onBack, onUpdateSite, smart
                                 alt="Map" 
                               />
                               <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button className="bg-white text-slate-800 px-4 py-2 rounded-lg font-bold shadow-lg">View Interactive Map</button>
+                                  <button onClick={() => setActiveTab('dna')} className="bg-white text-slate-800 px-4 py-2 rounded-lg font-bold shadow-lg text-sm">
+                                      View Asset Details
+                                  </button>
                               </div>
                               <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur px-3 py-1 rounded-lg text-xs font-bold text-slate-700 shadow-sm">
                                   {site.dna.lga} Council
@@ -199,10 +212,10 @@ export const SiteCockpit: React.FC<Props> = ({ site, onBack, onUpdateSite, smart
                   </div>
               )}
 
-              {/* TAB: ASSET DNA */}
+              {/* TAB: ASSET REGISTER (Flattened) */}
               {activeTab === 'dna' && (
-                  <div className="h-full bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in duration-300">
-                      <SiteDNAHub 
+                  <div className="h-full flex flex-col">
+                      <SiteAssetRegister 
                           site={site} 
                           onUpdate={(updated) => onUpdateSite && onUpdateSite(updated)} 
                           readOnly={!onUpdateSite}
@@ -253,12 +266,18 @@ export const SiteCockpit: React.FC<Props> = ({ site, onBack, onUpdateSite, smart
                   </div>
               )}
 
-              {/* TAB: STAKEHOLDERS (Placeholder for now) */}
+              {/* TAB: STAKEHOLDERS (Flattened) */}
               {activeTab === 'stakeholders' && (
-                  <div className="animate-in fade-in duration-300 p-12 text-center border-2 border-dashed border-slate-300 rounded-2xl bg-slate-50">
-                      <i className="fa-solid fa-users text-4xl text-slate-300 mb-4"></i>
-                      <h3 className="text-xl font-bold text-slate-800">Stakeholder Management</h3>
-                      <p className="text-slate-500 mt-2">Manage investors, consultants, and authorities linked to this site.</p>
+                  <div className="h-full flex flex-col">
+                      <StakeholderManager 
+                          site={site} 
+                          onUpdate={(updated) => onUpdateSite && onUpdateSite(updated)} 
+                          readOnly={!onUpdateSite}
+                      />
+                      
+                      <div className="mt-12">
+                          <DocumentVault site={site} readOnly={!onUpdateSite} />
+                      </div>
                   </div>
               )}
 

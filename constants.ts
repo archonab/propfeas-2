@@ -135,7 +135,8 @@ export const INITIAL_REVENUE: RevenueItem[] = [
 export const createDefaultScenario = (name: string = "Base Case", strategy: 'SELL' | 'HOLD' = 'SELL'): FeasibilityScenario => ({
   id: `scen-${Date.now()}-${Math.floor(Math.random()*1000)}`,
   name,
-  lastModified: new Date().toISOString(),
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
   isBaseline: true,
   status: ScenarioStatus.DRAFT,
   strategy,
@@ -159,6 +160,8 @@ export const MOCK_SITES: Site[] = [
     openTasks: 14,
     openRFIs: 3,
     conditions: 8,
+    createdAt: "2023-01-10T00:00:00.000Z",
+    updatedAt: "2024-03-15T14:30:00.000Z",
     dna: {
       address: "Kings Hill, NSW",
       state: 'NSW',
@@ -184,6 +187,8 @@ export const MOCK_SITES: Site[] = [
     openTasks: 27,
     openRFIs: 5,
     conditions: 2,
+    createdAt: "2022-07-20T00:00:00.000Z",
+    updatedAt: "2024-03-10T09:15:00.000Z",
     dna: {
       address: "St Kilda, VIC",
       state: 'VIC',
@@ -209,6 +214,8 @@ export const MOCK_SITES: Site[] = [
     openTasks: 0,
     openRFIs: 0,
     conditions: 0,
+    createdAt: "2024-02-01T00:00:00.000Z",
+    updatedAt: "2024-02-05T11:00:00.000Z",
     dna: {
       address: "Mascot, NSW",
       state: 'NSW',
@@ -218,7 +225,7 @@ export const MOCK_SITES: Site[] = [
       overlays: ["Airport Height Ops"],
       agent: { name: "Pending", company: "CBRE" },
       vendor: { name: "Logistics REIT" },
-      milestones: {}
+      milestones: { eoiCloseDate: "2024-04-15T17:00:00.000Z" }
     },
     stakeholders: [],
     scenarios: [createDefaultScenario("Initial Feasibility")]
@@ -234,6 +241,8 @@ export const MOCK_SITES: Site[] = [
     openTasks: 0,
     openRFIs: 0,
     conditions: 0,
+    createdAt: "2024-03-01T00:00:00.000Z",
+    updatedAt: "2024-03-02T16:45:00.000Z",
     dna: {
       address: "Bowden, SA",
       state: 'VIC', // Default to VIC as SA is not a supported tax state yet
@@ -243,7 +252,7 @@ export const MOCK_SITES: Site[] = [
       overlays: ["Contamination"],
       agent: { name: "Local Agent", company: "Harris RE" },
       vendor: { name: "State Govt" },
-      milestones: {}
+      milestones: { eoiCloseDate: "2024-03-20T17:00:00.000Z" }
     },
     stakeholders: [],
     scenarios: []
@@ -259,6 +268,8 @@ export const MOCK_SITES: Site[] = [
     openTasks: 2,
     openRFIs: 0,
     conditions: 0,
+    createdAt: "2024-03-10T00:00:00.000Z",
+    updatedAt: "2024-03-12T10:30:00.000Z",
     dna: {
       address: "Gold Coast, QLD",
       state: 'QLD',
@@ -268,7 +279,7 @@ export const MOCK_SITES: Site[] = [
       overlays: [],
       agent: { name: "Mike Ross", company: "Colliers" },
       vendor: { name: "Private" },
-      milestones: { acquisitionDate: "2024-05-01" }
+      milestones: { acquisitionDate: "2024-05-01", settlementDate: "2024-06-30" }
     },
     stakeholders: [],
     scenarios: [createDefaultScenario("Option A: 20 Units"), createDefaultScenario("Option B: 24 Units")]

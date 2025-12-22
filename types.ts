@@ -16,6 +16,12 @@ export enum InputType {
   RATE_PER_SQM = 'Rate per sqm'
 }
 
+export enum InputScale {
+  ONES = 'ONES',
+  THOUSANDS = 'THOUSANDS',
+  MILLIONS = 'MILLIONS'
+}
+
 export enum CostCategory {
   LAND = 'Land Purchasing',
   CONSULTANTS = "Consultants' Fees",
@@ -94,6 +100,14 @@ export type SensitivityVariable = 'revenue' | 'cost' | 'duration' | 'interest';
 
 // --- SITE-FIRST DATA MODEL ---
 
+// Audit Trail Interface
+export interface Auditable {
+  id: string;
+  createdAt: string; // ISO Date
+  updatedAt: string; // ISO Date
+  createdBy?: string; // User ID
+}
+
 export interface AgentContact {
   name: string;
   company: string;
@@ -108,9 +122,10 @@ export interface VendorProfile {
 
 export interface SiteMilestones {
   acquisitionDate?: string;
-  settlementDate?: string;
+  settlementDate?: string; // Critical for sorting
   constructionStartDate?: string;
   completionDate?: string;
+  eoiCloseDate?: string; // New: Expression of Interest close
 }
 
 // Extended Asset Registry Types
@@ -118,8 +133,7 @@ export type PermitStatus = 'Not Started' | 'Draft' | 'Lodged' | 'RFI' | 'Approve
 export type FloodZone = 'Low' | 'Medium' | 'High';
 export type StakeholderRole = 'Investor' | 'Client' | 'Consultant' | 'Lender' | 'Authority';
 
-export interface Stakeholder {
-  id: string;
+export interface Stakeholder extends Auditable {
   role: StakeholderRole;
   name: string;
   company: string;
@@ -164,10 +178,8 @@ export interface SiteDNA {
   milestones: SiteMilestones;
 }
 
-export interface FeasibilityScenario {
-  id: string;
+export interface FeasibilityScenario extends Auditable {
   name: string;
-  lastModified: string;
   isBaseline: boolean;
   status: ScenarioStatus;
   strategy: 'SELL' | 'HOLD';
@@ -179,8 +191,7 @@ export interface FeasibilityScenario {
 
 export type LeadStatus = 'Prospect' | 'Due Diligence' | 'Acquired' | 'Archive';
 
-export interface Site {
-  id: string;
+export interface Site extends Auditable {
   code: string;
   name: string;
   thumbnail: string;
@@ -332,6 +343,7 @@ export interface GrowthMatrix {
 export interface FeasibilitySettings {
   description?: string;
   projectName?: string;
+  inputScale?: InputScale; // New Input Scale
   acquisition: AcquisitionSettings;
   startDate: string;
   durationMonths: number;

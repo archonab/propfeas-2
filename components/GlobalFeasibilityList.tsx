@@ -67,7 +67,7 @@ export const GlobalFeasibilityList: React.FC = () => {
       });
     });
 
-    return list.sort((a, b) => new Date(b.scenario.lastModified).getTime() - new Date(a.scenario.lastModified).getTime());
+    return list.sort((a, b) => new Date(b.scenario.updatedAt).getTime() - new Date(a.scenario.updatedAt).getTime());
   }, [sites]);
 
   // --- 2. Filtering ---
@@ -350,7 +350,7 @@ export const GlobalFeasibilityList: React.FC = () => {
                      <th className="p-4 text-right">Margin</th>
                      <th className="p-4 text-right">IRR</th>
                      <th className="p-4 text-right">Total Cost</th>
-                     <th className="p-4 w-24">Last Mod</th>
+                     <th className="p-4 w-24">Last Updated</th>
                   </tr>
                </thead>
                <tbody className="divide-y divide-slate-100 text-sm">
@@ -485,7 +485,7 @@ const Row = ({ item, isSelected, onToggle, onClick, showSite }: { item: Enriched
                 ${(item.metrics.totalCost / 1000000).toFixed(1)}m
             </td>
             <td className="p-4 text-xs text-slate-400 font-medium">
-                {new Date(item.scenario.lastModified).toLocaleDateString()}
+                {new Date(item.scenario.updatedAt).toLocaleDateString()}
             </td>
         </tr>
     );

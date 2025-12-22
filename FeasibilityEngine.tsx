@@ -287,12 +287,14 @@ export const FeasibilityEngine: React.FC<Props> = ({
       { id: 'strategy', label: 'Hold Strategy', icon: 'fa-chess-rook', desc: 'Refinance & Exit' },
       { id: 'rent', label: 'Rental Revenue', icon: 'fa-house-user', desc: 'Income Assumptions' },
       { id: 'inputs', label: 'Hold Costs', icon: 'fa-file-invoice-dollar', desc: 'Opex & Capex' },
+      { id: 'funding', label: 'Funding & Interest', icon: 'fa-coins', desc: 'Debt & Equity' },
       { id: 'summary', label: 'Dashboard', icon: 'fa-chart-pie', desc: 'Performance' },
       { id: 'reports', label: 'Reports', icon: 'fa-file-pdf', desc: 'Export' }
   ] : [
       { id: 'site', label: 'Context', icon: 'fa-map-location-dot', desc: 'Site DNA' },
       { id: 'deal', label: 'Acquisition', icon: 'fa-handshake', desc: 'Land & Duty' },
-      { id: 'inputs', label: 'Project Costs', icon: 'fa-file-invoice', desc: 'Construction & Fees' }, 
+      { id: 'inputs', label: 'Project Costs', icon: 'fa-file-invoice', desc: 'Construction & Fees' },
+      { id: 'funding', label: 'Funding & Interest', icon: 'fa-coins', desc: 'Debt & Equity' }, 
       { id: 'sales', label: 'Sales Revenue', icon: 'fa-tags', desc: 'Product Mix' },
       { id: 'summary', label: 'Dashboard', icon: 'fa-chart-pie', desc: 'Performance' },
       { id: 'reports', label: 'Reports', icon: 'fa-file-pdf', desc: 'Export' }
@@ -437,13 +439,6 @@ export const FeasibilityEngine: React.FC<Props> = ({
                       </div>
                   )}
 
-                  <FinanceSettings 
-                      settings={settings} 
-                      onUpdate={setSettings} 
-                      peakEquityRequired={stats.peakEquity}
-                      projectLocation={site.dna.address}
-                  />
-                  
                   <HoldStrategySettings 
                     settings={settings} 
                     revenues={revenues} 
@@ -516,18 +511,9 @@ export const FeasibilityEngine: React.FC<Props> = ({
               </div>
             )}
 
-            {/* TAB: INPUTS (Construction/Costs OR Operating Costs) */}
+            {/* TAB: INPUTS (Construction/Costs) - Cleaned of Finance */}
             {activeTab === 'inputs' && (
               <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                {!isHoldStrategy && (
-                  <FinanceSettings 
-                    settings={settings} 
-                    onUpdate={setSettings} 
-                    peakEquityRequired={stats.peakEquity}
-                    projectLocation={site.dna.address} 
-                  />
-                )}
-                
                 {isHoldStrategy && linkedScenario && (
                     <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
                         <div className="flex justify-between items-center mb-4">
@@ -571,6 +557,18 @@ export const FeasibilityEngine: React.FC<Props> = ({
                   strategy={isHoldStrategy ? 'HOLD' : 'SELL'}
                 />
               </div>
+            )}
+
+            {/* TAB: FUNDING (New dedicated tab) */}
+            {activeTab === 'funding' && !isHoldStrategy && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                    <FinanceSettings 
+                        settings={settings} 
+                        onUpdate={setSettings} 
+                        peakEquityRequired={stats.peakEquity}
+                        projectLocation={site.dna.address} 
+                    />
+                </div>
             )}
 
             {/* TAB: SALES or RENTAL REVENUE */}

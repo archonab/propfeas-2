@@ -57,7 +57,7 @@ export class PdfService {
   public static async generateBoardReport(
     site: Site,
     scenario: FeasibilityScenario,
-    stats: any, // We will use this if passed, but prefer recalc for safety
+    stats: any, 
     cashflow: MonthlyFlow[],
     siteDNA: SiteDNA,
     sensitivityMatrix: SensitivityCell[][],
@@ -74,29 +74,34 @@ export class PdfService {
     
     // 2. Executive Summary (Feastudy Style)
     builder.addNewPage("portrait");
-    builder.addFeasibilitySummary(site, scenario, metrics);
+    builder.addFeasibilitySummary(site, scenario, metrics, sensitivityMatrix);
     builder.addPageFooter(2, site.name);
 
-    // 3. Valuer's P&L (Portrait)
+    // 3. Asset Fact Sheet (New)
     builder.addNewPage("portrait");
-    builder.addValuersPnL(scenario, siteDNA, metrics); // Pass metrics
+    await builder.addAssetFactSheet(site);
     builder.addPageFooter(3, site.name);
 
-    // 4. Sensitivity Analysis (Portrait)
+    // 4. Valuer's P&L (Portrait)
     builder.addNewPage("portrait");
-    builder.addSensitivityAnalysis(sensitivityMatrix, scenario);
+    builder.addValuersPnL(scenario, siteDNA, metrics); 
     builder.addPageFooter(4, site.name);
 
-    // 5. Risk Report (New)
+    // 5. Sensitivity Analysis (Portrait)
+    builder.addNewPage("portrait");
+    builder.addSensitivityAnalysis(sensitivityMatrix, scenario);
+    builder.addPageFooter(5, site.name);
+
+    // 6. Risk Report
     if (riskTables) {
       builder.addNewPage("portrait");
       builder.addRiskReport(riskTables, site.name);
-      builder.addPageFooter(5, site.name);
+      builder.addPageFooter(6, site.name);
     }
 
-    // 6. Itemised Cashflow (Landscape - Smart Pagination)
-    // Starts at Page 6
-    builder.addItemisedCashflow(itemisedData, site.name, 6);
+    // 7. Itemised Cashflow (Landscape - Smart Pagination)
+    // Starts at Page 7
+    builder.addItemisedCashflow(itemisedData, site.name, 7);
 
     // Save
     const filename = `Investment_Memo_${site.code}_${new Date().toISOString().split('T')[0]}.pdf`;
@@ -109,7 +114,7 @@ export class PdfService {
   }
 
   // --- COMPONENT: FEASTUDY SUMMARY PAGE ---
-  private addFeasibilitySummary(site: Site, scenario: FeasibilityScenario, metrics: any) {
+  private addFeasibilitySummary(site: Site, scenario: FeasibilityScenario, metrics: any, sensitivityMatrix: SensitivityCell[][]) {
       this.addPageHeader("Development Summary", "Key Performance Indicators", false);
 
       const leftX = 20;
@@ -117,7 +122,6 @@ export class PdfService {
       let y = this.currentY;
 
       // Helper to draw dotted line row
-      // "Label ..................... $Value"
       const drawDottedRow = (label: string, value: string, xPos: number, width: number, isBold = false) => {
           this.doc.setFont(FONTS.body, isBold ? "bold" : "normal");
           this.doc.setFontSize(10);
@@ -128,16 +132,13 @@ export class PdfService {
           const labelWidth = this.doc.getTextWidth(label);
           const valueWidth = this.doc.getTextWidth(value);
           
-          // Draw dots
           const dotStart = xPos + labelWidth + 2;
           const dotEnd = xPos + width - valueWidth - 2;
           
           if (dotEnd > dotStart) {
               this.doc.setDrawColor(200, 200, 200);
               this.doc.setLineWidth(0.3);
-              this.doc.line(dotStart, y - 1, dotEnd, y - 1); // approximate baseline
-              // Actually dotted line in jsPDF is trickier, let's just use a line or manual dots
-              // this.doc.text(".".repeat(30), dotStart, y); // primitive
+              this.doc.line(dotStart, y - 1, dotEnd, y - 1);
           }
 
           this.doc.text(value, xPos + width, y, { align: 'right' });
@@ -175,10 +176,42 @@ export class PdfService {
       drawDottedRow("GST Input Credits", formatCurrency(metrics.gstInputCredits), rightX, 80);
       drawDottedRow("Net GST Payable", formatCurrency(metrics.netGstPayable), rightX, 80);
 
-      this.currentY = y + 20;
+      this.currentY = y + 10;
+
+      // RISK ALERT BOX (Task 3)
+      // Locate Cost +5% / Revenue 0% cell. Assume center x=0 is index 3. y+5% is index 4.
+      // Matrix order: matrix[row(y)][col(x)].
+      // In sensitivityService: matrix rows are yAxis (cost), cols are xAxis (rev).
+      // Center is usually index 3 (0%). Index 4 is +5%.
+      // Check margin at Cost +5% (row 4) and Revenue 0% (col 3).
+      let isRisk = false;
+      if (sensitivityMatrix && sensitivityMatrix.length > 4 && sensitivityMatrix[4][3]) {
+          if (sensitivityMatrix[4][3].margin < 0) isRisk = true;
+      }
+
+      if (isRisk) {
+          this.doc.setDrawColor(220, 38, 38); // Red
+          this.doc.setLineWidth(0.5);
+          this.doc.setFillColor(254, 242, 242); // Red 50
+          this.doc.rect(20, this.currentY, 170, 12, 'FD');
+          
+          this.doc.setTextColor(185, 28, 28); // Red 700
+          this.doc.setFont(FONTS.header, "bold");
+          this.doc.setFontSize(10);
+          this.doc.text("HIGH RISK ALERT:", 25, this.currentY + 7);
+          
+          this.doc.setFont(FONTS.body, "normal");
+          this.doc.text("Project becomes loss-making with <5% cost overrun.", 60, this.currentY + 7);
+          
+          this.currentY += 20;
+      } else {
+          this.currentY += 5;
+      }
 
       // Project Description Box
+      this.doc.setTextColor(COLORS.text);
       this.doc.setFont(FONTS.header, "bold");
+      this.doc.setFontSize(12);
       this.doc.text("Project Context", leftX, this.currentY);
       this.currentY += 6;
       this.doc.setFont(FONTS.body, "normal");
@@ -187,6 +220,82 @@ export class PdfService {
       const desc = scenario.settings.description || "No description provided.";
       const lines = this.doc.splitTextToSize(desc, 170);
       this.doc.text(lines, leftX, this.currentY);
+  }
+
+  // --- COMPONENT: ASSET FACT SHEET (Page 2) ---
+  private async addAssetFactSheet(site: Site) {
+      this.addPageHeader("Asset Particulars", "Site & Stakeholder Register", false);
+      
+      const leftX = 20;
+      const rightX = 110;
+      let y = this.currentY;
+
+      // 1. Map / Image (Top Left)
+      this.doc.setDrawColor(COLORS.border);
+      if (site.thumbnail) {
+          try {
+              const imgData = await getBase64ImageFromUrl(site.thumbnail);
+              if (imgData) {
+                  this.doc.addImage(imgData, 'JPEG', leftX, y, 80, 60, undefined, 'FAST');
+                  this.doc.rect(leftX, y, 80, 60); // Border
+              }
+          } catch (e) {
+              this.doc.rect(leftX, y, 80, 60);
+              this.doc.text("Image Unavailable", leftX + 25, y + 30);
+          }
+      } else {
+          this.doc.rect(leftX, y, 80, 60);
+          this.doc.text("No Image", leftX + 30, y + 30);
+      }
+
+      // 2. Site Particulars Table (Top Right)
+      const dna = site.dna;
+      const partRows = [
+          ["Address", dna.address],
+          ["Land Area", `${dna.landArea.toLocaleString()} sqm`],
+          ["Local Council", dna.lga],
+          ["Zoning", `${dna.zoning} ${dna.zoningCode ? `(${dna.zoningCode})` : ''}`],
+          ["Title / Folio", dna.titleReference || "TBC"],
+          ["Permit Status", dna.permitStatus || "Not Started"],
+          ["Jurisdiction", dna.state]
+      ];
+
+      autoTable(this.doc, {
+          startY: y - 2, // Align top
+          margin: { left: rightX },
+          head: [['Item', 'Detail']],
+          body: partRows,
+          theme: 'grid',
+          styles: { fontSize: 9, cellPadding: 2, font: FONTS.body },
+          headStyles: { fillColor: COLORS.secondary, textColor: 255, fontStyle: 'bold' },
+          columnStyles: { 0: { fontStyle: 'bold', cellWidth: 35 } }
+      });
+
+      this.currentY = y + 70;
+
+      // 3. Stakeholder Register (Bottom)
+      this.doc.setFont(FONTS.header, "bold");
+      this.doc.setFontSize(11);
+      this.doc.setTextColor(COLORS.text);
+      this.doc.text("Project Stakeholders", leftX, this.currentY);
+      this.currentY += 4;
+
+      const stakeholders = site.stakeholders && site.stakeholders.length > 0 
+          ? site.stakeholders 
+          : [ // Default rows if empty for layout
+              { role: 'Agent', name: site.dna.agent.name || '-', company: site.dna.agent.company || '-', email: '' },
+              { role: 'Vendor', name: site.dna.vendor.name || '-', company: site.dna.vendor.company || '-', email: '' }
+          ];
+
+      autoTable(this.doc, {
+          startY: this.currentY,
+          head: [['Role', 'Name', 'Company', 'Contact']],
+          body: stakeholders.map(s => [s.role, s.name, s.company, s.email || '-']),
+          theme: 'striped',
+          styles: { fontSize: 9, cellPadding: 3, font: FONTS.body },
+          headStyles: { fillColor: COLORS.primary },
+          columnStyles: { 0: { fontStyle: 'bold' } }
+      });
   }
 
   // --- COMPONENT: COVER PAGE ---
@@ -200,9 +309,6 @@ export class PdfService {
             const imgData = await getBase64ImageFromUrl(site.thumbnail);
             if (imgData) {
                 this.doc.addImage(imgData, 'JPEG', 0, 0, pageWidth, 140, undefined, 'FAST');
-                // Overlay Gradient (simulated with alpha rect)
-                this.doc.setFillColor(0, 0, 0);
-                // this.doc.rect(0, 0, pageWidth, 140, 'F'); // Too heavy without proper alpha support in standard jspdf, skipping for clean look
             }
         } catch (e) { /* Fallback */ }
     } else {
@@ -254,12 +360,6 @@ export class PdfService {
     this.doc.text("Commercial in Confidence", pageWidth - 20, pageHeight - 25, { align: 'right' });
   }
 
-  // --- COMPONENT: ASSET DNA (Fact Sheet) ---
-  private addAssetFactSheet(site: Site, scenario: FeasibilityScenario, stats: any) {
-    // Kept as legacy support, but addFeasibilitySummary is now primary page 2.
-    // We can merge this or keep it. Let's keep it but skip header if already rendered.
-  }
-
   // --- COMPONENT: VALUER'S P&L ---
   private addValuersPnL(scenario: FeasibilityScenario, siteDNA: SiteDNA, metrics: any) {
     this.addPageHeader("Financial Analysis", "Profit & Loss Statement", false);
@@ -308,7 +408,7 @@ export class PdfService {
     addCategory("Professional Fees", CostCategory.CONSULTANTS);
     addCategory("Statutory & Authorities", CostCategory.STATUTORY);
     addCategory("Selling & Marketing", CostCategory.SELLING);
-    addCategory("Finance Costs", CostCategory.FINANCE); // Items if any manually added
+    addCategory("Finance Costs", CostCategory.FINANCE); 
 
     // Calculated Finance (Interest)
     addRow("Finance Costs (Calculated)", null, null, 'header');
@@ -316,11 +416,7 @@ export class PdfService {
     addRow("", null, null, 'spacer');
 
     // Bottom Line
-    // metrics.totalDevelopmentCost is Net. To match Valuer P&L usually we show Gross Costs? 
-    // Standard practice is Net Costs + GST = Gross. Or Net Costs.
-    // The previous logic used `stats.totalOut`.
-    // Let's use the explicit calculated finance cost + other costs.
-    addRow("TOTAL DEVELOPMENT COSTS", null, formatCurrency(metrics.totalDevelopmentCost + metrics.gstInputCredits), 'header'); // Gross for P&L
+    addRow("TOTAL DEVELOPMENT COSTS", null, formatCurrency(metrics.totalDevelopmentCost + metrics.gstInputCredits), 'header'); 
     addRow("", null, null, 'spacer');
     addRow("NET DEVELOPMENT PROFIT", null, formatCurrency(metrics.netProfit), 'header');
     addRow("DEVELOPMENT MARGIN", null, formatPct(metrics.devMarginPct), 'total');
@@ -355,7 +451,6 @@ export class PdfService {
                     if (data.column.index === 0) data.cell.styles.cellPadding = { top: 1, bottom: 1, left: 8, right: 1 };
                 } else if (rowInfo.style === 'total') {
                     if (data.column.index === 2) {
-                        // Top Border for totals
                         data.cell.styles.lineWidth = { top: 0.1, bottom: 0, left: 0, right: 0 };
                     }
                 }
@@ -368,8 +463,7 @@ export class PdfService {
   private addSensitivityAnalysis(matrix: SensitivityCell[][], scenario: FeasibilityScenario) {
     this.addPageHeader("Risk Analysis", "Sensitivity Matrix (Cost vs Revenue)", false);
 
-    // Get axis steps from service logic (Assuming -10% to +10% standard for this visual)
-    // We recreate labels based on standard steps
+    // Get axis steps
     const steps = [-15, -10, -5, 0, 5, 10, 15];
     const headerRow = ['Cost \\ Rev', ...steps.map(s => s > 0 ? `+${s}%` : `${s}%`)];
 
@@ -397,21 +491,21 @@ export class PdfService {
                 const val = parseFloat(data.cell.raw as string);
                 data.cell.styles.fontStyle = 'bold';
                 if (val < 0) {
-                    data.cell.styles.fillColor = "#fecaca"; // Red 200
-                    data.cell.styles.textColor = "#991b1b"; // Red 800
+                    data.cell.styles.fillColor = "#fecaca"; 
+                    data.cell.styles.textColor = "#991b1b"; 
                 } else if (val < 10) {
-                    data.cell.styles.fillColor = "#fde68a"; // Amber 200
-                    data.cell.styles.textColor = "#92400e"; // Amber 800
+                    data.cell.styles.fillColor = "#fde68a"; 
+                    data.cell.styles.textColor = "#92400e"; 
                 } else if (val >= 20) {
-                    data.cell.styles.fillColor = "#bbf7d0"; // Green 200
-                    data.cell.styles.textColor = "#166534"; // Green 800
+                    data.cell.styles.fillColor = "#bbf7d0"; 
+                    data.cell.styles.textColor = "#166534"; 
                 }
             }
         }
     });
   }
 
-  // --- COMPONENT: RISK REPORT (Detailed Vertical Sensitivity) ---
+  // --- COMPONENT: RISK REPORT ---
   private addRiskReport(riskTables: Record<string, SensitivityRow[]>, projectName: string) {
     this.addPageHeader("Risk & Sensitivity Report", "Variable Impact Analysis", false);
 
@@ -432,7 +526,6 @@ export class PdfService {
             head: [['Variance', inputHeader, 'Total Dev Cost', 'Net Profit', 'Margin', 'IRR']],
             body: data.map(row => [
                 row.varianceLabel,
-                // Format input value based on type? Assuming $ usually, but Time is Months, Rate is %
                 inputHeader.includes('Month') ? row.variableValue + ' Mo' : 
                 inputHeader.includes('Rate') ? row.variableValue.toFixed(2) + '%' : 
                 formatCurrency(row.variableValue),
@@ -449,26 +542,20 @@ export class PdfService {
             },
             headStyles: { fillColor: COLORS.secondary, halign: 'center' },
             didParseCell: (data) => {
-                const rowData = data.row.raw as any; // Access raw data to check values
-                
-                // Highlight Base Case Row
                 const rowIndex = data.row.index;
                 const isBaseCase = data.table.body[rowIndex].raw[0] === 'Base Case';
                 
                 if (data.section === 'body') {
                     if (isBaseCase) {
-                        data.cell.styles.fillColor = "#e0f2fe"; // Light Blue
+                        data.cell.styles.fillColor = "#e0f2fe"; 
                         data.cell.styles.fontStyle = 'bold';
                     }
-
-                    // Conditional Formatting for Margin (Col 4) & IRR (Col 5)
-                    // Note: Column index depends on visible columns. Here 4=Margin, 5=IRR.
-                    if (data.column.index === 4) { // Margin
+                    if (data.column.index === 4) { 
                         const val = parseFloat(data.cell.raw as string);
-                        if (val < 15) data.cell.styles.textColor = "#dc2626"; // Red
-                        if (val > 20) data.cell.styles.textColor = "#166534"; // Green
+                        if (val < 15) data.cell.styles.textColor = "#dc2626";
+                        if (val > 20) data.cell.styles.textColor = "#166534";
                     }
-                    if (data.column.index === 5) { // IRR
+                    if (data.column.index === 5) { 
                         const val = parseFloat(data.cell.raw as string);
                         if (val < 15) data.cell.styles.textColor = "#dc2626";
                         if (val > 20) data.cell.styles.textColor = "#166534";
@@ -515,24 +602,25 @@ export class PdfService {
             { header: 'Total', dataKey: (currentHeaders.length + 1).toString() }
         ];
 
+        // Dynamic Column Styles to prevent stretching
+        const colStyles: any = {
+            0: { cellWidth: 50, halign: 'left', font: FONTS.body }, // Item Label
+            [currentHeaders.length + 1]: { cellWidth: 20, fontStyle: 'bold' } // Total
+        };
+        // Fix monthly columns width
+        for(let k=1; k <= currentHeaders.length; k++) {
+            colStyles[k] = { cellWidth: 16, halign: 'right' };
+        }
+
         // Process Categories
         data.categories.forEach(cat => {
-            // Skip empty categories to save space? Optional. 
-            // We'll keep them for consistency with board packs.
-            
-            // Header Row
             tableBody.push({ 0: cat.name.toUpperCase(), type: 'header' });
 
             // Items
             cat.rows.forEach(row => {
                 const slice = row.values.slice(startIdx, endIdx);
-                const rowTotal = row.total; // Total for whole project, or page? Usually whole project in last col.
-                // Let's show Page Total for now as it makes more sense in chunks, OR project total.
-                // Standard practice: Project Total usually at very end.
-                // Let's just sum the slice for "Period Total"
                 const sliceSum = slice.reduce((a,b)=>a+b, 0);
                 
-                // Only add row if it has data in this period or generally
                 if (row.total !== 0) {
                     const rowObj: any = { 0: row.label, type: 'item' };
                     slice.forEach((v, k) => rowObj[k+1] = v === 0 ? '-' : Math.round(v).toLocaleString());
@@ -563,8 +651,9 @@ export class PdfService {
             columns: columns,
             body: tableBody,
             theme: 'plain',
+            tableWidth: 'wrap', // Strict width control
             styles: { fontSize: 7, cellPadding: 1.5, halign: 'right', font: FONTS.mono },
-            columnStyles: { 0: { halign: 'left', cellWidth: 50, font: FONTS.body } },
+            columnStyles: colStyles,
             headStyles: { fillColor: COLORS.primary, textColor: 255, halign: 'center', fontStyle: 'bold' },
             didParseCell: (data) => {
                 if (data.section === 'body') {

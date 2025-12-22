@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { 
   FeasibilitySettings, DebtLimitMethod, InterestRateMode, FeeBase, EquityMode, 
@@ -8,7 +9,7 @@ interface Props {
   settings: FeasibilitySettings;
   onUpdate: (newSettings: FeasibilitySettings) => void;
   peakEquityRequired?: number;
-  projectLocation?: string; // Replaces usage of settings.site which was removed
+  projectLocation?: string; 
 }
 
 // --- Extracted Components ---
@@ -299,6 +300,19 @@ export const FinanceSettings: React.FC<Props> = ({ settings, onUpdate, peakEquit
     });
   };
 
+  // Helper to calculate preview amount for percentage modes
+  const getCalculatedEquity = () => {
+      if (capitalStack.equity.mode === EquityMode.PCT_LAND) {
+          const landPrice = settings.acquisition.purchasePrice;
+          const val = (landPrice * capitalStack.equity.percentageInput) / 100;
+          return val;
+      }
+      return null;
+  };
+
+  const calcEquityValue = getCalculatedEquity();
+  const isPercentageMode = capitalStack.equity.mode === EquityMode.PCT_LAND || capitalStack.equity.mode === EquityMode.PCT_TOTAL_COST;
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
       
@@ -435,9 +449,22 @@ export const FinanceSettings: React.FC<Props> = ({ settings, onUpdate, peakEquit
                              />
                              <span className="absolute right-4 top-3 text-sm font-bold text-slate-400">%</span>
                           </div>
-                          <p className="text-xs text-slate-400 mt-2">
-                             Equity is calculated as {capitalStack.equity.percentageInput}% of {capitalStack.equity.mode === EquityMode.PCT_LAND ? 'Land Purchase Price' : 'Total Development Costs (excl. Finance)'}.
-                          </p>
+                          
+                          {/* Auto-Calc Visual Display */}
+                          <div className="mt-4 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Calculated Limit</label>
+                              <div className="flex items-baseline space-x-2">
+                                <span className="text-sm font-mono font-bold text-slate-700">
+                                    {calcEquityValue !== null ? `$${calcEquityValue.toLocaleString()}` : 'Calculating...'}
+                                </span>
+                                {capitalStack.equity.mode === EquityMode.PCT_LAND && (
+                                    <span className="text-[10px] text-slate-400 font-medium">(Based on Land Purchase Price)</span>
+                                )}
+                                {capitalStack.equity.mode === EquityMode.PCT_TOTAL_COST && (
+                                    <span className="text-[10px] text-slate-400 font-medium">(Based on Total Development Costs)</span>
+                                )}
+                              </div>
+                          </div>
                        </div>
                     )}
 

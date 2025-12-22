@@ -543,7 +543,7 @@ const calcFundingSchedule = (
   // Running Balances
   let seniorBal = new Decimal(0);
   let mezzBal = new Decimal(0);
-  let cumulativeEquity = new Decimal(0); // Track total equity put in so far
+  let cumulativeEquity = new Decimal(0); 
   let surplusCash = new Decimal(0);
   
   // Asset Tracking
@@ -557,6 +557,22 @@ const calcFundingSchedule = (
       const constructionSum = costSchedule.reduce((a,c) => a.plus(c.breakdown[CostCategory.CONSTRUCTION]), new Decimal(0));
       depreciableCapitalWorks = constructionSum.times((settings.holdStrategy.depreciationSplit.capitalWorksPct)/100);
       depreciablePlant = constructionSum.times((settings.holdStrategy.depreciationSplit.plantPct)/100);
+  }
+
+  // --- DYNAMIC EQUITY CALCULATION ---
+  // The 'initialContribution' setting is used as a fallback or base.
+  // If PCT_LAND or PCT_TOTAL_COST is selected, we calculate the $ limit dynamically.
+  let equityLimit = new Decimal(capitalStack.equity.initialContribution);
+
+  if (capitalStack.equity.mode === EquityMode.PCT_LAND) {
+      // Logic: X% of Land Purchase Price
+      const landBasis = new Decimal(settings.acquisition.purchasePrice);
+      equityLimit = landBasis.times(capitalStack.equity.percentageInput).div(100);
+  } else if (capitalStack.equity.mode === EquityMode.PCT_TOTAL_COST) {
+      // Logic: X% of Total Costs (Excl Finance)
+      // We sum up the net costs from the schedule we just calculated
+      const totalCosts = costSchedule.reduce((sum, c) => sum.plus(c.totalNet), new Decimal(0));
+      equityLimit = totalCosts.times(capitalStack.equity.percentageInput).div(100);
   }
 
   for (let m = 0; m < costSchedule.length; m++) {
@@ -621,54 +637,40 @@ const calcFundingSchedule = (
       const intSn = seniorBal.times(getRate(capitalStack.senior));
       const intMz = mezzBal.times(getRate(capitalStack.mezzanine));
       
-      // Capitalise Interest?
+      // Capitalise Interest
       if (capitalStack.senior.isInterestCapitalised !== false) seniorBal = seniorBal.plus(intSn);
       if (capitalStack.mezzanine.isInterestCapitalised !== false) mezzBal = mezzBal.plus(intMz);
 
-      // --- FUNDING LOGIC ---
+      // --- FUNDING WATERFALL LOGIC (Equity First) ---
       if (netCash.lt(0)) {
           let deficit = netCash.abs();
           
-          // A. Use Surplus Cash First
+          // A. Surplus Cash
           if (surplusCash.gt(0)) {
               const use = Decimal.min(deficit, surplusCash);
               surplusCash = surplusCash.minus(use);
               deficit = deficit.minus(use);
           }
 
-          // B. Use Developer Equity (Waterfall Step 1)
+          // B. Developer Equity (First Loss)
+          // No phase check - Equity is always first resort if available
           if (deficit.gt(0)) {
-              const eqSettings = capitalStack.equity;
-              let equityAvailableForDraw = new Decimal(0);
-
-              if (eqSettings.mode === EquityMode.SUM_OF_MONEY) {
-                  // Fixed Upfront: Draw until the "Initial Contribution" cap is hit
-                  const limit = new Decimal(eqSettings.initialContribution);
-                  const remainingCapacity = limit.minus(cumulativeEquity);
-                  if (remainingCapacity.gt(0)) {
-                      equityAvailableForDraw = Decimal.min(deficit, remainingCapacity);
-                  }
-              } 
-              else if (eqSettings.mode === EquityMode.PCT_MONTHLY) {
-                  // Pari Passu: Pay X% of the monthly deficit
-                  const pct = new Decimal(eqSettings.percentageInput).div(100);
-                  equityAvailableForDraw = deficit.times(pct);
-              }
-              // Add other modes (PCT_LAND etc) here if needed, defaulting to SUM_OF_MONEY logic for now
+              // Use the DYNAMIC equityLimit calculated above
+              const eqAvailable = equityLimit.minus(cumulativeEquity);
               
-              if (equityAvailableForDraw.gt(0)) {
-                  drawEq = equityAvailableForDraw;
-                  cumulativeEquity = cumulativeEquity.plus(drawEq);
-                  deficit = deficit.minus(drawEq);
+              if (eqAvailable.gt(0)) {
+                  const draw = Decimal.min(deficit, eqAvailable);
+                  drawEq = draw;
+                  cumulativeEquity = cumulativeEquity.plus(draw);
+                  deficit = deficit.minus(draw);
               }
           }
 
-          // C. Use Senior Debt (Waterfall Step 2)
+          // C. Senior Debt
           if (deficit.gt(0)) {
-              // Check Senior Limit
-              const snLimit = capitalStack.senior.limit || Infinity; // Default to unlimited if 0/null
+              const snLimit = capitalStack.senior.limit || Infinity;
               const snAvailable = (snLimit === 0 && capitalStack.senior.limitMethod === DebtLimitMethod.FIXED) 
-                  ? new Decimal(Number.MAX_SAFE_INTEGER) // Treat 0 as Unlimited
+                  ? new Decimal(Number.MAX_SAFE_INTEGER) 
                   : new Decimal(snLimit).minus(seniorBal);
               
               if (snAvailable.gt(0)) {
@@ -679,7 +681,7 @@ const calcFundingSchedule = (
               }
           }
 
-          // D. Use Mezzanine Debt (Waterfall Step 3)
+          // D. Mezzanine Debt
           if (deficit.gt(0)) {
               const mzLimit = capitalStack.mezzanine.limit || 0;
               const mzAvailable = new Decimal(mzLimit).minus(mezzBal);
@@ -692,7 +694,7 @@ const calcFundingSchedule = (
               }
           }
 
-          // E. Emergency Equity (If debts are capped and we still have a deficit)
+          // E. Emergency Equity (Overflow)
           if (deficit.gt(0)) {
               const emergencyEquity = deficit;
               drawEq = drawEq.plus(emergencyEquity);
@@ -716,7 +718,7 @@ const calcFundingSchedule = (
               mezzBal = mezzBal.minus(payMz);
               surplus = surplus.minus(payMz);
           }
-          // 3. Pay Equity / Profit Distribution
+          // 3. Pay Equity / Profit
           if (surplus.gt(0)) {
               payEq = surplus;
               surplus = new Decimal(0);

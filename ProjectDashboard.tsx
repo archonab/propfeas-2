@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Site, ProjectModule, LineItem, CostCategory, RevenueItem, SmartRates, FeasibilityScenario } from './types';
+import { Site, ProjectModule, LineItem, CostCategory, RevenueItem, SmartRates, FeasibilityScenario, TaxConfiguration } from './types';
 import { FeasibilityEngine } from './FeasibilityEngine';
 import { ScenarioComparison } from './ScenarioComparison';
 import { INITIAL_COSTS, INITIAL_REVENUE, INITIAL_SETTINGS, createDefaultScenario } from './constants';
@@ -12,6 +12,7 @@ interface Props {
   onUpdateSite?: (site: Site) => void;
   smartRates?: SmartRates;
   libraryData?: LineItem[];
+  taxScales?: TaxConfiguration;
 }
 
 const ProjectSidebarItem: React.FC<{ active: boolean; onClick: () => void; icon: string; label: string }> = ({ active, onClick, icon, label }) => (
@@ -26,7 +27,7 @@ const ProjectSidebarItem: React.FC<{ active: boolean; onClick: () => void; icon:
   </button>
 );
 
-export const ProjectDashboard: React.FC<Props> = ({ site, onBack, onUpdateSite, smartRates, libraryData }) => {
+export const ProjectDashboard: React.FC<Props> = ({ site, onBack, onUpdateSite, smartRates, libraryData, taxScales }) => {
   const [activeModule, setActiveModule] = useState<ProjectModule | 'compare' | 'settings'>('overview');
 
   const navItems: { id: ProjectModule | 'compare' | 'settings'; label: string; icon: string }[] = [
@@ -157,6 +158,7 @@ export const ProjectDashboard: React.FC<Props> = ({ site, onBack, onUpdateSite, 
                   isEditable={false} 
                   smartRates={smartRates}
                   libraryData={libraryData}
+                  taxScales={taxScales}
                   onRequestEditSite={() => setActiveModule('settings')}
                />
             </div>

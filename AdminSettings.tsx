@@ -1,8 +1,8 @@
 
 import React, { useState } from 'react';
-import { CostCategory, InputType, DistributionMethod, GstTreatment, LineItem, SmartRates } from './types';
+import { CostCategory, InputType, DistributionMethod, GstTreatment, LineItem, SmartRates, TaxConfiguration, TaxBracket, TaxState, TaxType } from './types';
 import { STANDARD_LIBRARY } from './costLibrary';
-import { DEFAULT_RATES } from './constants';
+import { DEFAULT_RATES, DEFAULT_TAX_SCALES } from './constants';
 
 // --- Helper: Flatten the Library Object to Array ---
 const flattenLibrary = (lib: Record<CostCategory, LineItem[]>): LineItem[] => {
@@ -14,11 +14,17 @@ interface Props {
   setRates: React.Dispatch<React.SetStateAction<SmartRates>>;
   library: LineItem[];
   setLibrary: React.Dispatch<React.SetStateAction<LineItem[]>>;
+  taxScales: TaxConfiguration;
+  setTaxScales: React.Dispatch<React.SetStateAction<TaxConfiguration>>;
 }
 
-export const AdminSettings: React.FC<Props> = ({ rates, setRates, library, setLibrary }) => {
-  const [activeTab, setActiveTab] = useState<'drivers' | 'library'>('drivers');
+export const AdminSettings: React.FC<Props> = ({ rates, setRates, library, setLibrary, taxScales, setTaxScales }) => {
+  const [activeTab, setActiveTab] = useState<'drivers' | 'library' | 'tax'>('drivers');
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Tax Tab State
+  const [activeTaxState, setActiveTaxState] = useState<TaxState>('VIC');
+  const [activeTaxType, setActiveTaxType] = useState<TaxType>('STAMP_DUTY');
 
   // -- Modal State --
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -28,14 +34,73 @@ export const AdminSettings: React.FC<Props> = ({ rates, setRates, library, setLi
   const handleReset = () => {
     if (window.confirm("WARNING: This will wipe all custom library items and restore factory defaults. Are you sure?")) {
       setRates(DEFAULT_RATES);
+      setTaxScales(DEFAULT_TAX_SCALES);
       setLibrary(flattenLibrary(STANDARD_LIBRARY));
       localStorage.removeItem('devfeas_admin_rates');
       localStorage.removeItem('devfeas_admin_library');
+      localStorage.removeItem('devfeas_admin_tax');
     }
   };
 
   const handleRateChange = (field: keyof SmartRates, value: number) => {
     setRates(prev => ({ ...prev, [field]: value }));
+  };
+
+  // Tax Scale Handlers
+  const handleTaxUpdate = (state: TaxState, type: TaxType, index: number, field: keyof TaxBracket, value: any) => {
+      setTaxScales(prev => {
+          const newStateConfig = { ...prev[state] };
+          const newBrackets = [...(newStateConfig[type] || [])];
+          newBrackets[index] = { ...newBrackets[index], [field]: value };
+          
+          return { 
+              ...prev, 
+              [state]: {
+                  ...newStateConfig,
+                  [type]: newBrackets
+              }
+          };
+      });
+  };
+
+  const handleAddBracket = () => {
+      setTaxScales(prev => {
+          const newStateConfig = { ...prev[activeTaxState] };
+          const newBrackets = [...(newStateConfig[activeTaxType] || [])];
+          
+          // Add new bracket with reasonable defaults
+          const lastLimit = newBrackets.length > 0 ? newBrackets[newBrackets.length - 1].limit : 0;
+          newBrackets.push({
+              limit: lastLimit + 100000,
+              rate: 0,
+              base: 0,
+              method: 'SLIDING'
+          });
+
+          return { 
+              ...prev, 
+              [activeTaxState]: {
+                  ...newStateConfig,
+                  [activeTaxType]: newBrackets
+              }
+          };
+      });
+  };
+
+  const handleDeleteBracket = (index: number) => {
+      setTaxScales(prev => {
+          const newStateConfig = { ...prev[activeTaxState] };
+          const newBrackets = [...(newStateConfig[activeTaxType] || [])];
+          newBrackets.splice(index, 1);
+          
+          return { 
+              ...prev, 
+              [activeTaxState]: {
+                  ...newStateConfig,
+                  [activeTaxType]: newBrackets
+              }
+          };
+      });
   };
 
   // Library Actions
@@ -99,7 +164,7 @@ export const AdminSettings: React.FC<Props> = ({ rates, setRates, library, setLi
     item.category.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const NavButton = ({ id, label, icon }: { id: 'drivers' | 'library', label: string, icon: string }) => (
+  const NavButton = ({ id, label, icon }: { id: 'drivers' | 'library' | 'tax', label: string, icon: string }) => (
     <button 
       onClick={() => setActiveTab(id)}
       className={`w-full text-left px-4 py-3 rounded-lg flex items-center space-x-3 mb-2 transition-colors ${
@@ -119,6 +184,7 @@ export const AdminSettings: React.FC<Props> = ({ rates, setRates, library, setLi
         <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 px-4">System Admin</h2>
         <nav className="flex-1">
           <NavButton id="drivers" label="Global Drivers" icon="fa-sliders" />
+          <NavButton id="tax" label="Tax & Duty Scales" icon="fa-scale-balanced" />
           <NavButton id="library" label="Cost Library" icon="fa-book-open" />
         </nav>
         <div className="mt-auto pt-6 border-t border-slate-100">
@@ -217,6 +283,133 @@ export const AdminSettings: React.FC<Props> = ({ rates, setRates, library, setLi
                   </section>
                </div>
             </div>
+          )}
+
+          {/* TAB: TAX SCALES */}
+          {activeTab === 'tax' && (
+              <div className="animate-in fade-in duration-300">
+                  <div className="flex justify-between items-end border-b border-slate-200 pb-4 mb-8">
+                    <div>
+                        <h1 className="text-2xl font-black text-slate-800 tracking-tight">Tax & Duty Scales</h1>
+                        <p className="text-slate-500 text-sm mt-1">Manage progressive tax brackets for Stamp Duty and Land Tax.</p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col space-y-6">
+                      
+                      {/* Controls */}
+                      <div className="flex space-x-4">
+                          <div className="bg-white p-1 rounded-lg border border-slate-200 inline-flex">
+                              {(['VIC', 'NSW', 'QLD'] as TaxState[]).map(state => (
+                                  <button
+                                    key={state}
+                                    onClick={() => setActiveTaxState(state)}
+                                    className={`px-4 py-2 text-xs font-bold rounded-md transition-all ${
+                                        activeTaxState === state 
+                                        ? 'bg-blue-600 text-white shadow-md' 
+                                        : 'text-slate-500 hover:text-slate-800'
+                                    }`}
+                                  >
+                                      {state}
+                                  </button>
+                              ))}
+                          </div>
+
+                          <select 
+                            value={activeTaxType}
+                            onChange={(e) => setActiveTaxType(e.target.value as TaxType)}
+                            className="bg-white border border-slate-200 rounded-lg px-4 py-2 text-sm font-bold text-slate-700 focus:ring-blue-500"
+                          >
+                              <option value="STAMP_DUTY">Stamp Duty (Transfer)</option>
+                              <option value="LAND_TAX_GENERAL">Land Tax (General)</option>
+                              <option value="LAND_TAX_TRUST">Land Tax (Trust)</option>
+                          </select>
+                      </div>
+
+                      {/* Dynamic Table */}
+                      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                          <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex justify-between items-center">
+                              <h3 className="font-bold text-slate-800 flex items-center">
+                                  <i className="fa-solid fa-table mr-2 text-slate-400"></i>
+                                  {activeTaxState} - {activeTaxType.replace(/_/g, ' ')}
+                              </h3>
+                              <button 
+                                onClick={handleAddBracket}
+                                className="text-[10px] font-bold bg-white text-blue-600 px-3 py-1.5 rounded border border-blue-100 hover:bg-blue-50"
+                              >
+                                  <i className="fa-solid fa-plus mr-1"></i> Add Bracket
+                              </button>
+                          </div>
+                          
+                          <table className="w-full text-xs text-left">
+                              <thead className="bg-white text-slate-500 border-b border-slate-100">
+                                  <tr>
+                                      <th className="px-4 py-2 font-bold w-32">Limit ($)</th>
+                                      <th className="px-4 py-2 font-bold w-24">Rate (%)</th>
+                                      <th className="px-4 py-2 font-bold w-32">Base ($)</th>
+                                      <th className="px-4 py-2 font-bold w-32">Method</th>
+                                      <th className="px-4 py-2 font-bold text-right">Actions</th>
+                                  </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-50">
+                                  {taxScales[activeTaxState]?.[activeTaxType]?.map((bracket, idx) => (
+                                      <tr key={idx} className="hover:bg-slate-50">
+                                          <td className="px-4 py-2">
+                                              <input 
+                                                type="number" 
+                                                value={bracket.limit} 
+                                                onChange={e => handleTaxUpdate(activeTaxState, activeTaxType, idx, 'limit', parseFloat(e.target.value))}
+                                                className="w-full border-slate-200 rounded px-2 py-1"
+                                              />
+                                          </td>
+                                          <td className="px-4 py-2">
+                                              <input 
+                                                type="number" step="0.01"
+                                                value={bracket.rate} 
+                                                onChange={e => handleTaxUpdate(activeTaxState, activeTaxType, idx, 'rate', parseFloat(e.target.value))}
+                                                className="w-full border-slate-200 rounded px-2 py-1 font-bold text-slate-700"
+                                              />
+                                          </td>
+                                          <td className="px-4 py-2">
+                                              <input 
+                                                type="number" 
+                                                value={bracket.base} 
+                                                onChange={e => handleTaxUpdate(activeTaxState, activeTaxType, idx, 'base', parseFloat(e.target.value))}
+                                                className="w-full border-slate-200 rounded px-2 py-1 text-slate-500"
+                                              />
+                                          </td>
+                                          <td className="px-4 py-2">
+                                              <select 
+                                                value={bracket.method}
+                                                onChange={e => handleTaxUpdate(activeTaxState, activeTaxType, idx, 'method', e.target.value)}
+                                                className="w-full border-slate-200 rounded px-2 py-1 text-[10px] font-bold"
+                                              >
+                                                  <option value="SLIDING">Sliding (Marginal)</option>
+                                                  <option value="FLAT">Flat (Total)</option>
+                                              </select>
+                                          </td>
+                                          <td className="px-4 py-2 text-right">
+                                              <button 
+                                                onClick={() => handleDeleteBracket(idx)}
+                                                className="text-slate-300 hover:text-red-500"
+                                              >
+                                                  <i className="fa-solid fa-trash"></i>
+                                              </button>
+                                          </td>
+                                      </tr>
+                                  ))}
+                                  {(!taxScales[activeTaxState]?.[activeTaxType] || taxScales[activeTaxState]?.[activeTaxType]?.length === 0) && (
+                                      <tr>
+                                          <td colSpan={5} className="px-4 py-8 text-center text-slate-400 italic">
+                                              No tax brackets defined for this category.
+                                          </td>
+                                      </tr>
+                                  )}
+                              </tbody>
+                          </table>
+                      </div>
+                  </div>
+              </div>
           )}
 
           {/* TAB 2: LIBRARY */}

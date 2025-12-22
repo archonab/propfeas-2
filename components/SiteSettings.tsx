@@ -17,7 +17,9 @@ const MOCK_ADDRESS_DATABASE = {
       lga: "City of Greater Dandenong",
       overlays: ["Heritage Overlay (HO102)", "Vegetation Protection (VPO1)"],
       agent: { name: "John Smith", company: "Ray White Commercial" },
-      vendor: { name: "Private Holding Co" }
+      vendor: { name: "Private Holding Co" },
+      auv: 1200000,
+      acv: 1450000
     },
     geometry: { lat: -37.9875, lng: 145.2146 }
   },
@@ -29,7 +31,9 @@ const MOCK_ADDRESS_DATABASE = {
       lga: "Pending",
       overlays: [],
       agent: { name: "", company: "" },
-      vendor: { name: "" }
+      vendor: { name: "" },
+      auv: 0,
+      acv: 0
     }
   }
 };
@@ -60,7 +64,9 @@ export const SiteSettings: React.FC<Props> = ({ site, onUpdate }) => {
         lga: match.dna.lga,
         overlays: match.dna.overlays,
         agent: { ...site.dna.agent, ...match.dna.agent },
-        vendor: { ...site.dna.vendor, ...match.dna.vendor }
+        vendor: { ...site.dna.vendor, ...match.dna.vendor },
+        auv: match.dna.auv,
+        acv: match.dna.acv
       };
 
       onUpdate({
@@ -106,7 +112,7 @@ export const SiteSettings: React.FC<Props> = ({ site, onUpdate }) => {
       <div className="bg-slate-50 border-l-4 border-blue-500 p-4 rounded-r-lg mb-6">
         <h3 className="text-sm font-bold text-slate-800">Global Site Settings</h3>
         <p className="text-xs text-slate-500 mt-1">
-          Changes made here (e.g., Land Area) will automatically sync to <strong>all scenarios</strong> for this project.
+          Changes made here (e.g., Land Area, AUV) will automatically sync to <strong>all scenarios</strong> for this project.
         </p>
       </div>
 
@@ -137,7 +143,7 @@ export const SiteSettings: React.FC<Props> = ({ site, onUpdate }) => {
         {/* Physical Attributes */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="bg-slate-50 px-6 py-4 border-b border-slate-200">
-                <h3 className="font-bold text-slate-800">Physical Attributes</h3>
+                <h3 className="font-bold text-slate-800">Physical & Planning</h3>
             </div>
             <div className="p-6 space-y-5">
                 <div>
@@ -174,8 +180,44 @@ export const SiteSettings: React.FC<Props> = ({ site, onUpdate }) => {
             </div>
         </div>
 
+        {/* Statutory Values */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200">
+                <h3 className="font-bold text-slate-800">Statutory Valuations</h3>
+                <p className="text-xs text-slate-500">Used for Council Rates & Land Tax calculations.</p>
+            </div>
+            <div className="p-6 space-y-5">
+                <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Assessed Unimproved Value (AUV)</label>
+                    <div className="relative">
+                        <span className="absolute left-3 top-2.5 text-slate-400 font-bold">$</span>
+                        <input 
+                            type="number" 
+                            value={site.dna.auv || 0}
+                            onChange={(e) => updateDNAField('auv', parseFloat(e.target.value))}
+                            className="w-full pl-8 border-slate-200 rounded-lg font-mono font-bold text-slate-800 focus:ring-indigo-500"
+                        />
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1 italic">Site Value for Land Tax</p>
+                </div>
+                <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Assessed Capital Value (ACV)</label>
+                    <div className="relative">
+                        <span className="absolute left-3 top-2.5 text-slate-400 font-bold">$</span>
+                        <input 
+                            type="number" 
+                            value={site.dna.acv || 0}
+                            onChange={(e) => updateDNAField('acv', parseFloat(e.target.value))}
+                            className="w-full pl-8 border-slate-200 rounded-lg font-mono font-bold text-slate-800 focus:ring-indigo-500"
+                        />
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1 italic">Improved Value for Council Rates</p>
+                </div>
+            </div>
+        </div>
+
         {/* Deal Team */}
-        <div className="space-y-6">
+        <div className="space-y-6 lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-8">
             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <h4 className="text-xs font-bold text-slate-800 uppercase mb-4 flex items-center">
                     <i className="fa-solid fa-circle-user mr-2 text-blue-500"></i> Selling Agent

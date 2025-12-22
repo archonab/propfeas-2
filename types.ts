@@ -40,8 +40,27 @@ export enum ScenarioStatus {
 }
 
 // --- SPECIAL LOGIC TAGS ---
-export type LineItemTag = 'LAND_PRICE' | 'STAMP_DUTY' | 'LEGAL_PURCHASE' | 'AGENT_FEE' | 'LEGAL_SALES' | 'NONE';
+export type LineItemTag = 
+  'LAND_PRICE' | 
+  'STAMP_DUTY' | 
+  'LEGAL_PURCHASE' | 
+  'AGENT_FEE' | 
+  'LEGAL_SALES' | 
+  'COUNCIL_RATES' | 
+  'LAND_TAX' |      
+  'NONE';
+
+export type CalculationLink = 'AUTO_STAMP_DUTY' | 'AUTO_LAND_TAX' | 'AUTO_COUNCIL_RATES' | 'NONE';
+
 export type RevenueItemTag = 'GROSS_SALES' | 'OTHER_INCOME' | 'NONE';
+
+// --- MILESTONE LINKING ---
+export enum MilestoneLink {
+  MANUAL = 'Manual Date',
+  ACQUISITION = 'Settlement',
+  CONSTRUCTION_START = 'Const. Start',
+  CONSTRUCTION_END = 'Const. Completion'
+}
 
 // --- GLOBAL SETTINGS TYPES ---
 export interface SmartRates {
@@ -54,6 +73,21 @@ export interface SmartRates {
   defaultEscalationRate: number;
   defaultAgentFeePct: number;
 }
+
+// --- TAX & DUTY AUTOMATION ---
+export type TaxMethod = 'SLIDING' | 'FLAT'; // Sliding = Marginal, Flat = % of Total Value
+export type TaxType = 'STAMP_DUTY' | 'LAND_TAX_GENERAL' | 'LAND_TAX_TRUST';
+export type TaxState = 'VIC' | 'NSW' | 'QLD';
+
+export interface TaxBracket {
+  limit: number; // The upper bound of this bracket (e.g. 25000)
+  rate: number; // The percentage rate (e.g. 1.4 for 1.4%)
+  base: number; // The base amount payable for this bracket (Flat Fee)
+  method: TaxMethod;
+}
+
+// Nested Configuration: State -> TaxType -> Brackets
+export type TaxConfiguration = Record<TaxState, Record<TaxType, TaxBracket[]>>;
 
 // --- SENSITIVITY TYPES ---
 export type SensitivityVariable = 'revenue' | 'cost' | 'duration' | 'interest';
@@ -87,6 +121,10 @@ export interface SiteDNA {
   zoning: string;
   overlays: string[]; // e.g., "Heritage", "Flood"
   
+  // Statutory Values
+  auv?: number; // Assessed Unimproved Value (Site Value)
+  acv?: number; // Assessed Capital Value (Improved Value)
+
   // Geolocation & Enrichment
   geometry?: { lat: number, lng: number };
   propertyId?: string;
@@ -149,32 +187,51 @@ export interface LineItem {
   description: string;
   inputType: InputType;
   amount: number;
-  startDate: number;
+  
+  // Timeline
+  startDate: number; // If linked, this acts as Offset (+/-)
   span: number;
+  linkToMilestone?: MilestoneLink; // Golden Thread Link
+
   method: DistributionMethod;
-  escalationRate: number; // Annual %
+  escalationRate: number; // Annual % (Specific Override)
   gstTreatment: GstTreatment;
   sCurveSteepness?: number; 
   milestones?: Record<number, number>; 
   specialTag?: LineItemTag; 
+  calculationLink?: CalculationLink; // New Automated Logic
 }
 
 export type RevenueStrategy = 'Sell' | 'Hold';
+export type RevenueCalcMode = 'LUMP_SUM' | 'QUANTITY_RATE';
 
 export interface RevenueItem {
   id: string;
   description: string;
-  units: number;
   strategy: RevenueStrategy;
-  pricePerUnit: number;
-  offsetFromCompletion: number; 
-  settlementSpan: number; 
+  calcMode: RevenueCalcMode; // New: Toggle between fixed sum or rate x units
+  
+  // Common
+  units: number; // Quantity (Units or SQM)
+  pricePerUnit: number; // Sale Price OR Annual/Weekly Rent
+  
+  // Sell Logic
+  absorptionRate?: number; // Units per month sales rate
   commissionRate: number; 
   isTaxable: boolean; 
-  weeklyRent?: number;
-  opexRate?: number; 
-  capRate?: number; 
-  leaseUpDuration?: number; 
+  
+  // Hold Logic
+  weeklyRent?: number; // Legacy support, prefer pricePerUnit
+  opexRate?: number; // % of Gross Income
+  vacancyFactorPct?: number; // Permanent vacancy allowance
+  leaseUpMonths?: number; // Duration to reach stabilisation
+  isCapitalised?: boolean; // Does this income line contribute to ISP?
+  capRate?: number; // Item specific cap rate (optional override)
+
+  // Timing
+  offsetFromCompletion: number; // Months after construction ends
+  settlementSpan: number; // Legacy: used if absorptionRate is not set
+  
   specialTag?: RevenueItemTag;
 }
 
@@ -222,7 +279,7 @@ export interface CapitalTier {
   variableRates: DatedRate[];
   establishmentFeeBase: FeeBase;
   establishmentFee: number;
-  lineFee?: number;
+  lineFeePct?: number; // Annual % charged on Limit
   limitMethod?: DebtLimitMethod; 
   limit?: number; 
   activationMonth?: number; 
@@ -236,11 +293,19 @@ export interface EquityStructure {
   percentageInput: number;
 }
 
+export interface JointVenture {
+  enabled: boolean;
+  partnerName: string;
+  equitySplitPct: number; // Partner's contribution %
+  profitSharePct: number; // Partner's profit share %
+}
+
 export interface CapitalStack {
   senior: CapitalTier;
   mezzanine: CapitalTier;
   equity: EquityStructure;
-  surplusInterestRate: number;
+  jv: JointVenture;
+  surplusInterestRate: number; // Rate earned on positive cash balance
 }
 
 export interface AcquisitionSettings {
@@ -248,6 +313,8 @@ export interface AcquisitionSettings {
   settlementPeriod: number;
   depositPercent: number;
   stampDutyState: 'VIC' | 'NSW' | 'QLD';
+  stampDutyTiming: 'EXCHANGE' | 'SETTLEMENT'; // Precision Timing
+  stampDutyOverride?: number; // Manual override for specific exemptions
   isForeignBuyer: boolean;
   buyersAgentFee: number;
   legalFeeEstimate: number;
@@ -268,6 +335,14 @@ export interface HoldStrategy {
   depreciationSplit: DepreciationSplit;
 }
 
+export interface GrowthMatrix {
+  constructionEscalation: number; // % p.a.
+  rentalGrowth: number; // % p.a.
+  landAppreciation: number; // % p.a.
+  salesPriceEscalation: number; // % p.a.
+  cpi: number; // % p.a. (General)
+}
+
 export interface FeasibilitySettings {
   // Scenario specifics (Site Data has moved to Parent)
   description?: string;
@@ -281,13 +356,14 @@ export interface FeasibilitySettings {
   durationMonths: number;
   constructionDelay: number;
   
+  growth: GrowthMatrix; // Replaces single defaultEscalationRate
   holdStrategy?: HoldStrategy;
 
   discountRate: number;
   gstRate: number;
   totalUnits: number;
   useMarginScheme: boolean;
-  defaultEscalationRate?: number;
+  defaultEscalationRate?: number; // Deprecated, keep for compat
   
   capitalStack: CapitalStack;
 }
@@ -312,11 +388,15 @@ export interface MonthlyFlow {
   balanceSurplus: number; 
   interestSenior: number;
   interestMezz: number;
+  lineFeeSenior: number; // New
   netCashflow: number;
   cumulativeCashflow: number;
   investmentBalance: number;
   investmentInterest: number;
   assetValue: number;
+  statutoryValue: number; // New: Tracks AUV growth specifically
+  landTaxLiability: number; // New: Tracks dynamic land tax
+  inflationFactor: number; 
   depreciation: number;
 }
 

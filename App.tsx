@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { GlobalView, Site, FeasibilityScenario, SmartRates, LineItem, CostCategory, ScenarioStatus } from './types';
-import { MOCK_SITES, DEFAULT_RATES, createDefaultScenario } from './constants';
+import { GlobalView, Site, FeasibilityScenario, SmartRates, LineItem, CostCategory, ScenarioStatus, TaxConfiguration } from './types';
+import { MOCK_SITES, DEFAULT_RATES, DEFAULT_TAX_SCALES, createDefaultScenario } from './constants';
 import { STANDARD_LIBRARY } from './costLibrary';
 import { FeasibilityEngine } from './FeasibilityEngine';
 import { ProjectDashboard } from './ProjectDashboard';
@@ -22,11 +22,15 @@ export default function App() {
 
   // --- Global Admin State ---
   const [smartRates, setSmartRates] = useState<SmartRates>(DEFAULT_RATES);
+  const [taxScales, setTaxScales] = useState<TaxConfiguration>(DEFAULT_TAX_SCALES);
   const [customLibrary, setCustomLibrary] = useState<LineItem[]>([]);
 
   useEffect(() => {
     const savedRates = localStorage.getItem('devfeas_admin_rates');
     if (savedRates) setSmartRates(JSON.parse(savedRates));
+
+    const savedTax = localStorage.getItem('devfeas_admin_tax');
+    if (savedTax) setTaxScales(JSON.parse(savedTax));
 
     const savedLib = localStorage.getItem('devfeas_admin_library');
     if (savedLib) setCustomLibrary(JSON.parse(savedLib));
@@ -36,6 +40,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('devfeas_admin_rates', JSON.stringify(smartRates));
   }, [smartRates]);
+
+  useEffect(() => {
+    localStorage.setItem('devfeas_admin_tax', JSON.stringify(taxScales));
+  }, [taxScales]);
 
   useEffect(() => {
     if (customLibrary.length > 0) {
@@ -255,6 +263,7 @@ export default function App() {
                   onSaveScenario={handleSaveScenario}
                   smartRates={smartRates}
                   libraryData={customLibrary}
+                  taxScales={taxScales}
                 />
               </div>
             </div>
@@ -314,6 +323,7 @@ export default function App() {
             onUpdateSite={handleUpdateSite}
             smartRates={smartRates}
             libraryData={customLibrary}
+            taxScales={taxScales}
           />
         )}
 
@@ -324,6 +334,8 @@ export default function App() {
             setRates={setSmartRates} 
             library={customLibrary} 
             setLibrary={setCustomLibrary} 
+            taxScales={taxScales}
+            setTaxScales={setTaxScales}
           />
         )}
       </main>

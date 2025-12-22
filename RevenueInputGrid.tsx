@@ -1,6 +1,7 @@
 
-import React, { useState } from 'react';
-import { RevenueItem, RevenueStrategy } from './types';
+import React, { useMemo, useState } from 'react';
+import { RevenueItem, RevenueStrategy, RevenueCalcMode } from './types';
+import { HelpTooltip } from './components/HelpTooltip';
 
 interface Props {
   revenues: RevenueItem[];
@@ -19,23 +20,30 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
   const addRevenue = () => {
     const newItem: RevenueItem = {
       id: Math.random().toString(36).substr(2, 9),
-      description: strategy === 'Sell' ? 'New Unit Type' : 'New Rental Type',
-      units: 1,
+      description: strategy === 'Sell' ? 'New Unit Type' : 'New Tenancy',
       strategy: strategy,
+      calcMode: 'QUANTITY_RATE',
+      
+      // Common
+      units: 1,
       pricePerUnit: 0,
       offsetFromCompletion: 1,
-      settlementSpan: 1,
+      settlementSpan: 6, // Legacy prop
+      
+      // Sell Defaults
+      absorptionRate: 1,
       commissionRate: 2.0,
       isTaxable: true,
       
       // Hold Defaults
-      weeklyRent: 500,
+      weeklyRent: 0, // Legacy support, using pricePerUnit for Annual/Weekly
       opexRate: 25,
-      capRate: 5.0,
-      leaseUpDuration: 6
+      vacancyFactorPct: 5.0,
+      leaseUpMonths: 3,
+      isCapitalised: true,
+      capRate: 5.0
     };
     setRevenues([...revenues, newItem]);
-    // Auto-expand on mobile
     if (window.innerWidth < 768) {
         setExpandedRow(newItem.id);
     }
@@ -49,198 +57,242 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
     setRevenues(prev => prev.filter(r => r.id !== id));
   };
 
-  const getEndValue = (item: RevenueItem) => {
-    if (item.strategy === 'Sell') return item.units * item.pricePerUnit;
-    const grossAnnual = (item.weeklyRent || 0) * 52 * item.units;
-    const netAnnual = grossAnnual * (1 - (item.opexRate || 0) / 100);
-    const capRate = (item.capRate || 5) / 100;
-    return capRate > 0 ? netAnnual / capRate : 0;
-  };
+  // --- Live Valuation Logic ---
+  const totals = useMemo(() => {
+    const relevant = revenues.filter(r => r.strategy === strategy);
+    
+    if (strategy === 'Sell') {
+        const gross = relevant.reduce((acc, r) => acc + (r.units * r.pricePerUnit), 0);
+        const units = relevant.reduce((acc, r) => acc + r.units, 0);
+        const avg = units > 0 ? gross / units : 0;
+        return { gross, units, avg };
+    } else {
+        // Hold Valuation (ISP)
+        let potentialGross = 0;
+        let effectiveNet = 0;
+        let valuation = 0;
 
-  const TimingSparkline = ({ offset, span }: { offset: number, span: number }) => {
-    const totalScale = Math.max(offset + span + 2, 12); 
-    const offsetPct = (offset / totalScale) * 100;
-    const spanPct = (span / totalScale) * 100;
+        relevant.forEach(r => {
+            const multiplier = r.calcMode === 'QUANTITY_RATE' ? r.units : 1;
+            // Assuming pricePerUnit is Annual Rent if mode is QUANTITY_RATE, or Lump Sum if not.
+            // Wait, we need to clarify input. For Hold, usually it's $ per annum or $ per week.
+            // Let's assume pricePerUnit is ANNUAL in this grid for clarity.
+            const grossItem = r.pricePerUnit * multiplier;
+            
+            const netItem = grossItem * (1 - (r.opexRate || 0)/100) * (1 - (r.vacancyFactorPct || 0)/100);
+            
+            potentialGross += grossItem;
+            effectiveNet += netItem;
 
-    return (
-      <div className="w-16 h-4 bg-slate-100 rounded-sm relative overflow-hidden border border-slate-200" title={`Waits ${offset}mo, then settles over ${span}mo`}>
-         <div className="absolute top-1/2 left-0 w-full h-px bg-slate-300"></div>
-         <div 
-            className="absolute top-1 bottom-1 bg-emerald-400 rounded-sm opacity-90 border-l border-emerald-500"
-            style={{ left: `${offsetPct}%`, width: `${Math.max(spanPct, 5)}%` }}
-         ></div>
-      </div>
-    );
-  };
+            if (r.isCapitalised) {
+                const cap = r.capRate || 5;
+                if (cap > 0) valuation += netItem / (cap/100);
+            }
+        });
+        return { potentialGross, effectiveNet, valuation };
+    }
+  }, [revenues, strategy]);
 
   const isHold = strategy === 'Hold';
 
   return (
-    <div className="bg-slate-50 md:bg-white md:rounded-xl md:shadow-sm md:border border-slate-200 overflow-hidden mb-8 relative">
+    <div className="bg-slate-50 md:bg-white md:rounded-xl md:shadow-sm md:border border-slate-200 overflow-hidden mb-8 relative flex flex-col h-full">
       
-      {/* DESKTOP HEADER */}
-      <div className="hidden md:flex bg-slate-50 px-6 py-4 border-b border-slate-200 justify-between items-center">
+      {/* HEADER */}
+      <div className="hidden md:flex bg-slate-50 px-6 py-4 border-b border-slate-200 justify-between items-center shrink-0">
         <div>
-          <h3 className="font-bold text-slate-800">{isHold ? 'Rental Assumptions' : 'Sales Revenue'}</h3>
-          <p className="text-xs text-slate-500 mt-0.5">{isHold ? 'Forecast rental yields and operating expenses' : 'Unit mix, pricing and settlement timing'}</p>
+          <h3 className="font-bold text-slate-800">{isHold ? 'Rental Mix & Valuation' : 'Sales Mix & Absorption'}</h3>
+          <p className="text-xs text-slate-500 mt-0.5">{isHold ? 'Define rent roll, lease-up and capitalisation parameters' : 'Define unit pricing, quantity and sales rate (units/mo)'}</p>
         </div>
+        <button onClick={addRevenue} className="flex items-center text-xs font-bold bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700 transition-colors shadow-sm">
+            <i className="fa-solid fa-plus mr-1.5"></i> Add Row
+        </button>
       </div>
 
-      {/* MOBILE HEADER */}
-      <div className="md:hidden px-1 pb-4 flex justify-between items-end">
-         <h3 className="font-bold text-slate-800 text-lg">{isHold ? 'Rental Inputs' : 'Sales Inputs'}</h3>
-         <div className="flex items-center space-x-2">
-            <span className="text-xs font-bold bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full">{revenues.length} Items</span>
-         </div>
-      </div>
-
-      {/* DESKTOP TABLE */}
-      <div className="hidden md:block overflow-x-auto">
+      {/* TABLE */}
+      <div className="hidden md:block flex-1 overflow-auto">
         <table className="w-full text-left text-sm border-collapse">
           <thead>
-            <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-widest font-bold">
-              <th className="px-4 py-3 w-48">Description</th>
-              <th className="px-4 py-3 w-20 text-center">Units</th>
+            <tr className="bg-slate-50/50 border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-widest font-bold sticky top-0 z-10 backdrop-blur-sm">
+              <th className="px-4 py-3 w-48 bg-slate-50">Description</th>
+              <th className="px-4 py-3 w-20 text-center bg-slate-50">Mode</th>
               
               {!isHold ? (
                  <>
-                    <th className="px-4 py-3 text-right">Price / Unit</th>
-                    <th className="px-4 py-3 text-right">Gross Total</th>
-                    <th className="px-4 py-3 text-center w-24">Offset (Mo)</th>
-                    <th className="px-4 py-3 text-center w-24">Span (Mo)</th>
-                    <th className="px-4 py-3 text-center w-20">Exit Rate</th>
-                    <th className="px-4 py-3 text-center w-20">Timing</th>
+                    <th className="px-4 py-3 text-center w-20 bg-slate-50">Qty</th>
+                    <th className="px-4 py-3 text-right bg-slate-50">Avg Price</th>
+                    <th className="px-4 py-3 text-center w-24 bg-slate-50">Rate (U/Mo)</th>
+                    <th className="px-4 py-3 text-center w-24 bg-slate-50">Offset (Mo)</th>
+                    <th className="px-4 py-3 text-right bg-slate-50">Total Revenue</th>
                  </>
               ) : (
                  <>
-                    <th className="px-4 py-3 text-right">Weekly Rent</th>
-                    <th className="px-4 py-3 text-center">Opex %</th>
-                    <th className="px-4 py-3 text-center">Cap Rate %</th>
-                    <th className="px-4 py-3 text-right">End Value</th>
-                    <th className="px-4 py-3 text-center w-24">Wait (Mo)</th>
-                    <th className="px-4 py-3 text-center w-24">Lease Up</th>
+                    <th className="px-4 py-3 text-center w-20 bg-slate-50">Units</th>
+                    <th className="px-4 py-3 text-right bg-slate-50">Rent (Pa)</th>
+                    <th className="px-4 py-3 text-center w-16 bg-slate-50">Opex % <HelpTooltip term="OPEX"/></th>
+                    <th className="px-4 py-3 text-center w-16 bg-slate-50">Vac %</th>
+                    <th className="px-4 py-3 text-center w-20 bg-slate-50">Lease Up</th>
+                    <th className="px-4 py-3 text-center w-16 bg-slate-50">Cap % <HelpTooltip term="CAP_RATE"/></th>
+                    <th className="px-4 py-3 text-center w-10 bg-slate-50" title="Capitalised?">Cap?</th>
                  </>
               )}
-              <th className="px-4 py-3 w-10"></th>
+              <th className="px-4 py-3 w-10 bg-slate-50"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {revenues.filter(r => r.strategy === strategy).map((item) => {
-              const exitRate = item.settlementSpan > 0 ? (item.units / item.settlementSpan).toFixed(1) : '-';
-              
+              const isQtyMode = item.calcMode === 'QUANTITY_RATE';
+              const grossTotal = isQtyMode ? item.units * item.pricePerUnit : item.pricePerUnit;
+
               return (
               <tr key={item.id} className="hover:bg-slate-50 transition-colors group">
+                {/* Description */}
                 <td className="px-4 py-2">
                   <input 
                     type="text" 
                     value={item.description}
                     onChange={(e) => updateRevenue(item.id, 'description', e.target.value)}
-                    className="w-full bg-transparent border-none focus:ring-0 text-xs font-medium text-slate-800"
-                    placeholder="e.g. 2 Bed Apartment"
+                    className="w-full bg-transparent border-none focus:ring-0 text-xs font-bold text-slate-700 placeholder:text-slate-300"
+                    placeholder="Item Name"
                   />
                 </td>
+                
+                {/* Mode Toggle */}
                 <td className="px-4 py-2 text-center">
-                  <input 
-                    type="number" 
-                    value={item.units}
-                    onChange={(e) => updateRevenue(item.id, 'units', parseFloat(e.target.value))}
-                    className="w-16 bg-transparent text-center border-none focus:ring-0 text-xs font-bold bg-slate-100 rounded"
-                  />
+                   <button 
+                     onClick={() => updateRevenue(item.id, 'calcMode', isQtyMode ? 'LUMP_SUM' : 'QUANTITY_RATE')}
+                     className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase ${isQtyMode ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}
+                   >
+                      {isQtyMode ? 'Rate' : 'Sum'}
+                   </button>
                 </td>
 
                 {!isHold ? (
                    <>
-                      <td className="px-4 py-2 text-right">
-                         <div className="relative">
-                            <span className="absolute left-0 top-1 text-slate-400 text-xs">$</span>
+                      {/* QTY */}
+                      <td className="px-4 py-2 text-center">
+                        {isQtyMode ? (
                             <input 
-                              type="number" 
-                              value={item.pricePerUnit}
-                              onChange={(e) => updateRevenue(item.id, 'pricePerUnit', parseFloat(e.target.value))}
-                              className="w-24 bg-transparent text-right border-none focus:ring-0 text-xs font-mono font-bold"
+                                type="number" 
+                                value={item.units}
+                                onChange={(e) => updateRevenue(item.id, 'units', parseFloat(e.target.value))}
+                                className="w-16 bg-slate-50 text-center border-slate-200 focus:ring-blue-500 text-xs font-bold rounded py-1"
                             />
-                         </div>
+                        ) : <span className="text-slate-300">-</span>}
                       </td>
+                      
+                      {/* Price */}
                       <td className="px-4 py-2 text-right">
-                         <span className="text-xs font-mono font-bold text-slate-500">
-                            ${(item.units * item.pricePerUnit).toLocaleString()}
-                         </span>
+                         <input 
+                           type="number" 
+                           value={item.pricePerUnit}
+                           onChange={(e) => updateRevenue(item.id, 'pricePerUnit', parseFloat(e.target.value))}
+                           className="w-24 bg-transparent text-right border-none focus:ring-0 text-xs font-mono font-bold text-slate-700"
+                         />
                       </td>
+
+                      {/* Absorption Rate */}
+                      <td className="px-4 py-2 text-center">
+                         <input 
+                           type="number" 
+                           value={item.absorptionRate}
+                           onChange={(e) => updateRevenue(item.id, 'absorptionRate', parseFloat(e.target.value))}
+                           className="w-16 bg-slate-50 text-center border-slate-200 focus:ring-blue-500 text-xs font-bold rounded py-1"
+                           placeholder="1"
+                         />
+                      </td>
+
+                      {/* Offset */}
                       <td className="px-4 py-2 text-center">
                          <input 
                            type="number" 
                            value={item.offsetFromCompletion}
                            onChange={(e) => updateRevenue(item.id, 'offsetFromCompletion', parseFloat(e.target.value))}
-                           className="w-16 bg-transparent text-center border-none focus:ring-0 text-xs font-bold text-slate-700 bg-slate-50 rounded"
-                           placeholder="0"
+                           className="w-16 bg-slate-50 text-center border-slate-200 focus:ring-blue-500 text-xs font-bold rounded py-1"
                          />
                       </td>
-                      <td className="px-4 py-2 text-center">
-                         <input 
-                           type="number" 
-                           value={item.settlementSpan}
-                           onChange={(e) => updateRevenue(item.id, 'settlementSpan', parseFloat(e.target.value))}
-                           className="w-16 bg-transparent text-center border-none focus:ring-0 text-xs font-bold text-blue-600 bg-blue-50 rounded"
-                           placeholder="1"
-                         />
-                      </td>
-                      <td className="px-4 py-2 text-center">
-                         <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded">{exitRate}/mo</span>
-                      </td>
-                      <td className="px-4 py-2 text-center flex justify-center">
-                         <TimingSparkline offset={item.offsetFromCompletion || 0} span={item.settlementSpan || 1} />
+
+                      {/* Total */}
+                      <td className="px-4 py-2 text-right">
+                         <span className="text-xs font-mono font-bold text-slate-800">
+                            ${grossTotal.toLocaleString(undefined, {maximumFractionDigits: 0})}
+                         </span>
                       </td>
                    </>
                 ) : (
                    <>
-                      <td className="px-4 py-2 text-right">
-                         <div className="relative">
-                            <span className="absolute left-0 top-1 text-slate-400 text-xs">$</span>
+                      {/* Units */}
+                      <td className="px-4 py-2 text-center">
+                         {isQtyMode ? (
                             <input 
-                              type="number" 
-                              value={item.weeklyRent}
-                              onChange={(e) => updateRevenue(item.id, 'weeklyRent', parseFloat(e.target.value))}
-                              className="w-20 bg-transparent text-right border-none focus:ring-0 text-xs font-mono font-bold"
+                                type="number" 
+                                value={item.units}
+                                onChange={(e) => updateRevenue(item.id, 'units', parseFloat(e.target.value))}
+                                className="w-14 bg-slate-50 text-center border-slate-200 focus:ring-indigo-500 text-xs font-bold rounded py-1"
                             />
-                            <span className="text-[9px] text-slate-400 ml-1">/wk</span>
-                         </div>
+                         ) : <span className="text-slate-300">-</span>}
                       </td>
+
+                      {/* Rent (Annual) */}
+                      <td className="px-4 py-2 text-right">
+                         <input 
+                           type="number" 
+                           value={item.pricePerUnit}
+                           onChange={(e) => updateRevenue(item.id, 'pricePerUnit', parseFloat(e.target.value))}
+                           className="w-24 bg-transparent text-right border-none focus:ring-0 text-xs font-mono font-bold text-slate-700"
+                         />
+                      </td>
+
+                      {/* Opex */}
                       <td className="px-4 py-2 text-center">
                          <input 
                            type="number" 
                            value={item.opexRate}
                            onChange={(e) => updateRevenue(item.id, 'opexRate', parseFloat(e.target.value))}
-                           className="w-12 bg-transparent text-center border-none focus:ring-0 text-xs font-bold text-slate-600"
+                           className="w-12 bg-transparent text-center border-none focus:ring-0 text-xs font-bold text-slate-500"
                          />
                       </td>
+
+                      {/* Vacancy */}
                       <td className="px-4 py-2 text-center">
                          <input 
                            type="number" 
-                           step="0.1"
+                           value={item.vacancyFactorPct}
+                           onChange={(e) => updateRevenue(item.id, 'vacancyFactorPct', parseFloat(e.target.value))}
+                           className="w-12 bg-transparent text-center border-none focus:ring-0 text-xs font-bold text-slate-500"
+                         />
+                      </td>
+
+                      {/* Lease Up */}
+                      <td className="px-4 py-2 text-center">
+                         <div className="flex items-center justify-center space-x-1">
+                            <input 
+                                type="number" 
+                                value={item.leaseUpMonths}
+                                onChange={(e) => updateRevenue(item.id, 'leaseUpMonths', parseFloat(e.target.value))}
+                                className="w-10 bg-slate-50 text-center border-slate-200 text-xs font-bold rounded py-1"
+                            />
+                            <span className="text-[9px] text-slate-400">mo</span>
+                         </div>
+                      </td>
+
+                      {/* Cap Rate */}
+                      <td className="px-4 py-2 text-center">
+                         <input 
+                           type="number" step="0.1"
                            value={item.capRate}
                            onChange={(e) => updateRevenue(item.id, 'capRate', parseFloat(e.target.value))}
                            className="w-12 bg-transparent text-center border-none focus:ring-0 text-xs font-bold text-indigo-600"
                          />
                       </td>
-                      <td className="px-4 py-2 text-right">
-                         <span className="text-xs font-mono font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded">
-                            ${getEndValue(item).toLocaleString(undefined, {maximumFractionDigits: 0})}
-                         </span>
-                      </td>
+
+                      {/* Is Cap? */}
                       <td className="px-4 py-2 text-center">
                          <input 
-                           type="number" 
-                           value={item.offsetFromCompletion}
-                           onChange={(e) => updateRevenue(item.id, 'offsetFromCompletion', parseFloat(e.target.value))}
-                           className="w-12 bg-transparent text-center border-none focus:ring-0 text-xs font-bold text-slate-700"
-                         />
-                      </td>
-                      <td className="px-4 py-2 text-center">
-                         <input 
-                           type="number" 
-                           value={item.leaseUpDuration}
-                           onChange={(e) => updateRevenue(item.id, 'leaseUpDuration', parseFloat(e.target.value))}
-                           className="w-12 bg-transparent text-center border-none focus:ring-0 text-xs font-bold text-slate-700"
+                           type="checkbox" 
+                           checked={item.isCapitalised}
+                           onChange={(e) => updateRevenue(item.id, 'isCapitalised', e.target.checked)}
+                           className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
                          />
                       </td>
                    </>
@@ -253,146 +305,86 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
                 </td>
               </tr>
             )})}
-            
-            <tr>
-               <td colSpan={10} className="px-4 py-3 bg-slate-50 border-t border-slate-200">
-                  <button onClick={addRevenue} className="flex items-center text-xs font-bold text-blue-600 hover:text-blue-700">
-                     <i className="fa-solid fa-plus-circle mr-2"></i> Add Item
-                  </button>
-               </td>
-            </tr>
           </tbody>
         </table>
       </div>
 
-      {/* MOBILE CARD VIEW */}
-      <div className="md:hidden space-y-3 pb-24">
-        {revenues.filter(r => r.strategy === strategy).map((item) => {
-           const borderColor = isHold ? 'border-indigo-200' : 'border-blue-200';
-           
-           return (
-            <div key={item.id} className={`bg-white rounded-xl shadow-sm border ${borderColor} overflow-hidden`}>
-              <div 
-                className="p-4 flex flex-col gap-3"
-                onClick={(e) => {
-                   if ((e.target as HTMLElement).tagName === 'INPUT') return;
-                   toggleExpanded(item.id);
-                }}
-              >
-                 <div className="flex justify-between items-start gap-3">
-                    <div className="flex-1">
-                        <input 
-                           type="text" 
-                           value={item.description}
-                           onChange={(e) => updateRevenue(item.id, 'description', e.target.value)}
-                           className="w-full bg-transparent border-b border-transparent focus:border-blue-300 focus:ring-0 p-0 text-base font-bold text-slate-800 placeholder:text-slate-300"
-                           placeholder="Description..."
-                        />
-                        <div className="flex items-center mt-2">
-                           <span className={`text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded border ${isHold ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>
-                              {item.strategy}
-                           </span>
-                           <span className="text-[10px] text-slate-400 font-bold ml-2 flex items-center">
-                              <span className="mr-1">Qty:</span>
-                              <input 
-                                 type="number" 
-                                 value={item.units}
-                                 onChange={(e) => updateRevenue(item.id, 'units', parseFloat(e.target.value))}
-                                 className="w-10 bg-slate-100 rounded px-1 py-0.5 text-center text-slate-800 border-none focus:ring-1 focus:ring-blue-500"
-                              />
-                           </span>
-                        </div>
-                    </div>
-                    <div className="text-right">
-                       <div className="flex flex-col items-end">
-                          <span className="text-base font-black text-slate-800 font-mono">
-                             {isHold ? `$${(item.weeklyRent || 0).toLocaleString()}` : `$${((item.pricePerUnit * item.units)/1e6).toFixed(2)}m`}
-                          </span>
-                          <span className="text-[9px] font-bold text-slate-400 uppercase">
-                             {isHold ? '/ week' : 'Gross Sales'}
-                          </span>
-                       </div>
-                       <button onClick={() => toggleExpanded(item.id)} className="text-slate-400 p-1 mt-1">
-                          <i className={`fa-solid fa-chevron-down transition-transform ${expandedRow === item.id ? 'rotate-180 text-blue-500' : ''}`}></i>
-                       </button>
-                    </div>
-                 </div>
-              </div>
-
-              {expandedRow === item.id && (
-                 <div className="px-4 pb-4 pt-0 space-y-4 animate-in fade-in slide-in-from-top-1 duration-200">
-                    <div className="border-t border-slate-100 pt-4 grid grid-cols-1 gap-4">
-                       
-                       {!isHold ? (
-                          <>
-                             <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                   <label className="text-[10px] font-bold text-slate-400 uppercase">Price / Unit ($)</label>
-                                   <input type="number" value={item.pricePerUnit} onChange={(e) => updateRevenue(item.id, 'pricePerUnit', parseFloat(e.target.value))} className="w-full mt-1 bg-white border-slate-200 rounded text-base font-bold text-slate-800 py-2" />
-                                </div>
-                                <div>
-                                   <label className="text-[10px] font-bold text-slate-400 uppercase">Agent Fee (%)</label>
-                                   <input type="number" value={item.commissionRate} onChange={(e) => updateRevenue(item.id, 'commissionRate', parseFloat(e.target.value))} className="w-full mt-1 bg-white border-slate-200 rounded text-base font-bold text-slate-800 py-2" />
-                                </div>
-                             </div>
-                             
-                             <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 mt-2">
-                                <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-3 flex items-center">
-                                   <i className="fa-solid fa-clock mr-2"></i> Timing & Absorption
-                                </h4>
-                                <div className="space-y-3">
-                                    <div>
-                                        <label className="flex justify-between text-[10px] font-bold text-slate-400 uppercase mb-1">
-                                           <span>First Settlement</span>
-                                           <span className="text-slate-300">(Offset)</span>
-                                        </label>
-                                        <div className="flex items-center">
-                                           <span className="bg-white border border-r-0 border-slate-200 px-3 py-2 rounded-l text-xs font-bold text-slate-500">Wait</span>
-                                           <input type="number" value={item.offsetFromCompletion} onChange={(e) => updateRevenue(item.id, 'offsetFromCompletion', parseFloat(e.target.value))} className="w-full border-slate-200 rounded-r text-sm font-bold text-slate-800 py-2 focus:ring-blue-500 focus:border-blue-500" />
-                                           <span className="ml-2 text-xs font-bold text-slate-400">mths</span>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="flex justify-between text-[10px] font-bold text-slate-400 uppercase mb-1">
-                                           <span>Inventory Clear</span>
-                                           <span className="text-slate-300">(Span)</span>
-                                        </label>
-                                        <div className="flex items-center">
-                                           <span className="bg-white border border-r-0 border-slate-200 px-3 py-2 rounded-l text-xs font-bold text-blue-600">Span</span>
-                                           <input type="number" value={item.settlementSpan} onChange={(e) => updateRevenue(item.id, 'settlementSpan', parseFloat(e.target.value))} className="w-full border-slate-200 rounded-r text-sm font-bold text-blue-600 py-2 focus:ring-blue-500 focus:border-blue-500" />
-                                           <span className="ml-2 text-xs font-bold text-slate-400">mths</span>
-                                        </div>
-                                    </div>
-                                </div>
-                             </div>
-                          </>
-                       ) : (
-                          <>
-                             <div className="grid grid-cols-2 gap-3">
-                                <div><label className="text-[10px] font-bold text-slate-400 uppercase">Weekly Rent ($)</label><input type="number" value={item.weeklyRent} onChange={(e) => updateRevenue(item.id, 'weeklyRent', parseFloat(e.target.value))} className="w-full mt-1 bg-white border-slate-200 rounded text-base font-bold text-slate-800 py-2" /></div>
-                                <div><label className="text-[10px] font-bold text-slate-400 uppercase">Opex Rate (%)</label><input type="number" value={item.opexRate} onChange={(e) => updateRevenue(item.id, 'opexRate', parseFloat(e.target.value))} className="w-full mt-1 bg-white border-slate-200 rounded text-base font-bold text-slate-800 py-2" /></div>
-                             </div>
-                             <div className="grid grid-cols-2 gap-3">
-                                <div><label className="text-[10px] font-bold text-slate-400 uppercase">Cap Rate (%)</label><input type="number" step="0.1" value={item.capRate} onChange={(e) => updateRevenue(item.id, 'capRate', parseFloat(e.target.value))} className="w-full mt-1 bg-white border-slate-200 rounded text-base font-bold text-indigo-600 py-2" /></div>
-                                <div><label className="text-[10px] font-bold text-slate-400 uppercase">End Value (Est)</label><div className="w-full mt-1 bg-indigo-50 border border-indigo-100 rounded flex items-center px-3 py-2 text-sm font-bold text-indigo-700">${(getEndValue(item)/1e6).toFixed(2)}m</div></div>
-                             </div>
-                          </>
-                       )}
-                       <button onClick={() => removeRevenue(item.id)} className="w-full py-3 mt-2 bg-red-50 text-red-600 font-bold rounded-lg text-sm flex items-center justify-center hover:bg-red-100 transition-colors"><i className="fa-solid fa-trash-can mr-2"></i> Remove Item</button>
-                    </div>
-                 </div>
-              )}
+      {/* FOOTER: LIVE VALUATION */}
+      <div className="bg-slate-900 text-white p-4 shrink-0">
+         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+            
+            <div className="flex items-center space-x-2">
+                <div className={`w-8 h-8 rounded flex items-center justify-center ${isHold ? 'bg-indigo-500' : 'bg-blue-500'}`}>
+                    <i className={`fa-solid ${isHold ? 'fa-building' : 'fa-tags'}`}></i>
+                </div>
+                <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">{isHold ? 'Investment Value' : 'Gross Realisation'}</h4>
+                    <p className="text-lg font-black font-mono">
+                        ${isHold ? (totals.valuation/1000000).toFixed(2) : (totals.gross/1000000).toFixed(2)}m
+                    </p>
+                </div>
             </div>
-           );
-        })}
+
+            <div className="flex space-x-8 text-xs">
+                {!isHold ? (
+                    <>
+                        <div className="text-right">
+                            <span className="block text-slate-500 font-bold uppercase text-[10px]">Total Units</span>
+                            <span className="font-mono font-bold text-slate-200">{totals.units}</span>
+                        </div>
+                        <div className="text-right">
+                            <span className="block text-slate-500 font-bold uppercase text-[10px]">Avg Price</span>
+                            <span className="font-mono font-bold text-slate-200">${Math.round(totals.avg).toLocaleString()}</span>
+                        </div>
+                    </>
+                ) : (
+                    <>
+                        <div className="text-right">
+                            <span className="block text-slate-500 font-bold uppercase text-[10px]">Potential Gross Income</span>
+                            <span className="font-mono font-bold text-slate-200">${(totals.potentialGross/1000).toFixed(0)}k</span>
+                        </div>
+                        <div className="text-right">
+                            <span className="block text-slate-500 font-bold uppercase text-[10px]">Net Operating Income</span>
+                            <span className="font-mono font-bold text-emerald-400">${(totals.effectiveNet/1000).toFixed(0)}k</span>
+                        </div>
+                    </>
+                )}
+            </div>
+
+         </div>
       </div>
 
-       {/* MOBILE STICKY ADD */}
-       <div className="md:hidden fixed bottom-6 right-6 z-50">
-         <button onClick={addRevenue} className="w-14 h-14 bg-blue-600 rounded-full shadow-xl shadow-blue-600/30 text-white flex items-center justify-center active:scale-90 transition-transform">
-            <i className="fa-solid fa-plus text-xl"></i>
-         </button>
+      {/* MOBILE LIST (Fallback) */}
+      <div className="md:hidden p-4 space-y-4 pb-24">
+         {revenues.filter(r => r.strategy === strategy).map(item => (
+             <div key={item.id} className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm">
+                 <div className="flex justify-between items-start mb-2">
+                     <input 
+                       className="font-bold text-slate-800 border-none p-0 focus:ring-0 w-2/3" 
+                       value={item.description} 
+                       onChange={e => updateRevenue(item.id, 'description', e.target.value)}
+                     />
+                     <span className="text-xs font-mono font-bold text-slate-500">
+                        ${(item.calcMode === 'QUANTITY_RATE' ? item.units * item.pricePerUnit : item.pricePerUnit).toLocaleString()}
+                     </span>
+                 </div>
+                 <div className="grid grid-cols-2 gap-2 text-xs">
+                     <div>
+                        <label className="text-slate-400 font-bold uppercase text-[10px]">Amount</label>
+                        <input type="number" className="w-full border-slate-200 rounded py-1 px-2" value={item.pricePerUnit} onChange={e => updateRevenue(item.id, 'pricePerUnit', parseFloat(e.target.value))} />
+                     </div>
+                     {item.calcMode === 'QUANTITY_RATE' && (
+                         <div>
+                            <label className="text-slate-400 font-bold uppercase text-[10px]">Qty</label>
+                            <input type="number" className="w-full border-slate-200 rounded py-1 px-2" value={item.units} onChange={e => updateRevenue(item.id, 'units', parseFloat(e.target.value))} />
+                         </div>
+                     )}
+                 </div>
+             </div>
+         ))}
+         <button onClick={addRevenue} className="w-full py-3 bg-blue-600 text-white rounded-lg font-bold shadow-md">Add Item</button>
       </div>
+
     </div>
   );
 };

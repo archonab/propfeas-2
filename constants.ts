@@ -1,5 +1,5 @@
-
-import { CostCategory, DistributionMethod, FeasibilitySettings, LineItem, RevenueItem, InputType, ScenarioStatus, Site, EquityMode, InterestRateMode, FeeBase, DebtLimitMethod, GstTreatment, SmartRates, FeasibilityScenario } from './types';
+import { CostCategory, DistributionMethod, FeasibilitySettings, LineItem, RevenueItem, InputType, ScenarioStatus, Site, EquityMode, InterestRateMode, FeeBase, DebtLimitMethod, GstTreatment, SmartRates, FeasibilityScenario, TaxConfiguration } from './types';
+import { TaxLibrary } from './services/TaxLibrary';
 
 export const DEFAULT_RATES: SmartRates = {
   architectPct: 4.5,
@@ -12,6 +12,8 @@ export const DEFAULT_RATES: SmartRates = {
   defaultAgentFeePct: 2.2
 };
 
+export const DEFAULT_TAX_SCALES: TaxConfiguration = TaxLibrary.getDefaultScales();
+
 export const INITIAL_SETTINGS: FeasibilitySettings = {
   description: "Standard residential feasibility",
   
@@ -20,6 +22,7 @@ export const INITIAL_SETTINGS: FeasibilitySettings = {
     settlementPeriod: 6, 
     depositPercent: 10,
     stampDutyState: 'VIC',
+    stampDutyTiming: 'SETTLEMENT',
     isForeignBuyer: false,
     buyersAgentFee: 0,
     legalFeeEstimate: 5000
@@ -29,6 +32,14 @@ export const INITIAL_SETTINGS: FeasibilitySettings = {
   durationMonths: 36,
   constructionDelay: 3, 
   
+  growth: {
+    constructionEscalation: 3.5,
+    rentalGrowth: 2.5,
+    landAppreciation: 4.0,
+    salesPriceEscalation: 3.0,
+    cpi: 2.5
+  },
+
   holdStrategy: {
     refinanceLvr: 65,
     refinanceMonth: 30,
@@ -56,12 +67,19 @@ export const INITIAL_SETTINGS: FeasibilitySettings = {
       instalments: [],
       percentageInput: 20,
     },
+    jv: {
+      enabled: false,
+      partnerName: 'JV Partner',
+      equitySplitPct: 50,
+      profitSharePct: 50
+    },
     senior: {
       rateMode: InterestRateMode.SINGLE,
       interestRate: 6.5,
       variableRates: [],
       establishmentFeeBase: FeeBase.PERCENT,
       establishmentFee: 1.0,
+      lineFeePct: 0.5,
       limitMethod: DebtLimitMethod.FIXED,
       isInterestCapitalised: true,
       activationMonth: 0
@@ -72,6 +90,7 @@ export const INITIAL_SETTINGS: FeasibilitySettings = {
       variableRates: [],
       establishmentFeeBase: FeeBase.PERCENT,
       establishmentFee: 2.0,
+      lineFeePct: 0,
       limit: 1500000,
       limitMethod: DebtLimitMethod.FIXED,
       isInterestCapitalised: true,
@@ -91,7 +110,7 @@ export const INITIAL_COSTS: LineItem[] = [
     startDate: 0,
     span: 12,
     method: DistributionMethod.S_CURVE,
-    escalationRate: 3,
+    escalationRate: 0, // 0 implies use Global Growth Matrix
     gstTreatment: GstTreatment.TAXABLE
   }
 ];
@@ -102,6 +121,7 @@ export const INITIAL_REVENUE: RevenueItem[] = [
     description: 'Standard Sales',
     units: 20,
     strategy: 'Sell',
+    calcMode: 'QUANTITY_RATE',
     pricePerUnit: 850000,
     offsetFromCompletion: 1, 
     settlementSpan: 4,

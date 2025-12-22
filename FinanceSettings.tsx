@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { 
   FeasibilitySettings, DebtLimitMethod, InterestRateMode, FeeBase, EquityMode, 
@@ -197,8 +196,8 @@ const DebtTab = ({
                   <div className="relative">
                       <input 
                         type="number" step="0.01" 
-                        value={tier.lineFee || 0}
-                        onChange={e => onUpdate('lineFee', parseFloat(e.target.value))}
+                        value={tier.lineFeePct || 0}
+                        onChange={e => onUpdate('lineFeePct', parseFloat(e.target.value))}
                         className="w-full border-slate-200 rounded-md py-1.5 px-3 text-sm font-bold"
                       />
                       <span className="absolute right-3 top-1.5 text-xs text-slate-400 font-bold">%</span>

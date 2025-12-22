@@ -1,8 +1,11 @@
 
 import React, { useState } from 'react';
-import { CostCategory, DistributionMethod, InputType, LineItem, FeasibilitySettings, LineItemTag } from './types';
+import { CostCategory, DistributionMethod, InputType, LineItem, FeasibilitySettings, LineItemTag, MilestoneLink, SiteDNA, TaxConfiguration, CalculationLink, GstTreatment } from './types';
 import { PhasingChart } from './PhasingChart';
 import { CostLibraryModal } from './CostLibraryModal';
+import { HelpTooltip } from './components/HelpTooltip';
+import { FinanceEngine } from './services/financeEngine';
+import { DEFAULT_TAX_SCALES } from './constants';
 
 interface Props {
   costs: LineItem[];
@@ -17,6 +20,8 @@ interface Props {
   libraryData?: LineItem[];
   landArea: number; 
   strategy?: 'SELL' | 'HOLD';
+  siteDNA?: SiteDNA;
+  taxScales?: TaxConfiguration;
 }
 
 // --- SUB-COMPONENT: COST SECTION ---
@@ -33,9 +38,13 @@ const CostSection: React.FC<{
   constructionTotal: number;
   estimatedRevenue: number;
   landArea: number;
+  tooltipTerm?: string;
+  siteDNA: SiteDNA;
+  taxScales: TaxConfiguration;
+  isOperatingLedger?: boolean;
 }> = ({ 
   title, icon, categories, costs, settings, defaultOpen = false, 
-  onUpdate, onAdd, onRemove, constructionTotal, estimatedRevenue, landArea 
+  onUpdate, onAdd, onRemove, constructionTotal, estimatedRevenue, landArea, tooltipTerm, siteDNA, taxScales, isOperatingLedger = false
 }) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
@@ -43,194 +52,209 @@ const CostSection: React.FC<{
   const sectionCosts = costs.filter(c => categories.includes(c.category));
   
   const sectionTotal = sectionCosts.reduce((acc, item) => {
-    let amount = item.amount;
-    if (item.inputType === InputType.PCT_CONSTRUCTION) amount = (item.amount / 100) * constructionTotal;
-    else if (item.inputType === InputType.PCT_REVENUE) amount = (item.amount / 100) * estimatedRevenue;
-    else if (item.inputType === InputType.RATE_PER_SQM) amount = item.amount * (landArea || 0);
-    else if (item.inputType === InputType.RATE_PER_UNIT) amount = item.amount * (settings.totalUnits || 0);
+    // We use the same engine calculation to display accurate totals in the header
+    const amount = FinanceEngine.calculateLineItemTotal(item, settings, siteDNA, constructionTotal, estimatedRevenue, taxScales);
     return acc + amount;
   }, 0);
 
   const toggleExpanded = (id: string) => setExpandedRow(expandedRow === id ? null : id);
 
-  const handleMilestoneChange = (id: string, value: string) => {
-    try {
-      const milestoneMap: Record<number, number> = {};
-      const parts = value.split(',');
-      parts.forEach(part => {
-        const [mo, pct] = part.split(':').map(s => parseFloat(s.trim()));
-        if (!isNaN(mo) && !isNaN(pct)) milestoneMap[mo] = pct;
-      });
-      onUpdate(id, 'milestones', milestoneMap);
-    } catch (e) { /* Ignore while typing */ }
-  };
-
-  const getMilestoneString = (milestones?: Record<number, number>) => {
-    if (!milestones) return '';
-    return Object.entries(milestones).map(([k, v]) => `${k}:${v}`).join(', ');
-  };
-
   // --- Helper: Smart Driver Context ---
   const getSmartContext = (item: LineItem) => {
+    // If we have an automated statutory link, we show that source instead
+    if (item.calculationLink && item.calculationLink !== 'NONE') {
+        const state = settings.acquisition.stampDutyState;
+        let driverLabel = '';
+        let driverValue = 0;
+        
+        switch (item.calculationLink) {
+            case 'AUTO_STAMP_DUTY':
+                driverLabel = `Automated ${state} Duty`;
+                break;
+            case 'AUTO_LAND_TAX':
+                driverLabel = `Automated ${state} Land Tax`;
+                break;
+            case 'AUTO_COUNCIL_RATES':
+                driverLabel = `Rate on Capital Value`;
+                break;
+        }
+        
+        // Calculate the effective value on the fly for display
+        const calculatedValue = FinanceEngine.calculateLineItemTotal(item, settings, siteDNA, constructionTotal, estimatedRevenue, taxScales);
+        
+        return { 
+            showDriver: true, 
+            driverLabel, 
+            calculatedValue, 
+            warning: null, 
+            isLinked: true 
+        };
+    }
+
+    // Normal Input Logic
     let driverValue = 0;
     let driverLabel = '';
     let isPercentage = false;
     let showDriver = false;
     let warning: string | null = null;
 
-    switch (item.inputType) {
-        case InputType.PCT_CONSTRUCTION:
-            driverValue = constructionTotal;
-            driverLabel = 'Const. Cost';
+    if (isOperatingLedger) {
+        // Special context for Operating Ledger
+        if (item.inputType === InputType.PCT_REVENUE) {
+            driverLabel = 'Gross Rental Income';
             isPercentage = true;
             showDriver = true;
-            if (driverValue <= 0) warning = 'No Construction Cost';
-            break;
-        case InputType.PCT_REVENUE:
-            driverValue = estimatedRevenue;
-            driverLabel = 'Est. Revenue';
-            isPercentage = true;
-            showDriver = true;
-            break;
-        case InputType.RATE_PER_SQM:
-            driverValue = landArea;
-            driverLabel = `${(driverValue || 0).toLocaleString()} sqm Site`;
-            showDriver = true;
-            if (!driverValue || driverValue <= 0) warning = 'Missing Land Area';
-            break;
-        case InputType.RATE_PER_UNIT:
-            driverValue = settings.totalUnits;
-            driverLabel = `${driverValue} Units`;
-            showDriver = true;
-            if (!driverValue || driverValue <= 0) warning = 'No Units Defined';
-            break;
+            driverValue = estimatedRevenue; // Annual Gross Rent passed in
+        } else if (item.inputType === InputType.FIXED) {
+            // Treat as Annual Amount
+            // No driver calculation needed, it's just a fixed annual sum
+        }
+    } else {
+        // Standard Development Costs
+        switch (item.inputType) {
+            case InputType.PCT_CONSTRUCTION:
+                driverValue = constructionTotal;
+                driverLabel = 'Const. Cost';
+                isPercentage = true;
+                showDriver = true;
+                if (driverValue <= 0) warning = 'No Construction Cost';
+                break;
+            case InputType.PCT_REVENUE:
+                driverValue = estimatedRevenue;
+                driverLabel = 'Est. Revenue';
+                isPercentage = true;
+                showDriver = true;
+                break;
+            case InputType.RATE_PER_SQM:
+                driverValue = landArea;
+                driverLabel = `${(driverValue || 0).toLocaleString()} sqm Site`;
+                showDriver = true;
+                if (!driverValue || driverValue <= 0) warning = 'Missing Land Area';
+                break;
+            case InputType.RATE_PER_UNIT:
+                driverValue = settings.totalUnits;
+                driverLabel = `${driverValue} Units`;
+                showDriver = true;
+                if (!driverValue || driverValue <= 0) warning = 'No Units Defined';
+                break;
+        }
     }
 
     const calculatedValue = isPercentage 
         ? (driverValue * (item.amount / 100)) 
         : (driverValue * item.amount);
 
-    return { showDriver, driverLabel, calculatedValue, warning };
+    return { showDriver, driverLabel, calculatedValue, warning, isLinked: false };
   };
 
   // --- Shared Advanced Config Form ---
   const AdvancedConfigSection = ({ item }: { item: LineItem }) => {
-    const getAvailableTags = (): { value: LineItemTag, label: string }[] => {
-      const base = [{ value: 'NONE' as LineItemTag, label: 'Standard Item (No Special Logic)' }];
-      
-      if (item.category === CostCategory.LAND) {
-        return [...base, 
-          { value: 'LAND_PRICE', label: 'Land Purchase Price' },
-          { value: 'STAMP_DUTY', label: 'Stamp Duty (Acquisition)' },
-          { value: 'LEGAL_PURCHASE', label: 'Legal Fees (Purchase)' }
-        ];
-      }
-      if (item.category === CostCategory.SELLING) {
-        return [...base,
-          { value: 'AGENT_FEE', label: 'Agent Commission (Dynamic)' },
-          { value: 'LEGAL_SALES', label: 'Legal Fees (Settlement)' }
-        ];
-      }
-      if (item.category === CostCategory.STATUTORY) {
-         return [...base, { value: 'STAMP_DUTY', label: 'Stamp Duty (If Statutory)' }];
-      }
-      return base;
-    };
-
-    const availableTags = getAvailableTags();
-
     return (
       <div className="space-y-4 pt-4 border-t border-slate-100 mt-4">
         <div className="flex flex-col md:flex-row gap-4">
-           {/* Left: Phasing Chart */}
-           <div className="flex-1">
-              <label className="text-[10px] font-bold uppercase text-slate-500 mb-2 block">Cashflow Distribution</label>
-              <PhasingChart item={item} settings={settings} constructionTotal={constructionTotal} totalRevenue={estimatedRevenue} />
-           </div>
+           {/* Left: Phasing Chart (Hidden for Operating Ledger usually, as it's recurring) */}
+           {!isOperatingLedger && (
+               <div className="flex-1">
+                  <label className="text-[10px] font-bold uppercase text-slate-500 mb-2 block">Cashflow Distribution</label>
+                  <PhasingChart item={item} settings={settings} constructionTotal={constructionTotal} totalRevenue={estimatedRevenue} />
+               </div>
+           )}
 
            {/* Right: Controls */}
            <div className="w-full md:w-64 space-y-4">
-              <div className="space-y-1">
-                 <label className="text-[10px] font-bold uppercase text-slate-500">Distribution Method</label>
-                 <select 
-                    value={item.method} 
-                    onChange={(e) => onUpdate(item.id, 'method', e.target.value)}
-                    className="w-full bg-white border border-slate-200 rounded text-xs font-medium py-1.5"
-                 >
-                    {Object.values(DistributionMethod).map(m => <option key={m} value={m}>{m}</option>)}
-                 </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                 <div className="space-y-1">
-                    <label className="text-[10px] font-bold uppercase text-slate-500">Start Month</label>
-                    <input 
-                      type="number" 
-                      value={item.startDate}
-                      onChange={(e) => onUpdate(item.id, 'startDate', parseFloat(e.target.value))}
-                      className="w-full bg-white border border-slate-200 rounded px-2 py-1.5 text-xs font-bold"
-                    />
-                 </div>
-                 <div className="space-y-1">
-                    <label className="text-[10px] font-bold uppercase text-slate-500">Duration (Mo)</label>
-                    <input 
-                      type="number" 
-                      value={item.span}
-                      onChange={(e) => onUpdate(item.id, 'span', parseFloat(e.target.value))}
-                      className="w-full bg-white border border-slate-200 rounded px-2 py-1.5 text-xs font-bold"
-                    />
-                 </div>
-              </div>
               
-              <div className="grid grid-cols-2 gap-2">
-                 <div className="space-y-1">
-                    <label className="text-[10px] font-bold uppercase text-slate-500">Escalation %</label>
-                    <input 
-                       type="number" 
-                       value={item.escalationRate || 0}
-                       onChange={(e) => onUpdate(item.id, 'escalationRate', parseFloat(e.target.value))}
-                       className="w-full bg-white border border-slate-200 rounded px-2 py-1.5 text-xs font-bold"
-                    />
-                 </div>
-                 {item.method === DistributionMethod.S_CURVE && (
-                     <div className="space-y-1">
-                       <label className="text-[10px] font-bold uppercase text-slate-500">Steepness (k)</label>
-                       <input 
-                          type="number" min="5" max="20"
-                          value={item.sCurveSteepness || 10}
-                          onChange={(e) => onUpdate(item.id, 'sCurveSteepness', parseFloat(e.target.value))}
-                          className="w-full bg-white border border-slate-200 rounded px-2 py-1.5 text-xs font-bold"
-                       />
-                     </div>
+              {/* Automation Link Control */}
+              <div className="space-y-1">
+                 <label className="text-[10px] font-bold uppercase text-slate-500 flex items-center">
+                    Automated Calculation
+                    <i className="fa-solid fa-robot ml-1.5 text-blue-400"></i>
+                 </label>
+                 <select 
+                    value={item.calculationLink || 'NONE'} 
+                    onChange={(e) => onUpdate(item.id, 'calculationLink', e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded text-xs font-bold py-1.5 text-slate-700"
+                 >
+                    <option value="NONE">Manual / Standard Input</option>
+                    <option value="AUTO_STAMP_DUTY">Stamp Duty (Acquisition)</option>
+                    <option value="AUTO_LAND_TAX">Land Tax (State Scale)</option>
+                    <option value="AUTO_COUNCIL_RATES">Council Rates (% of Value)</option>
+                 </select>
+                 {item.calculationLink && item.calculationLink !== 'NONE' && (
+                     <p className="text-[9px] text-slate-400 italic leading-tight mt-1">
+                         Overrides 'Amount' with auto-calculated value based on project metrics.
+                     </p>
                  )}
               </div>
 
-              {availableTags.length > 1 && (
-                 <div className="space-y-1">
-                    <label className="text-[10px] font-bold uppercase text-slate-500">Special Function</label>
-                    <select 
-                       value={item.specialTag || 'NONE'} 
-                       onChange={(e) => onUpdate(item.id, 'specialTag', e.target.value)}
-                       className="w-full bg-white border border-slate-200 rounded text-xs font-bold text-indigo-700 py-1.5"
-                    >
-                       {availableTags.map(tag => (
-                          <option key={tag.value} value={tag.value}>{tag.label}</option>
-                       ))}
-                    </select>
-                 </div>
+              {!isOperatingLedger && (
+                  <div className="space-y-1">
+                     <label className="text-[10px] font-bold uppercase text-slate-500 flex items-center">
+                        Timing Link
+                        <i className="fa-solid fa-link ml-1.5 text-blue-400"></i>
+                     </label>
+                     <select 
+                        value={item.linkToMilestone || ''} 
+                        onChange={(e) => onUpdate(item.id, 'linkToMilestone', e.target.value || undefined)}
+                        className="w-full bg-white border border-slate-200 rounded text-xs font-bold py-1.5 text-slate-700"
+                     >
+                        <option value="">Manual Start Date</option>
+                        <option value={MilestoneLink.ACQUISITION}>Settlement Date</option>
+                        <option value={MilestoneLink.CONSTRUCTION_START}>Construction Start</option>
+                        <option value={MilestoneLink.CONSTRUCTION_END}>Construction End</option>
+                     </select>
+                  </div>
               )}
 
-              {item.method === DistributionMethod.MILESTONE && (
-                 <div className="space-y-1">
-                   <label className="text-[10px] font-bold uppercase text-slate-500">Milestones (Mo:%)</label>
-                   <input 
-                       type="text" placeholder="1:10, 6:40"
-                       defaultValue={getMilestoneString(item.milestones)}
-                       onBlur={(e) => handleMilestoneChange(item.id, e.target.value)}
-                       className="w-full bg-white border border-slate-200 rounded px-2 py-1.5 text-xs font-mono"
-                   />
-                 </div>
+              {!isOperatingLedger && (
+                  <div className="grid grid-cols-2 gap-2">
+                     <div className="space-y-1">
+                        <label className="text-[10px] font-bold uppercase text-slate-500">
+                            {item.linkToMilestone ? 'Offset (Mo)' : 'Start Month'}
+                        </label>
+                        <input 
+                          type="number" 
+                          value={item.startDate}
+                          onChange={(e) => onUpdate(item.id, 'startDate', parseFloat(e.target.value))}
+                          className="w-full bg-white border border-slate-200 rounded px-2 py-1.5 text-xs font-bold font-mono"
+                          placeholder={item.linkToMilestone ? "+/- Months" : "Month 0"}
+                        />
+                     </div>
+                     <div className="space-y-1">
+                        <label className="text-[10px] font-bold uppercase text-slate-500">Duration</label>
+                        <input 
+                          type="number" 
+                          value={item.span}
+                          onChange={(e) => onUpdate(item.id, 'span', parseFloat(e.target.value))}
+                          className="w-full bg-white border border-slate-200 rounded px-2 py-1.5 text-xs font-bold"
+                        />
+                     </div>
+                  </div>
               )}
+              
+              {!isOperatingLedger && (
+                  <div className="space-y-1">
+                     <label className="text-[10px] font-bold uppercase text-slate-500">Distribution</label>
+                     <select 
+                        value={item.method} 
+                        onChange={(e) => onUpdate(item.id, 'method', e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded text-xs font-medium py-1.5"
+                     >
+                        {Object.values(DistributionMethod).map(m => <option key={m} value={m}>{m}</option>)}
+                     </select>
+                  </div>
+              )}
+
+              {/* GST Override */}
+              <div className="space-y-1">
+                 <label className="text-[10px] font-bold uppercase text-slate-500">GST Treatment</label>
+                 <select 
+                    value={item.gstTreatment || GstTreatment.TAXABLE}
+                    onChange={(e) => onUpdate(item.id, 'gstTreatment', e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded text-xs font-medium py-1.5"
+                 >
+                    {Object.values(GstTreatment).map(t => <option key={t} value={t}>{t}</option>)}
+                 </select>
+              </div>
            </div>
         </div>
       </div>
@@ -249,7 +273,10 @@ const CostSection: React.FC<{
                  <i className={`fa-solid ${icon}`}></i>
               </div>
               <div>
-                 <h3 className="text-sm font-bold text-slate-800">{title}</h3>
+                 <h3 className="text-sm font-bold text-slate-800 flex items-center">
+                    {title}
+                    {tooltipTerm && <HelpTooltip text={tooltipTerm} />}
+                 </h3>
                  <p className="text-[10px] text-slate-500 font-medium">
                    {sectionCosts.length} Items • Total: ${sectionTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                  </p>
@@ -262,7 +289,7 @@ const CostSection: React.FC<{
         {isOpen && (
            <div className="divide-y divide-slate-100">
               {sectionCosts.map(item => {
-                 const { showDriver, driverLabel, calculatedValue, warning } = getSmartContext(item);
+                 const { showDriver, driverLabel, calculatedValue, warning, isLinked } = getSmartContext(item);
                  const isExpanded = expandedRow === item.id;
 
                  return (
@@ -281,14 +308,36 @@ const CostSection: React.FC<{
                              </div>
                              
                              <div className="md:col-span-3">
-                                <select 
-                                   value={item.inputType} 
-                                   onChange={(e) => onUpdate(item.id, 'inputType', e.target.value)}
-                                   className="w-full bg-transparent border-none text-xs font-medium text-slate-500 focus:ring-0 px-0 py-1"
-                                >
-                                   {Object.values(InputType).map(t => <option key={t} value={t}>{t}</option>)}
-                                </select>
-                                {showDriver && (
+                                {isLinked ? (
+                                    <div className="flex items-center space-x-2 bg-blue-50 px-2 py-1 rounded border border-blue-100 w-fit">
+                                        <i className="fa-solid fa-robot text-blue-500 text-[10px]"></i>
+                                        <span className="text-[10px] font-bold text-blue-700 uppercase">{driverLabel}</span>
+                                    </div>
+                                ) : (
+                                    <select 
+                                        value={item.inputType} 
+                                        onChange={(e) => onUpdate(item.id, 'inputType', e.target.value)}
+                                        className="w-full bg-transparent border-none text-xs font-medium text-slate-500 focus:ring-0 px-0 py-1"
+                                    >
+                                        {isOperatingLedger ? (
+                                            <>
+                                                <option value={InputType.FIXED}>Fixed Annual ($)</option>
+                                                <option value={InputType.PCT_REVENUE}>% of Gross Rent</option>
+                                                <option value={InputType.RATE_PER_UNIT}>Rate per Unit</option>
+                                            </>
+                                        ) : (
+                                            Object.values(InputType).map(t => {
+                                                // Prevent Circular Logic: Construction items cannot be % of Construction
+                                                if (item.category === CostCategory.CONSTRUCTION && t === InputType.PCT_CONSTRUCTION) {
+                                                    return null;
+                                                }
+                                                return <option key={t} value={t}>{t}</option>
+                                            })
+                                        )}
+                                    </select>
+                                )}
+                                
+                                {showDriver && !isLinked && (
                                    <div className="text-[9px] text-blue-600 font-medium truncate" title={driverLabel}>
                                       Linked to {driverLabel}
                                    </div>
@@ -297,17 +346,23 @@ const CostSection: React.FC<{
 
                              <div className="md:col-span-3 text-right">
                                 <div className="flex items-center justify-end space-x-2">
-                                   <input 
-                                      type="number" 
-                                      value={item.amount}
-                                      onChange={(e) => onUpdate(item.id, 'amount', parseFloat(e.target.value))}
-                                      className="w-24 text-right bg-transparent border-b border-slate-200 focus:border-blue-500 focus:ring-0 px-1 py-1 text-sm font-bold text-slate-800"
-                                   />
+                                   {isLinked ? (
+                                       <div className="text-sm font-bold text-slate-800 bg-slate-100 px-2 py-1 rounded cursor-not-allowed border border-slate-200 min-w-[80px] text-center" title="Value calculated automatically. Edit via Advanced Settings.">
+                                           {calculatedValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                       </div>
+                                   ) : (
+                                       <input 
+                                          type="number" 
+                                          value={item.amount}
+                                          onChange={(e) => onUpdate(item.id, 'amount', parseFloat(e.target.value))}
+                                          className="w-24 text-right bg-transparent border-b border-slate-200 focus:border-blue-500 focus:ring-0 px-1 py-1 text-sm font-bold text-slate-800"
+                                       />
+                                   )}
                                    <span className="text-xs text-slate-400 font-bold">
                                       {item.inputType.includes('Pct') || item.inputType.includes('%') ? '%' : '$'}
                                    </span>
                                 </div>
-                                {showDriver && (
+                                {showDriver && !isLinked && (
                                    <div className="text-[10px] text-slate-400 font-mono mt-0.5">
                                       = ${calculatedValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                                    </div>
@@ -316,6 +371,11 @@ const CostSection: React.FC<{
                              </div>
                              
                              <div className="md:col-span-2 flex justify-end items-center space-x-2">
+                                {item.linkToMilestone && (
+                                    <div className="text-[9px] px-1.5 py-0.5 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded font-bold uppercase tracking-wider" title="Linked to Project Milestone">
+                                        Linked
+                                    </div>
+                                )}
                                 <button 
                                    onClick={() => toggleExpanded(item.id)} 
                                    className={`p-1.5 rounded-md transition-colors ${isExpanded ? 'bg-blue-100 text-blue-600' : 'text-slate-400 hover:text-blue-600 hover:bg-slate-100'}`}
@@ -360,7 +420,7 @@ const CostSection: React.FC<{
 
 export const FeasibilityInputGrid: React.FC<Props> = ({ 
   costs, settings, constructionTotal, estimatedRevenue = 0,
-  onUpdate, onAdd, onBulkAdd, onRemove, smartRates, libraryData, landArea, strategy = 'SELL' 
+  onUpdate, onAdd, onBulkAdd, onRemove, smartRates, libraryData, landArea, strategy = 'SELL', siteDNA = { address: '', landArea: 0, lga: '', zoning: '', overlays: [], agent: {name:'', company:''}, vendor: {name:''}, milestones: {}}, taxScales = DEFAULT_TAX_SCALES
 }) => {
   const [showLibrary, setShowLibrary] = useState(false);
 
@@ -378,7 +438,7 @@ export const FeasibilityInputGrid: React.FC<Props> = ({
                 {strategy === 'HOLD' ? 'Operating & Holding Costs' : 'Development Costs'}
             </h3>
             <p className="text-xs text-slate-500">
-                {strategy === 'HOLD' ? 'Manage recurrent and statutory outgoings' : 'Manage budget line items'}
+                {strategy === 'HOLD' ? 'Manage recurrent expenses (Opex) and statutory outgoings' : 'Manage budget line items'}
             </p>
          </div>
          <button 
@@ -398,7 +458,6 @@ export const FeasibilityInputGrid: React.FC<Props> = ({
 
       {strategy === 'SELL' ? (
           <>
-            {/* 1. Construction Costs */}
             <CostSection 
                 title="1. Construction Costs" 
                 icon="fa-trowel-bricks"
@@ -408,9 +467,9 @@ export const FeasibilityInputGrid: React.FC<Props> = ({
                 onUpdate={onUpdate} onAdd={onAdd} onRemove={onRemove}
                 constructionTotal={constructionTotal} estimatedRevenue={estimatedRevenue}
                 landArea={landArea}
+                siteDNA={siteDNA}
+                taxScales={taxScales}
             />
-
-            {/* 2. Professional Fees */}
             <CostSection 
                 title="2. Professional Fees" 
                 icon="fa-user-tie"
@@ -419,9 +478,9 @@ export const FeasibilityInputGrid: React.FC<Props> = ({
                 onUpdate={onUpdate} onAdd={onAdd} onRemove={onRemove}
                 constructionTotal={constructionTotal} estimatedRevenue={estimatedRevenue}
                 landArea={landArea}
+                siteDNA={siteDNA}
+                taxScales={taxScales}
             />
-
-            {/* 3. Statutory & General */}
             <CostSection 
                 title="3. Statutory & General" 
                 icon="fa-scale-balanced"
@@ -430,9 +489,10 @@ export const FeasibilityInputGrid: React.FC<Props> = ({
                 onUpdate={onUpdate} onAdd={onAdd} onRemove={onRemove}
                 constructionTotal={constructionTotal} estimatedRevenue={estimatedRevenue}
                 landArea={landArea}
+                tooltipTerm="AUV"
+                siteDNA={siteDNA}
+                taxScales={taxScales}
             />
-
-            {/* 4. Selling Costs */}
             <CostSection 
                 title="4. Selling & Marketing" 
                 icon="fa-bullhorn"
@@ -441,6 +501,8 @@ export const FeasibilityInputGrid: React.FC<Props> = ({
                 onUpdate={onUpdate} onAdd={onAdd} onRemove={onRemove}
                 constructionTotal={constructionTotal} estimatedRevenue={estimatedRevenue}
                 landArea={landArea}
+                siteDNA={siteDNA}
+                taxScales={taxScales}
             />
           </>
       ) : (
@@ -455,6 +517,10 @@ export const FeasibilityInputGrid: React.FC<Props> = ({
                 onUpdate={onUpdate} onAdd={onAdd} onRemove={onRemove}
                 constructionTotal={constructionTotal} estimatedRevenue={estimatedRevenue}
                 landArea={landArea}
+                tooltipTerm="OPEX"
+                siteDNA={siteDNA}
+                taxScales={taxScales}
+                isOperatingLedger={true}
             />
             
             <CostSection 
@@ -465,6 +531,9 @@ export const FeasibilityInputGrid: React.FC<Props> = ({
                 onUpdate={onUpdate} onAdd={onAdd} onRemove={onRemove}
                 constructionTotal={constructionTotal} estimatedRevenue={estimatedRevenue}
                 landArea={landArea}
+                siteDNA={siteDNA}
+                taxScales={taxScales}
+                isOperatingLedger={true}
             />
           </>
       )}

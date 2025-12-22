@@ -88,8 +88,8 @@ export const FinancingLayers: React.FC<Props> = ({ settings, onUpdate, peakEquit
                  <div className="relative">
                    <input 
                      type="number" 
-                     value={capitalStack.senior.lineFee || 0}
-                     onChange={(e) => updateTier('senior', 'lineFee', parseFloat(e.target.value))}
+                     value={capitalStack.senior.lineFeePct || 0}
+                     onChange={(e) => updateTier('senior', 'lineFeePct', parseFloat(e.target.value))}
                      className="w-full border border-slate-200 bg-slate-50 focus:bg-white rounded-md py-1.5 px-2 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                    />
                    <span className="absolute right-2 top-1.5 text-xs font-bold text-slate-400">%</span>

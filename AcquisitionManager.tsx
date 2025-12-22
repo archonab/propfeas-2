@@ -1,8 +1,9 @@
 
 import React, { useMemo, useState } from 'react';
-import { FeasibilitySettings, AcquisitionSettings, LineItem, RevenueItem, SiteDNA } from './types';
+import { FeasibilitySettings, AcquisitionSettings, LineItem, RevenueItem, SiteDNA, TaxConfiguration } from './types';
 import { FinanceEngine } from './services/financeEngine';
 import { SolverService } from './services/solverService';
+import { DEFAULT_TAX_SCALES } from './constants';
 
 interface Props {
   settings: FeasibilitySettings;
@@ -11,9 +12,10 @@ interface Props {
   costs?: LineItem[];
   revenues?: RevenueItem[];
   siteDNA?: SiteDNA;
+  taxScales?: TaxConfiguration;
 }
 
-export const AcquisitionManager: React.FC<Props> = ({ settings, onUpdate, costs = [], revenues = [], siteDNA }) => {
+export const AcquisitionManager: React.FC<Props> = ({ settings, onUpdate, costs = [], revenues = [], siteDNA, taxScales = DEFAULT_TAX_SCALES }) => {
   const { acquisition } = settings;
   const [showSolver, setShowSolver] = useState(false);
   const [solverTarget, setSolverTarget] = useState(20); // Default 20%
@@ -34,12 +36,30 @@ export const AcquisitionManager: React.FC<Props> = ({ settings, onUpdate, costs 
   const metrics = useMemo(() => {
     const depositAmount = acquisition.purchasePrice * (acquisition.depositPercent / 100);
     const loanBalance = acquisition.purchasePrice - depositAmount;
-    const duty = FinanceEngine.calculateStampDuty(acquisition.purchasePrice, acquisition.stampDutyState, acquisition.isForeignBuyer);
+    
+    // Use Global Tax Scales for calculation (passing override if present)
+    const duty = FinanceEngine.calculateStampDuty(
+        acquisition.purchasePrice, 
+        acquisition.stampDutyState, 
+        acquisition.isForeignBuyer,
+        taxScales,
+        acquisition.stampDutyOverride
+    );
+    
     const agentFee = acquisition.purchasePrice * (acquisition.buyersAgentFee / 100);
     const totalAcqCosts = acquisition.purchasePrice + duty + agentFee + acquisition.legalFeeEstimate;
     
-    return { depositAmount, loanBalance, duty, agentFee, totalAcqCosts };
-  }, [acquisition]);
+    // Calculate the "Standard" duty without override for comparison
+    const standardDuty = FinanceEngine.calculateStampDuty(
+        acquisition.purchasePrice, 
+        acquisition.stampDutyState, 
+        acquisition.isForeignBuyer,
+        taxScales,
+        undefined
+    );
+
+    return { depositAmount, loanBalance, duty, agentFee, totalAcqCosts, standardDuty };
+  }, [acquisition, taxScales]);
 
   const handleSolve = () => {
     if (!siteDNA) {
@@ -71,6 +91,8 @@ export const AcquisitionManager: React.FC<Props> = ({ settings, onUpdate, costs 
         }
     }, 100);
   };
+
+  const isManualDuty = acquisition.stampDutyOverride !== undefined && acquisition.stampDutyOverride !== null;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in duration-300 relative">
@@ -223,15 +245,52 @@ export const AcquisitionManager: React.FC<Props> = ({ settings, onUpdate, costs 
                  </div>
               </div>
 
+              {/* Stamp Duty Display / Override */}
+              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                  <div className="flex justify-between items-center mb-2">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Stamp Duty Calculation</label>
+                      <div className="flex items-center space-x-2">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase">Manual Override</span>
+                          <div 
+                            onClick={() => updateField('stampDutyOverride', isManualDuty ? undefined : metrics.standardDuty)}
+                            className={`w-8 h-4 rounded-full flex items-center px-0.5 cursor-pointer transition-colors ${isManualDuty ? 'bg-blue-500' : 'bg-slate-300'}`}
+                          >
+                             <div className={`w-3 h-3 bg-white rounded-full shadow transition-transform ${isManualDuty ? 'translate-x-4' : ''}`}></div>
+                          </div>
+                      </div>
+                  </div>
+                  
+                  {isManualDuty ? (
+                      <div className="relative">
+                          <input 
+                             type="number" 
+                             value={acquisition.stampDutyOverride} 
+                             onChange={(e) => updateField('stampDutyOverride', parseFloat(e.target.value))}
+                             className="w-full border-blue-200 rounded font-bold text-slate-800 bg-white"
+                          />
+                          <p className="text-[9px] text-blue-600 mt-1 italic">
+                              Overriding standard calculated duty of ${(metrics.standardDuty).toLocaleString()}
+                          </p>
+                      </div>
+                  ) : (
+                      <div className="flex items-baseline space-x-2">
+                          <span className="text-lg font-bold font-mono text-slate-800">${Math.round(metrics.duty).toLocaleString()}</span>
+                          <span className="text-xs text-slate-400">Auto-Calculated ({acquisition.stampDutyState})</span>
+                      </div>
+                  )}
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Buyer's Agent Fee (%)</label>
-                    <input 
-                      type="number" 
-                      value={acquisition.buyersAgentFee}
-                      onChange={(e) => updateField('buyersAgentFee', parseFloat(e.target.value))}
-                      className="w-full border-slate-200 rounded-lg font-bold text-slate-900"
-                    />
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Duty Payment</label>
+                    <select 
+                      value={acquisition.stampDutyTiming || 'SETTLEMENT'}
+                      onChange={(e) => updateField('stampDutyTiming', e.target.value)}
+                      className="w-full border-slate-200 rounded-lg font-bold text-slate-700 text-sm"
+                    >
+                       <option value="EXCHANGE">At Exchange (Day 1)</option>
+                       <option value="SETTLEMENT">At Settlement</option>
+                    </select>
                  </div>
                  <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Legal Fees ($)</label>
@@ -267,6 +326,12 @@ export const AcquisitionManager: React.FC<Props> = ({ settings, onUpdate, costs 
                         <p className="text-xs text-slate-400">Equity Injection (Deposit)</p>
                      </div>
                      <div className="text-right">
+                        {acquisition.stampDutyTiming === 'EXCHANGE' && (
+                            <div className="mb-2">
+                                <div className="text-sm font-bold text-amber-400 mb-0.5">+ ${(metrics.duty/1000).toFixed(0)}k</div>
+                                <p className="text-[10px] text-slate-500 uppercase">Stamp Duty (Early)</p>
+                            </div>
+                        )}
                         <div className="text-sm font-bold text-slate-300 mb-1">+ ${(acquisition.legalFeeEstimate/1000).toFixed(1)}k</div>
                         <p className="text-[10px] text-slate-500 uppercase">Legal Fees</p>
                      </div>
@@ -283,10 +348,12 @@ export const AcquisitionManager: React.FC<Props> = ({ settings, onUpdate, costs 
                         <p className="text-xs text-slate-400">Funded by Senior Debt</p>
                      </div>
                      <div className="text-right space-y-3">
-                        <div>
-                           <div className="text-sm font-bold text-slate-300 mb-0.5">+ ${(metrics.duty/1000).toFixed(0)}k</div>
-                           <p className="text-[10px] text-slate-500 uppercase">Stamp Duty</p>
-                        </div>
+                        {acquisition.stampDutyTiming !== 'EXCHANGE' && (
+                            <div>
+                                <div className="text-sm font-bold text-slate-300 mb-0.5">+ ${(metrics.duty/1000).toFixed(0)}k</div>
+                                <p className="text-[10px] text-slate-500 uppercase">Stamp Duty</p>
+                            </div>
+                        )}
                         {metrics.agentFee > 0 && (
                            <div>
                               <div className="text-sm font-bold text-slate-300 mb-0.5">+ ${(metrics.agentFee/1000).toFixed(1)}k</div>

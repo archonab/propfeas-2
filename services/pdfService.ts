@@ -1,429 +1,626 @@
 
 import { jsPDF } from "jspdf";
-import autoTable, { UserOptions } from "jspdf-autotable";
-import { Site, FeasibilityScenario, CostCategory, SiteDNA, MonthlyFlow, RevenueItem, LineItem, GstTreatment } from "../types";
-import { FinanceEngine, ItemisedCashflow } from "./financeEngine";
-import { SensitivityService } from "./sensitivityService";
+import autoTable from "jspdf-autotable";
+import { Site, FeasibilityScenario, CostCategory, SiteDNA, MonthlyFlow, ItemisedCashflow, SensitivityRow } from "../types";
+import { FinanceEngine } from "./financeEngine";
+import { SensitivityCell, SensitivityService } from "./sensitivityService";
 
 // --- THEME CONSTANTS ---
-const THEME = {
-  primary: "#1e293b", // Slate 800 (Feastudy is Black/Dark Grey)
+const COLORS = {
+  primary: "#1e293b", // Slate 800
   secondary: "#334155", // Slate 700
-  accent: "#4f46e5", // Indigo (Branding)
-  headerFill: "#e2e8f0", // Slate 200 (The "Gray Bar" for headers)
-  text: "#0f172a", // Slate 900
-  line: "#cbd5e1" // Slate 300
+  accent: "#4f46e5", // Indigo 600
+  lightGray: "#f1f5f9", // Slate 100
+  border: "#cbd5e1", // Slate 300
+  white: "#ffffff",
+  text: "#0f172a"
 };
 
-// --- HELPERS ---
-const formatCurrency = (val: number, decimals = 0) => {
+const FONTS = {
+  header: "helvetica",
+  body: "helvetica",
+  mono: "courier"
+};
+
+const formatCurrency = (val: number) => {
   if (val === 0) return "-";
-  const absVal = Math.abs(val).toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  const absVal = Math.abs(val).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   return val < 0 ? `(${absVal})` : `${absVal}`;
 };
 
 const formatPct = (val: number) => `${val.toFixed(2)}%`;
 
-// --- TYPES FOR RENDERER ---
-type RowType = 'header' | 'item' | 'subtotal' | 'total' | 'spacer';
-
-interface ReportRow {
-  type: RowType;
-  label: string;
-  values: (string | number)[];
-  indent?: number; // 0, 1, 2
-  bold?: boolean;
-  fill?: boolean;
-}
+const getBase64ImageFromUrl = async (imageUrl: string): Promise<string | null> => {
+  try {
+    const res = await fetch(imageUrl);
+    const blob = await res.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.warn("Failed to load image for PDF", error);
+    return null;
+  }
+};
 
 export class PdfService {
   private doc: jsPDF;
-  private pageWidth: number;
-  private pageHeight: number;
   private currentY: number = 0;
-
+  
   constructor() {
     this.doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    this.pageWidth = this.doc.internal.pageSize.width;
-    this.pageHeight = this.doc.internal.pageSize.height;
   }
 
   // --- PUBLIC ORCHESTRATOR ---
   public static async generateBoardReport(
     site: Site,
     scenario: FeasibilityScenario,
-    stats: any,
-    cashflow: MonthlyFlow[],
-    siteDNA: SiteDNA
-  ) {
-    const service = new PdfService();
-    const itemisedData = FinanceEngine.generateItemisedCashflowData(scenario, siteDNA);
-    await service.buildDocument(site, scenario, stats, cashflow, siteDNA, itemisedData);
-  }
-
-  private async buildDocument(
-    site: Site,
-    scenario: FeasibilityScenario,
-    stats: any,
+    stats: any, // We will use this if passed, but prefer recalc for safety
     cashflow: MonthlyFlow[],
     siteDNA: SiteDNA,
-    itemisedData: ItemisedCashflow
+    sensitivityMatrix: SensitivityCell[][],
+    riskTables?: Record<string, SensitivityRow[]>
   ) {
-    // 1. Executive Summary (Portrait)
-    this.addExecutiveSummary(site, scenario, stats);
-    this.addFooter(1, site.name);
+    const builder = new PdfService();
+    const itemisedData = FinanceEngine.generateItemisedCashflowData(scenario, siteDNA);
+    
+    // Recalculate robust metrics for the report
+    const metrics = FinanceEngine.calculateProjectMetrics(cashflow, scenario.settings);
 
-    // 2. Valuer's P&L (Portrait - Detailed 3-Column)
-    this.doc.addPage();
-    this.addValuersPnL(scenario, siteDNA, stats);
-    this.addFooter(2, site.name);
+    // 1. Cover Page (Portrait)
+    await builder.addCoverPage(site, scenario);
+    
+    // 2. Executive Summary (Feastudy Style)
+    builder.addNewPage("portrait");
+    builder.addFeasibilitySummary(site, scenario, metrics);
+    builder.addPageFooter(2, site.name);
 
-    // 3. Itemised Cashflow (Landscape - 12 Month Chunks)
-    this.addItemisedCashflow(itemisedData, site.name, 3);
+    // 3. Valuer's P&L (Portrait)
+    builder.addNewPage("portrait");
+    builder.addValuersPnL(scenario, siteDNA, metrics); // Pass metrics
+    builder.addPageFooter(3, site.name);
+
+    // 4. Sensitivity Analysis (Portrait)
+    builder.addNewPage("portrait");
+    builder.addSensitivityAnalysis(sensitivityMatrix, scenario);
+    builder.addPageFooter(4, site.name);
+
+    // 5. Risk Report (New)
+    if (riskTables) {
+      builder.addNewPage("portrait");
+      builder.addRiskReport(riskTables, site.name);
+      builder.addPageFooter(5, site.name);
+    }
+
+    // 6. Itemised Cashflow (Landscape - Smart Pagination)
+    // Starts at Page 6
+    builder.addItemisedCashflow(itemisedData, site.name, 6);
 
     // Save
-    this.doc.save(`Feastudy_Report_${site.code}.pdf`);
+    const filename = `Investment_Memo_${site.code}_${new Date().toISOString().split('T')[0]}.pdf`;
+    builder.doc.save(filename);
   }
 
-  // --- HEADER & FOOTER ---
-  private addHeader(title: string, subtitle: string, landscape = false) {
-    const width = landscape ? this.doc.internal.pageSize.height : this.pageWidth; // Swap dimensions logic for header line if landscape
-    const effectiveWidth = landscape ? 297 : 210;
+  private addNewPage(orientation: 'portrait' | 'landscape') {
+    this.doc.addPage("a4", orientation);
+    this.currentY = 0;
+  }
 
-    this.doc.setFont("helvetica", "bold");
+  // --- COMPONENT: FEASTUDY SUMMARY PAGE ---
+  private addFeasibilitySummary(site: Site, scenario: FeasibilityScenario, metrics: any) {
+      this.addPageHeader("Development Summary", "Key Performance Indicators", false);
+
+      const leftX = 20;
+      const rightX = 110;
+      let y = this.currentY;
+
+      // Helper to draw dotted line row
+      // "Label ..................... $Value"
+      const drawDottedRow = (label: string, value: string, xPos: number, width: number, isBold = false) => {
+          this.doc.setFont(FONTS.body, isBold ? "bold" : "normal");
+          this.doc.setFontSize(10);
+          this.doc.setTextColor(COLORS.text);
+          
+          this.doc.text(label, xPos, y);
+          
+          const labelWidth = this.doc.getTextWidth(label);
+          const valueWidth = this.doc.getTextWidth(value);
+          
+          // Draw dots
+          const dotStart = xPos + labelWidth + 2;
+          const dotEnd = xPos + width - valueWidth - 2;
+          
+          if (dotEnd > dotStart) {
+              this.doc.setDrawColor(200, 200, 200);
+              this.doc.setLineWidth(0.3);
+              this.doc.line(dotStart, y - 1, dotEnd, y - 1); // approximate baseline
+              // Actually dotted line in jsPDF is trickier, let's just use a line or manual dots
+              // this.doc.text(".".repeat(30), dotStart, y); // primitive
+          }
+
+          this.doc.text(value, xPos + width, y, { align: 'right' });
+          y += 7;
+      };
+
+      // LEFT COLUMN: PROJECT RETURNS
+      this.doc.setFont(FONTS.header, "bold");
+      this.doc.setFontSize(12);
+      this.doc.text("Project Returns", leftX, y);
+      y += 8;
+
+      drawDottedRow("Total Development Cost", formatCurrency(metrics.totalDevelopmentCost), leftX, 80);
+      drawDottedRow("Gross Realisation", formatCurrency(metrics.grossRevenue), leftX, 80);
+      drawDottedRow("Net Development Profit", formatCurrency(metrics.netProfit), leftX, 80, true);
+      y += 4;
+      drawDottedRow("Development Margin (MDC)", formatPct(metrics.devMarginPct), leftX, 80, true);
+      drawDottedRow("Margin on Equity (MoE)", formatPct(metrics.marginOnEquity), leftX, 80, true);
+      drawDottedRow("Internal Rate of Return", formatPct(metrics.equityIRR), leftX, 80, true);
+      y += 4;
+      drawDottedRow("Margin Before Interest", formatCurrency(metrics.marginBeforeInterest), leftX, 80);
+
+      // RIGHT COLUMN: EQUITY & DEBT
+      y = this.currentY; // Reset Y
+      this.doc.setFont(FONTS.header, "bold");
+      this.doc.setFontSize(12);
+      this.doc.text("Capital Analysis", rightX, y);
+      y += 8;
+
+      drawDottedRow("Peak Debt Exposure", formatCurrency(metrics.peakDebtAmount), rightX, 80);
+      drawDottedRow("Peak Debt Date", metrics.peakDebtDate, rightX, 80);
+      drawDottedRow("Equity Contribution", formatCurrency(metrics.peakEquity), rightX, 80);
+      y += 4;
+      drawDottedRow("GST Collected", formatCurrency(metrics.gstCollected), rightX, 80);
+      drawDottedRow("GST Input Credits", formatCurrency(metrics.gstInputCredits), rightX, 80);
+      drawDottedRow("Net GST Payable", formatCurrency(metrics.netGstPayable), rightX, 80);
+
+      this.currentY = y + 20;
+
+      // Project Description Box
+      this.doc.setFont(FONTS.header, "bold");
+      this.doc.text("Project Context", leftX, this.currentY);
+      this.currentY += 6;
+      this.doc.setFont(FONTS.body, "normal");
+      this.doc.setFontSize(10);
+      
+      const desc = scenario.settings.description || "No description provided.";
+      const lines = this.doc.splitTextToSize(desc, 170);
+      this.doc.text(lines, leftX, this.currentY);
+  }
+
+  // --- COMPONENT: COVER PAGE ---
+  private async addCoverPage(site: Site, scenario: FeasibilityScenario) {
+    const pageWidth = 210;
+    const pageHeight = 297;
+
+    // 1. Hero Image Top Half
+    if (site.thumbnail) {
+        try {
+            const imgData = await getBase64ImageFromUrl(site.thumbnail);
+            if (imgData) {
+                this.doc.addImage(imgData, 'JPEG', 0, 0, pageWidth, 140, undefined, 'FAST');
+                // Overlay Gradient (simulated with alpha rect)
+                this.doc.setFillColor(0, 0, 0);
+                // this.doc.rect(0, 0, pageWidth, 140, 'F'); // Too heavy without proper alpha support in standard jspdf, skipping for clean look
+            }
+        } catch (e) { /* Fallback */ }
+    } else {
+        // Fallback color block
+        this.doc.setFillColor(COLORS.primary);
+        this.doc.rect(0, 0, pageWidth, 140, 'F');
+    }
+
+    this.currentY = 160;
+
+    // 2. Title Section
+    this.doc.setTextColor(COLORS.primary);
+    this.doc.setFont(FONTS.header, "bold");
+    this.doc.setFontSize(28);
+    // Split title if too long
+    const titleLines = this.doc.splitTextToSize(site.name.toUpperCase(), 170);
+    this.doc.text(titleLines, 20, this.currentY);
+    
+    this.currentY += (12 * titleLines.length) + 5;
+    
+    this.doc.setFont(FONTS.header, "normal");
     this.doc.setFontSize(14);
-    this.doc.setTextColor(THEME.text);
-    this.doc.text("PROPERTY DEVELOPMENT FEASIBILITY STUDY", effectiveWidth / 2, 15, { align: "center" });
+    this.doc.setTextColor(COLORS.secondary);
+    this.doc.text(site.dna.address, 20, this.currentY);
+
+    this.currentY += 15;
     
-    this.doc.setDrawColor(0);
-    this.doc.setLineWidth(0.5);
-    this.doc.line(10, 18, effectiveWidth - 10, 18);
+    // Line separator
+    this.doc.setDrawColor(COLORS.accent);
+    this.doc.setLineWidth(1);
+    this.doc.line(20, this.currentY, 100, this.currentY);
 
-    this.doc.setFontSize(10);
-    this.doc.text(`Development:`, 10, 25);
-    this.doc.setFont("helvetica", "normal");
-    this.doc.text(title, 40, 25);
-
-    this.doc.setFont("helvetica", "bold");
-    this.doc.text(`Description:`, 10, 30);
-    this.doc.setFont("helvetica", "normal");
-    this.doc.text(subtitle, 40, 30);
-
-    this.doc.line(10, 35, effectiveWidth - 10, 35);
-    this.currentY = 45;
-  }
-
-  private addFooter(pageNumber: number, projectName: string) {
-    const totalPages = this.doc.getNumberOfPages();
-    const width = this.doc.internal.pageSize.width;
-    const height = this.doc.internal.pageSize.height;
-
-    this.doc.setFontSize(8);
-    this.doc.setFont("helvetica", "italic");
-    this.doc.setTextColor(100);
+    // 3. Scenario Tag
+    this.currentY += 15;
+    this.doc.setFontSize(18);
+    this.doc.setTextColor(COLORS.text);
+    this.doc.text("Investment Memorandum", 20, this.currentY);
     
-    this.doc.line(10, height - 15, width - 10, height - 15);
-    this.doc.text("Generated by DevFeas Pro | Professional Edition", 10, height - 10);
-    this.doc.text(`Page ${pageNumber}`, width - 10, height - 10, { align: "right" });
-  }
-
-  // --- PAGE 1: EXECUTIVE SUMMARY ---
-  private addExecutiveSummary(site: Site, scenario: FeasibilityScenario, stats: any) {
-    this.addHeader(scenario.name, site.name);
-    
-    this.doc.setFont("helvetica", "bold");
+    this.currentY += 8;
     this.doc.setFontSize(12);
-    this.doc.text("Executive Dashboard", 10, this.currentY);
-    this.currentY += 10;
+    this.doc.setTextColor(COLORS.secondary);
+    this.doc.text(`Scenario: ${scenario.name}`, 20, this.currentY);
 
-    // KPI Grid
-    const kpis = [
-      ["Net Profit", formatCurrency(stats.profit)],
-      ["Dev Margin", formatPct(stats.margin)],
-      ["Equity IRR", formatPct(stats.irr)],
-      ["Peak Debt", formatCurrency(stats.peakTotalDebt)],
-      ["Total Cost", formatCurrency(stats.totalOut)],
-      ["Duration", `${scenario.settings.durationMonths} Months`]
-    ];
-
-    autoTable(this.doc, {
-      startY: this.currentY,
-      head: [['Metric', 'Value', 'Metric', 'Value']],
-      body: [
-        [kpis[0][0], kpis[0][1], kpis[1][0], kpis[1][1]],
-        [kpis[2][0], kpis[2][1], kpis[3][0], kpis[3][1]],
-        [kpis[4][0], kpis[4][1], kpis[5][0], kpis[5][1]],
-      ],
-      theme: 'grid',
-      headStyles: { fillColor: THEME.primary, textColor: 255, fontStyle: 'bold' },
-      styles: { font: "courier", fontSize: 10, cellPadding: 4 },
-      columnStyles: {
-        0: { font: "helvetica", fontStyle: "bold", fillColor: 245 },
-        2: { font: "helvetica", fontStyle: "bold", fillColor: 245 }
-      }
-    });
-
-    this.currentY = (this.doc as any).lastAutoTable.finalY + 15;
-
-    // Narrative
-    this.doc.setFont("helvetica", "bold");
-    this.doc.text("Project Commentary", 10, this.currentY);
-    this.currentY += 6;
-    this.doc.setFont("helvetica", "normal");
+    // 4. Footer Info
     this.doc.setFontSize(10);
-    const desc = scenario.settings.description || "No description provided.";
-    const splitDesc = this.doc.splitTextToSize(desc, 190);
-    this.doc.text(splitDesc, 10, this.currentY);
+    this.doc.setTextColor(150);
+    this.doc.text(`Date: ${new Date().toLocaleDateString()}`, 20, pageHeight - 30);
+    this.doc.text("Prepared by DevFeas Pro", 20, pageHeight - 25);
+    this.doc.text("Commercial in Confidence", pageWidth - 20, pageHeight - 25, { align: 'right' });
   }
 
-  // --- PAGE 2: VALUER'S P&L (The Feastudy Style) ---
-  private addValuersPnL(scenario: FeasibilityScenario, siteDNA: SiteDNA, stats: any) {
-    this.addHeader(scenario.name, "Itemised Profit & Loss (Valuer's Style)");
+  // --- COMPONENT: ASSET DNA (Fact Sheet) ---
+  private addAssetFactSheet(site: Site, scenario: FeasibilityScenario, stats: any) {
+    // Kept as legacy support, but addFeasibilitySummary is now primary page 2.
+    // We can merge this or keep it. Let's keep it but skip header if already rendered.
+  }
 
-    // Pre-Process Data Structure for 3-Column Table
-    // Col 1: Description (Indented)
-    // Col 2: Inner Amount (Individual Items)
-    // Col 3: Outer Amount (Subtotals/Totals)
-
-    const rows: any[] = [];
-    const pushRow = (desc: string, inner: string | null, outer: string | null, style: 'header'|'item'|'total'|'spacer' = 'item') => {
-        rows.push({ desc, inner, outer, style });
-    };
+  // --- COMPONENT: VALUER'S P&L ---
+  private addValuersPnL(scenario: FeasibilityScenario, siteDNA: SiteDNA, metrics: any) {
+    this.addPageHeader("Financial Analysis", "Profit & Loss Statement", false);
 
     const reportStats = FinanceEngine.calculateReportStats(scenario, siteDNA);
+    const rows: any[] = [];
 
-    // 1. REVENUE SECTION
-    pushRow("INCOME", null, null, 'header');
-    pushRow("Gross Sales Revenue", formatCurrency(reportStats.totalRevenueGross), null);
-    pushRow("Less: GST Liability", formatCurrency(reportStats.gstCollected * -1), null);
-    pushRow("NET REALISATION", null, formatCurrency(reportStats.netRealisation), 'total');
-    pushRow("", null, null, 'spacer');
-
-    // 2. COSTS SECTION
-    pushRow("LESS DEVELOPMENT COSTS", null, null, 'header');
-
-    // Helper to process a category
-    const processCategory = (catName: string, catId: CostCategory) => {
-        const items = scenario.costs.filter(c => c.category === catId);
-        if (items.length === 0) return;
-
-        // Calculate Category Total
-        const constructionSum = scenario.costs.filter(c => c.category === CostCategory.CONSTRUCTION).reduce((a,b)=>a+b.amount,0);
-        const revenueSum = reportStats.totalRevenueGross;
-        const total = items.reduce((sum, item) => sum + FinanceEngine.calculateLineItemTotal(item, scenario.settings, siteDNA, constructionSum, revenueSum), 0);
-
-        pushRow(catName, null, null, 'header');
-        items.forEach(item => {
-            const val = FinanceEngine.calculateLineItemTotal(item, scenario.settings, siteDNA, constructionSum, revenueSum);
-            pushRow(item.description, formatCurrency(val), null);
-        });
-        pushRow(`Total ${catName}`, null, formatCurrency(total), 'total');
-        pushRow("", null, null, 'spacer');
+    // Helper to format rows for autoTable
+    const addRow = (label: string, detail: string | null, subtotal: string | null, style: 'header'|'item'|'total'|'spacer' = 'item') => {
+        rows.push({ label, detail, subtotal, style });
     };
 
-    processCategory("Acquisition Costs", CostCategory.LAND);
-    processCategory("Construction Costs", CostCategory.CONSTRUCTION);
-    processCategory("Consultant Fees", CostCategory.CONSULTANTS);
-    processCategory("Statutory & Authorities", CostCategory.STATUTORY);
-    processCategory("Selling & Marketing", CostCategory.SELLING);
-    processCategory("Miscellaneous", CostCategory.MISCELLANEOUS);
+    // 1. Revenue
+    addRow("GROSS REALISATION", null, null, 'header');
+    addRow("Gross Sales Revenue", formatCurrency(reportStats.totalRevenueGross), null);
+    addRow("Less: GST Liability", formatCurrency(reportStats.gstCollected * -1), null);
+    addRow("NET REALISATION", null, formatCurrency(reportStats.netRealisation), 'total');
+    addRow("", null, null, 'spacer');
 
-    // Finance
-    pushRow("Finance Costs", null, null, 'header');
-    pushRow("Interest & Line Fees", null, formatCurrency(stats.interestTotal), 'total');
+    // 2. Costs
+    addRow("DEVELOPMENT COSTS", null, null, 'header');
     
+    // Helper to process cost categories
+    const addCategory = (name: string, catId: CostCategory) => {
+        const items = scenario.costs.filter(c => c.category === catId);
+        if (items.length === 0) return;
+        
+        addRow(name, null, null, 'header');
+        
+        // Sum construction for % calc context if needed
+        const constructionSum = scenario.costs.filter(c => c.category === CostCategory.CONSTRUCTION).reduce((a,b)=>a+b.amount,0);
+        const revenueSum = reportStats.totalRevenueGross;
+
+        let catTotal = 0;
+        items.forEach(item => {
+            const val = FinanceEngine.calculateLineItemTotal(item, scenario.settings, siteDNA, constructionSum, revenueSum);
+            catTotal += val;
+            addRow(item.description, formatCurrency(val), null, 'item');
+        });
+        addRow(`Total ${name}`, null, formatCurrency(catTotal), 'total');
+        addRow("", null, null, 'spacer');
+    };
+
+    addCategory("Acquisition Costs", CostCategory.LAND);
+    addCategory("Construction Costs", CostCategory.CONSTRUCTION);
+    addCategory("Professional Fees", CostCategory.CONSULTANTS);
+    addCategory("Statutory & Authorities", CostCategory.STATUTORY);
+    addCategory("Selling & Marketing", CostCategory.SELLING);
+    addCategory("Finance Costs", CostCategory.FINANCE); // Items if any manually added
+
+    // Calculated Finance (Interest)
+    addRow("Finance Costs (Calculated)", null, null, 'header');
+    addRow("Interest & Line Fees", null, formatCurrency(metrics.totalFinanceCost), 'total');
+    addRow("", null, null, 'spacer');
+
     // Bottom Line
-    pushRow("", null, null, 'spacer');
-    pushRow("TOTAL DEVELOPMENT COST", null, formatCurrency(stats.totalOut), 'header');
-    pushRow("", null, null, 'spacer');
-    
-    // Profit
-    pushRow("NET DEVELOPMENT PROFIT", null, formatCurrency(stats.profit), 'header');
-    pushRow("DEVELOPMENT MARGIN", null, formatPct(stats.margin), 'total');
+    // metrics.totalDevelopmentCost is Net. To match Valuer P&L usually we show Gross Costs? 
+    // Standard practice is Net Costs + GST = Gross. Or Net Costs.
+    // The previous logic used `stats.totalOut`.
+    // Let's use the explicit calculated finance cost + other costs.
+    addRow("TOTAL DEVELOPMENT COSTS", null, formatCurrency(metrics.totalDevelopmentCost + metrics.gstInputCredits), 'header'); // Gross for P&L
+    addRow("", null, null, 'spacer');
+    addRow("NET DEVELOPMENT PROFIT", null, formatCurrency(metrics.netProfit), 'header');
+    addRow("DEVELOPMENT MARGIN", null, formatPct(metrics.devMarginPct), 'total');
 
-    // RENDER TABLE
+    // Render Table
     autoTable(this.doc, {
         startY: this.currentY,
-        head: [['Description', 'Amount', 'Subtotal']],
-        body: rows.map(r => [r.desc, r.inner, r.outer]),
+        head: [['Item', 'Amount', 'Subtotal']],
+        body: rows.map(r => [r.label, r.detail, r.subtotal]),
         theme: 'plain',
-        styles: { fontSize: 9, cellPadding: 2, font: "helvetica" },
+        styles: { fontSize: 9, cellPadding: 1.5, font: FONTS.body },
         columnStyles: {
             0: { cellWidth: 110 },
-            1: { cellWidth: 40, halign: 'right', font: "courier" },
-            2: { cellWidth: 40, halign: 'right', font: "courier", fontStyle: 'bold' }
+            1: { cellWidth: 40, halign: 'right', font: FONTS.mono },
+            2: { cellWidth: 40, halign: 'right', font: FONTS.mono, fontStyle: 'bold' }
         },
         didParseCell: (data) => {
-            const rowIdx = data.row.index;
-            const style = rows[rowIdx].style;
-
+            const rowInfo = rows[data.row.index];
             if (data.section === 'head') {
-                data.cell.styles.fillColor = THEME.primary;
+                data.cell.styles.fillColor = COLORS.primary;
                 data.cell.styles.textColor = 255;
+                data.cell.styles.fontStyle = 'bold';
             }
-
             if (data.section === 'body') {
-                if (style === 'header') {
-                    if (data.column.index === 0) data.cell.styles.fontStyle = 'bold';
-                    data.cell.styles.fillColor = THEME.headerFill;
-                } else if (style === 'item') {
-                    if (data.column.index === 0) data.cell.styles.cellPadding = { top: 2, bottom: 2, left: 8, right: 2 };
-                } else if (style === 'total') {
+                if (rowInfo.style === 'header') {
+                    data.cell.styles.fillColor = COLORS.lightGray;
                     data.cell.styles.fontStyle = 'bold';
-                    if (data.column.index === 2) data.cell.styles.lineWidth = { top: 0.1, bottom: 0, left: 0, right: 0 };
+                    if (rowInfo.label.includes("NET DEVELOPMENT PROFIT")) {
+                        data.cell.styles.textColor = COLORS.accent;
+                    }
+                } else if (rowInfo.style === 'item') {
+                    if (data.column.index === 0) data.cell.styles.cellPadding = { top: 1, bottom: 1, left: 8, right: 1 };
+                } else if (rowInfo.style === 'total') {
+                    if (data.column.index === 2) {
+                        // Top Border for totals
+                        data.cell.styles.lineWidth = { top: 0.1, bottom: 0, left: 0, right: 0 };
+                    }
                 }
             }
         }
     });
   }
 
-  // --- PAGE 3: ITEMISED CASHFLOW (Chunked) ---
-  private addItemisedCashflow(data: ItemisedCashflow, projectName: string, startPageNum: number) {
-    const monthsPerPage = 12; // Strictly 12 months for readable A4 landscape
-    const totalMonths = data.headers.length;
-    const totalPagesHorizontal = Math.ceil(totalMonths / monthsPerPage);
-    let currentPageNum = startPageNum;
+  // --- COMPONENT: SENSITIVITY ANALYSIS ---
+  private addSensitivityAnalysis(matrix: SensitivityCell[][], scenario: FeasibilityScenario) {
+    this.addPageHeader("Risk Analysis", "Sensitivity Matrix (Cost vs Revenue)", false);
 
-    for (let i = 0; i < totalPagesHorizontal; i++) {
-        this.doc.addPage("a4", "landscape");
-        const pageWidth = 297;
-        
-        // Custom Header for Cashflow Pages
-        this.doc.setFont("helvetica", "bold");
-        this.doc.setFontSize(14);
-        this.doc.text("ITEMISED COST CASHFLOW", pageWidth / 2, 15, { align: "center" });
-        this.doc.setFontSize(10);
-        this.doc.setFont("helvetica", "normal");
-        const startM = i * monthsPerPage;
-        const endM = Math.min((i + 1) * monthsPerPage, totalMonths);
-        this.doc.text(`Period: Month ${startM + 1} to Month ${endM}`, pageWidth / 2, 20, { align: "center" });
-        this.currentY = 30;
+    // Get axis steps from service logic (Assuming -10% to +10% standard for this visual)
+    // We recreate labels based on standard steps
+    const steps = [-15, -10, -5, 0, 5, 10, 15];
+    const headerRow = ['Cost \\ Rev', ...steps.map(s => s > 0 ? `+${s}%` : `${s}%`)];
 
-        // Slice Data
-        const currentHeaders = data.headers.slice(startM, endM);
-        
-        // Build Pre-Processed Rows for AutoTable
-        const tableBody: any[] = [];
-        
-        // Helper to push stylized rows
-        const addHeaderRow = (label: string) => {
-            tableBody.push({ 0: label, type: 'header' });
-        };
-        const addItemRow = (label: string, values: number[]) => {
-            // Filter out empty rows? No, bankers want to see zeros if the item exists.
-            const rowObj: any = { 0: label, type: 'item' };
-            values.forEach((v, idx) => {
-                rowObj[idx + 1] = v === 0 ? '-' : Math.round(v).toLocaleString();
-            });
-            // Total Column (Only on last page? Or running total? Feastudy usually sums the visible range or has a total column at very end)
-            // We will add a "Page Total" or just keep it simple.
-            // Feastudy screenshot shows "Subtotals" column.
-            const rowSum = values.reduce((a,b) => a+b, 0);
-            rowObj[currentHeaders.length + 1] = formatCurrency(rowSum);
-            
-            tableBody.push(rowObj);
-        };
+    // Build Body
+    const body = matrix.map((row, i) => {
+        const yLabel = steps[i] > 0 ? `+${steps[i]}%` : `${steps[i]}%`;
+        const cells = row.map(cell => cell.margin.toFixed(2) + '%');
+        return [yLabel, ...cells];
+    });
 
-        // Iterate Categories
-        data.categories.forEach(cat => {
-            // Only add category if it has non-zero total in this chunk OR generally not empty?
-            // Cleanest report removes zero-sum lines for the period.
-            const catSliceTotal = cat.monthlyTotals.slice(startM, endM).reduce((a,b)=>a+b, 0);
-            
-            // Allow printing empty categories if they are major ones (Construction), otherwise skip
-            if (catSliceTotal === 0 && cat.total === 0) return;
+    this.doc.setFontSize(10);
+    this.doc.text("Table displays Development Margin (%)", 20, this.currentY);
+    this.currentY += 5;
 
-            addHeaderRow(cat.name.toUpperCase());
-            
-            cat.rows.forEach(row => {
-                const slice = row.values.slice(startM, endM);
-                const sliceTotal = slice.reduce((a,b) => a+b, 0);
-                if (row.total > 0 || sliceTotal > 0) {
-                    addItemRow(row.label, slice);
+    autoTable(this.doc, {
+        startY: this.currentY,
+        head: [headerRow],
+        body: body,
+        theme: 'grid',
+        headStyles: { fillColor: COLORS.primary, halign: 'center' },
+        columnStyles: { 0: { fontStyle: 'bold', fillColor: COLORS.lightGray, halign: 'center' } },
+        styles: { halign: 'center', cellPadding: 4, fontSize: 10 },
+        didParseCell: (data) => {
+            if (data.section === 'body' && data.column.index > 0) {
+                const val = parseFloat(data.cell.raw as string);
+                data.cell.styles.fontStyle = 'bold';
+                if (val < 0) {
+                    data.cell.styles.fillColor = "#fecaca"; // Red 200
+                    data.cell.styles.textColor = "#991b1b"; // Red 800
+                } else if (val < 10) {
+                    data.cell.styles.fillColor = "#fde68a"; // Amber 200
+                    data.cell.styles.textColor = "#92400e"; // Amber 800
+                } else if (val >= 20) {
+                    data.cell.styles.fillColor = "#bbf7d0"; // Green 200
+                    data.cell.styles.textColor = "#166534"; // Green 800
                 }
-            });
+            }
+        }
+    });
+  }
 
-            // Category Subtotal Row
-            const catRow: any = { 0: `Total ${cat.name}`, type: 'subtotal' };
-            cat.monthlyTotals.slice(startM, endM).forEach((v, idx) => {
-                catRow[idx + 1] = formatCurrency(v);
-            });
-            catRow[currentHeaders.length + 1] = formatCurrency(catSliceTotal);
-            tableBody.push(catRow);
-        });
+  // --- COMPONENT: RISK REPORT (Detailed Vertical Sensitivity) ---
+  private addRiskReport(riskTables: Record<string, SensitivityRow[]>, projectName: string) {
+    this.addPageHeader("Risk & Sensitivity Report", "Variable Impact Analysis", false);
 
-        // Net Cashflow Row
-        const netSlice = data.netCashflow.slice(startM, endM);
-        const netRow: any = { 0: "NET MONTHLY FLOW", type: 'net' };
-        netSlice.forEach((v, idx) => netRow[idx + 1] = formatCurrency(v));
-        netRow[currentHeaders.length + 1] = formatCurrency(netSlice.reduce((a,b)=>a+b, 0));
-        tableBody.push(netRow);
+    const renderTable = (title: string, data: SensitivityRow[], inputHeader: string) => {
+        if (this.currentY > 230) {
+            this.doc.addPage();
+            this.addPageHeader("Risk & Sensitivity Report (Cont.)", "Variable Impact Analysis", false);
+        }
 
-        // Columns
-        const columns = [
-            { header: 'Item', dataKey: '0' },
-            ...currentHeaders.map((h, idx) => ({ header: h, dataKey: (idx + 1).toString() })),
-            { header: 'Period Total', dataKey: (currentHeaders.length + 1).toString() }
-        ];
+        this.doc.setFont(FONTS.header, "bold");
+        this.doc.setFontSize(11);
+        this.doc.setTextColor(COLORS.text);
+        this.doc.text(title, 20, this.currentY);
+        this.currentY += 3;
 
-        // Render
         autoTable(this.doc, {
             startY: this.currentY,
-            columns: columns,
-            body: tableBody,
-            theme: 'plain',
-            styles: { fontSize: 7, cellPadding: 1.5, font: "courier", halign: 'right' },
+            head: [['Variance', inputHeader, 'Total Dev Cost', 'Net Profit', 'Margin', 'IRR']],
+            body: data.map(row => [
+                row.varianceLabel,
+                // Format input value based on type? Assuming $ usually, but Time is Months, Rate is %
+                inputHeader.includes('Month') ? row.variableValue + ' Mo' : 
+                inputHeader.includes('Rate') ? row.variableValue.toFixed(2) + '%' : 
+                formatCurrency(row.variableValue),
+                formatCurrency(row.devCost),
+                formatCurrency(row.netProfit),
+                formatPct(row.margin),
+                formatPct(row.irr)
+            ]),
+            theme: 'striped',
+            styles: { fontSize: 9, cellPadding: 2, halign: 'right', font: FONTS.mono },
             columnStyles: { 
-                0: { halign: 'left', cellWidth: 50, font: "helvetica" } // Description Col
+                0: { halign: 'left', fontStyle: 'bold', font: FONTS.body },
+                1: { fontStyle: 'bold' }
             },
-            headStyles: { fillColor: THEME.primary, textColor: 255, halign: 'center', font: "helvetica", fontStyle: "bold" },
+            headStyles: { fillColor: COLORS.secondary, halign: 'center' },
             didParseCell: (data) => {
+                const rowData = data.row.raw as any; // Access raw data to check values
+                
+                // Highlight Base Case Row
+                const rowIndex = data.row.index;
+                const isBaseCase = data.table.body[rowIndex].raw[0] === 'Base Case';
+                
                 if (data.section === 'body') {
-                    const type = data.row.raw.type;
-                    
-                    if (type === 'header') {
-                        data.cell.styles.font = "helvetica";
+                    if (isBaseCase) {
+                        data.cell.styles.fillColor = "#e0f2fe"; // Light Blue
                         data.cell.styles.fontStyle = 'bold';
-                        data.cell.styles.fillColor = THEME.headerFill;
-                        data.cell.styles.halign = 'left';
-                    } 
-                    else if (type === 'item') {
-                        if (data.column.index === 0) {
-                            data.cell.styles.cellPadding = { top: 1, bottom: 1, left: 6, right: 2 }; // Indent
-                        }
                     }
-                    else if (type === 'subtotal') {
-                        data.cell.styles.fontStyle = 'bold';
-                        data.cell.styles.fillColor = 250; // Very light grey
-                        if (data.column.index === 0) data.cell.styles.halign = 'right'; // Align "Total X" to right of label col
-                        // Top border for sums
-                        data.cell.styles.lineWidth = { top: 0.1, bottom: 0, left: 0, right: 0 };
+
+                    // Conditional Formatting for Margin (Col 4) & IRR (Col 5)
+                    // Note: Column index depends on visible columns. Here 4=Margin, 5=IRR.
+                    if (data.column.index === 4) { // Margin
+                        const val = parseFloat(data.cell.raw as string);
+                        if (val < 15) data.cell.styles.textColor = "#dc2626"; // Red
+                        if (val > 20) data.cell.styles.textColor = "#166534"; // Green
                     }
-                    else if (type === 'net') {
-                        data.cell.styles.fontStyle = 'bold';
-                        data.cell.styles.fillColor = THEME.primary;
-                        data.cell.styles.textColor = 255;
+                    if (data.column.index === 5) { // IRR
+                        const val = parseFloat(data.cell.raw as string);
+                        if (val < 15) data.cell.styles.textColor = "#dc2626";
+                        if (val > 20) data.cell.styles.textColor = "#166534";
                     }
                 }
             }
         });
 
-        // Add Footer to Landscape Page
-        const footerText = `Generated by DevFeas Pro | ${projectName} | Page ${currentPageNum} (Months ${startM+1}-${endM})`;
-        this.doc.setFontSize(8);
-        this.doc.setTextColor(100);
-        this.doc.text(footerText, 10, 200); // 210 is height, so 200 is near bottom
+        this.currentY = (this.doc as any).lastAutoTable.finalY + 10;
+    };
+
+    renderTable("1. Land Price Sensitivity", riskTables['land'], "Land Price");
+    renderTable("2. Construction Cost Sensitivity", riskTables['cost'], "Construction Total");
+    renderTable("3. Sales Revenue Sensitivity", riskTables['revenue'], "Gross Revenue");
+    renderTable("4. Time Sensitivity (Delays)", riskTables['duration'], "Project Duration");
+    renderTable("5. Interest Rate Sensitivity", riskTables['interest'], "Senior Rate");
+  }
+
+  // --- COMPONENT: ITEMISED CASHFLOW (Landscape) ---
+  private addItemisedCashflow(data: ItemisedCashflow, projectName: string, startPageNum: number) {
+    const monthsPerPage = 12; 
+    const totalMonths = data.headers.length;
+    const totalPagesHorizontal = Math.ceil(totalMonths / monthsPerPage);
+    let currentPageNum = startPageNum;
+
+    for (let i = 0; i < totalPagesHorizontal; i++) {
+        // Landscape Page
+        this.doc.addPage("a4", "landscape");
+        const pageWidth = 297; 
         
+        // Custom Landscape Header
+        this.addPageHeader("Cashflow Forecast", `Period: Month ${i * monthsPerPage + 1} - ${Math.min((i + 1) * monthsPerPage, totalMonths)}`, true);
+
+        // Slice Data
+        const startIdx = i * monthsPerPage;
+        const endIdx = Math.min(startIdx + monthsPerPage, totalMonths);
+        const currentHeaders = data.headers.slice(startIdx, endIdx);
+
+        // Build Table
+        const tableBody: any[] = [];
+        const columns = [
+            { header: 'Item', dataKey: '0' },
+            ...currentHeaders.map((h, idx) => ({ header: h, dataKey: (idx + 1).toString() })),
+            { header: 'Total', dataKey: (currentHeaders.length + 1).toString() }
+        ];
+
+        // Process Categories
+        data.categories.forEach(cat => {
+            // Skip empty categories to save space? Optional. 
+            // We'll keep them for consistency with board packs.
+            
+            // Header Row
+            tableBody.push({ 0: cat.name.toUpperCase(), type: 'header' });
+
+            // Items
+            cat.rows.forEach(row => {
+                const slice = row.values.slice(startIdx, endIdx);
+                const rowTotal = row.total; // Total for whole project, or page? Usually whole project in last col.
+                // Let's show Page Total for now as it makes more sense in chunks, OR project total.
+                // Standard practice: Project Total usually at very end.
+                // Let's just sum the slice for "Period Total"
+                const sliceSum = slice.reduce((a,b)=>a+b, 0);
+                
+                // Only add row if it has data in this period or generally
+                if (row.total !== 0) {
+                    const rowObj: any = { 0: row.label, type: 'item' };
+                    slice.forEach((v, k) => rowObj[k+1] = v === 0 ? '-' : Math.round(v).toLocaleString());
+                    rowObj[currentHeaders.length + 1] = formatCurrency(sliceSum);
+                    tableBody.push(rowObj);
+                }
+            });
+
+            // Subtotal
+            const subSlice = cat.monthlyTotals.slice(startIdx, endIdx);
+            const subSum = subSlice.reduce((a,b)=>a+b,0);
+            const subRow: any = { 0: `Total ${cat.name}`, type: 'subtotal' };
+            subSlice.forEach((v, k) => subRow[k+1] = formatCurrency(v));
+            subRow[currentHeaders.length + 1] = formatCurrency(subSum);
+            tableBody.push(subRow);
+        });
+
+        // Net Flow
+        const netSlice = data.netCashflow.slice(startIdx, endIdx);
+        const netSum = netSlice.reduce((a,b)=>a+b,0);
+        const netRow: any = { 0: "NET MONTHLY CASHFLOW", type: 'net' };
+        netSlice.forEach((v, k) => netRow[k+1] = formatCurrency(v));
+        netRow[currentHeaders.length + 1] = formatCurrency(netSum);
+        tableBody.push(netRow);
+
+        autoTable(this.doc, {
+            startY: this.currentY,
+            columns: columns,
+            body: tableBody,
+            theme: 'plain',
+            styles: { fontSize: 7, cellPadding: 1.5, halign: 'right', font: FONTS.mono },
+            columnStyles: { 0: { halign: 'left', cellWidth: 50, font: FONTS.body } },
+            headStyles: { fillColor: COLORS.primary, textColor: 255, halign: 'center', fontStyle: 'bold' },
+            didParseCell: (data) => {
+                if (data.section === 'body') {
+                    const type = data.row.raw.type;
+                    if (type === 'header') {
+                        data.cell.styles.fillColor = COLORS.lightGray;
+                        data.cell.styles.fontStyle = 'bold';
+                        data.cell.styles.halign = 'left';
+                    } else if (type === 'item') {
+                        if (data.column.index === 0) data.cell.styles.cellPadding = { top:1, bottom:1, left:5, right:1 };
+                    } else if (type === 'subtotal') {
+                        data.cell.styles.fontStyle = 'bold';
+                        data.cell.styles.lineWidth = { top: 0.1, bottom: 0, left:0, right:0 };
+                    } else if (type === 'net') {
+                        data.cell.styles.fillColor = COLORS.primary;
+                        data.cell.styles.textColor = 255;
+                        data.cell.styles.fontStyle = 'bold';
+                    }
+                }
+            }
+        });
+
+        this.addPageFooter(currentPageNum, projectName, true);
         currentPageNum++;
     }
   }
 
-  // --- UTILS ---
-  private renderPlaceholderImage(x: number, y: number, w: number, h: number) {
-    this.doc.setFillColor(240);
-    this.doc.rect(x, y, w, h, "F");
-    this.doc.setTextColor(150);
+  // --- HELPERS ---
+  private addPageHeader(title: string, subtitle: string, landscape: boolean) {
+    const pageWidth = landscape ? 297 : 210;
+    
+    this.doc.setFillColor(COLORS.primary);
+    this.doc.rect(0, 0, pageWidth, 20, "F");
+    
+    this.doc.setFont(FONTS.header, "bold");
+    this.doc.setFontSize(14);
+    this.doc.setTextColor(COLORS.white);
+    this.doc.text(title.toUpperCase(), 15, 13);
+    
     this.doc.setFontSize(10);
-    this.doc.text("Map / Visual Unavailable", x + w/2, y + h/2, { align: "center" });
+    this.doc.setFont(FONTS.header, "normal");
+    this.doc.text(subtitle, pageWidth - 15, 13, { align: "right" });
+    
+    this.currentY = 30;
+  }
+
+  private addPageFooter(pageNum: number, projectName: string, landscape = false) {
+    const pageWidth = landscape ? 297 : 210;
+    const pageHeight = landscape ? 210 : 297;
+
+    this.doc.setDrawColor(COLORS.border);
+    this.doc.line(15, pageHeight - 15, pageWidth - 15, pageHeight - 15);
+    
+    this.doc.setFontSize(8);
+    this.doc.setTextColor(100);
+    this.doc.text("DevFeas Pro | Commercial in Confidence", 15, pageHeight - 10);
+    this.doc.text(`Page ${pageNum}`, pageWidth - 15, pageHeight - 10, { align: "right" });
   }
 }

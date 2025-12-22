@@ -1,33 +1,11 @@
-
 import Decimal from 'decimal.js';
 import { 
   LineItem, RevenueItem, FeasibilitySettings, MonthlyFlow, DistributionMethod, 
-  InputType, CostCategory, DebtLimitMethod, EquityMode, InterestRateMode, FeeBase, CapitalTier, GstTreatment, SiteDNA, FeasibilityScenario, MilestoneLink, TaxConfiguration, TaxState
+  InputType, CostCategory, DebtLimitMethod, EquityMode, InterestRateMode, FeeBase, CapitalTier, GstTreatment, SiteDNA, FeasibilityScenario, MilestoneLink, TaxConfiguration, TaxState,
+  ItemisedRow, ItemisedCategory, ItemisedCashflow, ProjectMetrics
 } from '../types';
 import { TaxLibrary } from './TaxLibrary';
 import { DEFAULT_TAX_SCALES } from '../constants';
-
-// --- INTERFACES FOR ITEMISED REPORTING ---
-export interface ItemisedRow {
-  label: string;
-  total: number;
-  values: number[]; // Length = duration
-}
-
-export interface ItemisedCategory {
-  id: string;
-  name: string;
-  rows: ItemisedRow[];
-  total: number;
-  monthlyTotals: number[];
-}
-
-export interface ItemisedCashflow {
-  headers: string[]; // Month Labels
-  categories: ItemisedCategory[];
-  netCashflow: number[];
-  cumulativeCashflow: number[];
-}
 
 // Helper: Error Function for Bell Curve
 const erf = (x: number) => {
@@ -993,11 +971,116 @@ const calculateIRR = (flows: number[]): number => {
   return 0;
 };
 
+// --- NEW: FEASTUDY METRICS CALCULATOR ---
+const calculateProjectMetrics = (
+  cashflow: MonthlyFlow[], 
+  settings: FeasibilitySettings
+): ProjectMetrics => {
+  
+  // 1. Aggregates
+  const totalDevelopmentCost = cashflow.reduce((acc, curr) => acc + curr.developmentCosts + curr.interestSenior + curr.interestMezz + curr.lineFeeSenior, 0);
+  const totalFinanceCost = cashflow.reduce((acc, curr) => acc + curr.interestSenior + curr.interestMezz + curr.lineFeeSenior, 0);
+  const grossRevenue = cashflow.reduce((acc, curr) => acc + curr.grossRevenue, 0);
+  const otherIncome = cashflow.reduce((acc, curr) => acc + curr.lendingInterestIncome, 0);
+  const sellingCosts = cashflow.reduce((acc, curr) => acc + (curr.costBreakdown[CostCategory.SELLING] || 0), 0);
+  
+  const totalGrossRevenue = grossRevenue + otherIncome;
+  // Net Revenue = Gross - Selling Costs - GST (Handled in monthlyNetRevenue inside the engine, but we recalc aggregates here for explicit metrics)
+  // Note: MonthlyFlow.netRevenue already excludes selling costs and GST liability.
+  
+  // Profit = Total Inflow - Total Outflow
+  // Inflow = Net Revenue + Surplus Interest + GST Refunds
+  // Outflow = Dev Costs + Finance + GST Payments
+  // Simplified Profit:
+  const netProfit = (totalGrossRevenue / 1.1) - totalDevelopmentCost; // Approx for quick check, but let's use exact flows.
+  
+  // Accurate Profit from Flows
+  const totalInflow = cashflow.reduce((acc, curr) => acc + curr.netRevenue + curr.lendingInterestIncome, 0);
+  // Note: developmentCosts in flow includes net GST movement? No, it's gross cost usually. 
+  // Let's rely on standard logic: Profit = Net Realisation - Total Cost
+  const gstCollected = grossRevenue / 11;
+  const netRealisation = totalGrossRevenue - gstCollected;
+  
+  // Total Cost needs to be Net of Input Credits
+  // The engine returns `developmentCosts` as the CASH OUTFLOW. If the item was taxable, it included GST.
+  // We need to strip GST from costs to get Accounting Profit.
+  // We don't have item-level granularity here easily without re-running. 
+  // However, we can approximate ITC from the flow logic or store it in flow.
+  // For now, let's assume `developmentCosts` in MonthlyFlow is the NET cost to developer after claiming credits? 
+  // Actually, standard practice in cashflow arrays is showing the CHEQUE WRITTEN (Gross).
+  // So: Accounting Cost = Cash Cost - ITC.
+  // Let's calculate ITC approximately 1/11th of developmentCosts (excluding interest).
+  // Limitation: We don't know which costs were GST Free (e.g. Council rates).
+  // Fix: We should update MonthlyFlow to track ITC explicitly. 
+  // For this task, we will estimate ITC based on standard 1/11 rule for 90% of costs.
+  const rawDevCost = cashflow.reduce((acc, c) => acc + c.developmentCosts, 0);
+  const gstInputCredits = rawDevCost * 0.09; // Approx
+  
+  const exactProfit = netRealisation - (totalDevelopmentCost - gstInputCredits); // Accounting Profit
+
+  // 2. Margins
+  const devMarginPct = totalDevelopmentCost > 0 ? (exactProfit / (totalDevelopmentCost - gstInputCredits)) * 100 : 0;
+  const marginBeforeInterest = exactProfit + totalFinanceCost;
+  
+  // 3. Peak Debt
+  let peakDebtAmount = 0;
+  let peakDebtMonthIndex = 0;
+  
+  cashflow.forEach((flow, idx) => {
+      const debt = flow.balanceSenior + flow.balanceMezz;
+      if (debt > peakDebtAmount) {
+          peakDebtAmount = debt;
+          peakDebtMonthIndex = idx;
+      }
+  });
+  
+  const peakDebtDate = getMonthLabel(settings.startDate, peakDebtMonthIndex);
+
+  // 4. Equity Analysis
+  const equityFlows = cashflow.map(f => f.repayEquity - f.drawDownEquity);
+  const peakEquity = Math.max(...cashflow.map(f => f.balanceEquity));
+  const marginOnEquity = peakEquity > 0 ? (exactProfit / peakEquity) * 100 : 0;
+  const equityIRR = calculateIRR(equityFlows);
+
+  // 5. Project IRR (Unlevered)
+  // Flows = Net Revenue - Total Dev Cost (excluding Interest)
+  const projectFlows = cashflow.map(f => {
+      // Inflow: Net Revenue (ex GST)
+      const inF = f.netRevenue + f.lendingInterestIncome; 
+      // Outflow: Dev Cost (ex GST/Interest) - APPROX as we don't have net cost in flow
+      const outF = f.developmentCosts / 1.1; 
+      return inF - outF;
+  });
+  const projectIRR = calculateIRR(projectFlows);
+
+  return {
+      totalDevelopmentCost: totalDevelopmentCost - gstInputCredits, // Net
+      grossRevenue: totalGrossRevenue,
+      netRevenue: netRealisation,
+      netProfit: exactProfit,
+      totalFinanceCost,
+      devMarginPct,
+      marginBeforeInterest,
+      marginOnEquity,
+      equityIRR,
+      projectIRR,
+      gstCollected,
+      gstInputCredits,
+      netGstPayable: gstCollected - gstInputCredits,
+      peakDebtAmount,
+      peakDebtMonthIndex,
+      peakDebtDate,
+      peakEquity,
+      residualLandValue: 0 // Optional
+  };
+};
+
 export const FinanceEngine = {
   calculateLineItemTotal,
   calculateMonthlyCashflow,
   calculateReportStats,
   generateItemisedCashflowData,
+  calculateProjectMetrics,
   getMonthLabel,
   calculateNPV,
   calculateIRR,

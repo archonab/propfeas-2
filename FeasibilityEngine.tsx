@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { FeasibilitySettings, LineItem, RevenueItem, CostCategory, DistributionMethod, InputType, ScenarioStatus, GstTreatment, Site, SmartRates, FeasibilityScenario, TaxConfiguration } from './types';
 import { FinanceEngine } from './services/financeEngine';
 import { SolverService } from './services/solverService';
@@ -18,6 +18,7 @@ import { GlossaryTerm } from './glossary';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Legend } from 'recharts';
 import { DEFAULT_TAX_SCALES } from './constants';
 import { PdfService } from './services/pdfService';
+import { SensitivityService } from './services/sensitivityService';
 
 interface Props {
   site: Site; 
@@ -39,17 +40,17 @@ const StickyKpiHeader = ({ stats, strategy, siteName }: { stats: any, strategy: 
       <div className="md:hidden flex justify-between items-center mb-1 pb-1 border-b border-slate-100">
           <span className="text-[10px] font-bold text-slate-500 uppercase truncate max-w-[200px]">{siteName}</span>
           <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wide ${
-              stats.margin > 15 ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
+              stats.devMarginPct > 15 ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
           }`}>
-              {stats.margin > 15 ? 'Feasible' : 'Review'}
+              {stats.devMarginPct > 15 ? 'Feasible' : 'Review'}
           </span>
       </div>
 
       <div className="flex justify-between md:justify-start md:space-x-8 overflow-x-auto no-scrollbar items-end w-full md:w-auto">
           <div className="flex flex-col">
               <span className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-widest">Net Profit</span>
-              <span className={`text-sm md:text-lg font-black font-mono leading-none ${stats.profit > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                  ${(stats.profit/1000000).toFixed(2)}m
+              <span className={`text-sm md:text-lg font-black font-mono leading-none ${stats.netProfit > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                  ${(stats.netProfit/1000000).toFixed(2)}m
               </span>
           </div>
           <div className="w-px h-6 bg-slate-100 mx-2 md:mx-0"></div>
@@ -57,8 +58,8 @@ const StickyKpiHeader = ({ stats, strategy, siteName }: { stats: any, strategy: 
               <span className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center">
                   Margin <span className="hidden md:inline"><HelpTooltip term="MDC" className="ml-1 text-slate-300" /></span>
               </span>
-              <span className={`text-sm md:text-lg font-black font-mono leading-none ${stats.margin > 15 ? 'text-slate-800' : 'text-amber-500'}`}>
-                  {stats.margin.toFixed(2)}%
+              <span className={`text-sm md:text-lg font-black font-mono leading-none ${stats.devMarginPct > 15 ? 'text-slate-800' : 'text-amber-500'}`}>
+                  {stats.devMarginPct.toFixed(2)}%
               </span>
           </div>
           <div className="w-px h-6 bg-slate-100 mx-2 md:mx-0"></div>
@@ -67,7 +68,7 @@ const StickyKpiHeader = ({ stats, strategy, siteName }: { stats: any, strategy: 
                   IRR <span className="hidden md:inline"><HelpTooltip term="IRR" className="ml-1 text-slate-300" /></span>
               </span>
               <span className="text-sm md:text-lg font-black font-mono leading-none text-indigo-600">
-                  {stats.irr.toFixed(1)}%
+                  {stats.equityIRR.toFixed(1)}%
               </span>
           </div>
           {strategy === 'SELL' && (
@@ -86,11 +87,11 @@ const StickyKpiHeader = ({ stats, strategy, siteName }: { stats: any, strategy: 
       {/* Desktop Badge */}
       <div className="hidden md:flex items-center space-x-2">
           <span className={`px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest border ${
-              stats.margin > 15 
+              stats.devMarginPct > 15 
               ? 'bg-emerald-50 text-emerald-600 border-emerald-100' 
               : 'bg-amber-50 text-amber-600 border-amber-100'
           }`}>
-              {stats.margin > 15 ? 'Feasible' : 'Review'}
+              {stats.devMarginPct > 15 ? 'Feasible' : 'Review'}
           </span>
       </div>
   </div>
@@ -121,6 +122,11 @@ export const FeasibilityEngine: React.FC<Props> = ({
   
   const [isSolving, setIsSolving] = useState(false);
 
+  // --- AUTO-SAVE GUARD ---
+  // We use a Ref to track if the component has completed its initial data load.
+  // This prevents the 'useEffect' below from triggering an immediate save on mount/view.
+  const isInitialized = useRef(false);
+
   // Find Linked Scenario if applicable
   const linkedScenario = useMemo(() => {
       if (activeScenario.strategy === 'HOLD' && activeScenario.linkedSellScenarioId) {
@@ -140,6 +146,11 @@ export const FeasibilityEngine: React.FC<Props> = ({
 
   // Sync back to parent when local state changes
   useEffect(() => {
+    if (!isInitialized.current) {
+        // Skip the first run (initialization) to avoid updating 'lastUpdated' just by viewing
+        isInitialized.current = true;
+        return;
+    }
     if (onSaveScenario) {
       onSaveScenario(currentScenarioState);
     }
@@ -147,6 +158,9 @@ export const FeasibilityEngine: React.FC<Props> = ({
 
   // Update local state if activeScenario changes from outside (e.g. switching scenarios)
   useEffect(() => {
+    // Reset the guard when switching scenarios so we don't save the previous state into the new one
+    isInitialized.current = false;
+    
     setSettings(activeScenario.settings);
     setCosts(activeScenario.costs);
     setRevenues(activeScenario.revenues);
@@ -159,46 +173,26 @@ export const FeasibilityEngine: React.FC<Props> = ({
     [currentScenarioState, site.dna, linkedScenario, taxScales]
   );
 
+  // Updated to use the new calculateProjectMetrics
   const stats = useMemo(() => {
-    const totalOut = cashflow.reduce((acc, curr) => acc + curr.developmentCosts + curr.interestSenior + curr.interestMezz, 0);
-    const totalIn = cashflow.reduce((acc, curr) => acc + curr.netRevenue + curr.lendingInterestIncome, 0);
-    const profit = totalIn - totalOut;
-    const margin = totalOut > 0 ? (profit / totalOut) * 100 : 0;
+    const metrics = FinanceEngine.calculateProjectMetrics(cashflow, settings);
     
-    const equityFlows = cashflow.map(f => f.repayEquity - f.drawDownEquity);
-    const irr = FinanceEngine.calculateIRR(equityFlows);
-    const npv = FinanceEngine.calculateNPV(equityFlows, settings.discountRate);
-
-    const peakSenior = Math.max(...cashflow.map(f => f.balanceSenior));
-    const peakMezz = Math.max(...cashflow.map(f => f.balanceMezz));
-    const peakTotalDebt = Math.max(...cashflow.map(f => f.balanceSenior + f.balanceMezz));
-    const peakEquity = Math.max(...cashflow.map(f => f.balanceEquity));
-    
-    const ltc = totalOut > 0 ? (peakTotalDebt / totalOut) * 100 : 0;
-    const lvr = totalIn > 0 ? (peakTotalDebt / totalIn) * 100 : 0;
-
-    // Determine Construction Total based on linkage
-    let constructionTotal = 0;
-    if (isHoldStrategy && linkedScenario) {
-        // Use the linked scenario's costs
-        constructionTotal = linkedScenario.costs
-            .filter(c => c.category === CostCategory.CONSTRUCTION)
-            .reduce((acc, c) => acc + c.amount, 0);
-    } else {
-        constructionTotal = costs
-            .filter(c => c.category === CostCategory.CONSTRUCTION)
-            .reduce((acc, c) => acc + c.amount, 0);
-    }
-
-    const interestTotal = cashflow.reduce((acc, curr) => acc + curr.interestSenior + curr.interestMezz, 0);
-
-    return { 
-      profit, margin, irr, npv, totalOut, totalIn, 
-      constructionTotal, interestTotal, 
-      peakSenior, peakMezz, peakTotalDebt, peakEquity,
-      ltc, lvr
+    // Compatibility Mapping for old components if needed, or update components
+    // Legacy mapping:
+    return {
+        ...metrics,
+        profit: metrics.netProfit,
+        margin: metrics.devMarginPct,
+        irr: metrics.equityIRR,
+        peakEquity: metrics.peakEquity,
+        totalOut: metrics.totalDevelopmentCost,
+        totalIn: metrics.grossRevenue + (metrics.netRevenue - metrics.grossRevenue), // Approx
+        // Add manual calcs for charts if missing in metrics
+        ltc: (metrics.peakDebtAmount / metrics.totalDevelopmentCost) * 100,
+        constructionTotal: costs.filter(c => c.category === CostCategory.CONSTRUCTION).reduce((a,b)=>a+b.amount,0),
+        interestTotal: metrics.totalFinanceCost
     };
-  }, [cashflow, costs, settings.discountRate, linkedScenario, isHoldStrategy]);
+  }, [cashflow, costs, settings, linkedScenario, isHoldStrategy]);
 
   const handleUpdateCost = (id: string, field: keyof LineItem, value: any) => {
     if (!isEditable) return;
@@ -240,15 +234,40 @@ export const FeasibilityEngine: React.FC<Props> = ({
   const handleExportPdf = async () => {
       setIsGeneratingPdf(true);
       
-      // Delay slightly to allow UI to update
+      // Delay slightly to allow UI to update while calculations run
       setTimeout(async () => {
         try {
+            // 1. Generate Matrix for the dedicated Sensitivity Page
+            const steps = [-15, -10, -5, 0, 5, 10, 15];
+            const sensitivityMatrix = SensitivityService.generateMatrix(
+                settings,
+                costs,
+                revenues,
+                'revenue', // Default X
+                'cost',    // Default Y
+                steps,
+                steps,
+                site.dna
+            );
+
+            // 2. Generate detailed 1D Risk Tables for the new Risk Report Page
+            const riskTables = {
+                land: SensitivityService.generateSensitivityTable('land', settings, costs, revenues, site.dna),
+                cost: SensitivityService.generateSensitivityTable('cost', settings, costs, revenues, site.dna),
+                revenue: SensitivityService.generateSensitivityTable('revenue', settings, costs, revenues, site.dna),
+                duration: SensitivityService.generateSensitivityTable('duration', settings, costs, revenues, site.dna),
+                interest: SensitivityService.generateSensitivityTable('interest', settings, costs, revenues, site.dna)
+            };
+
+            // 3. Generate PDF
             await PdfService.generateBoardReport(
                 site,
                 currentScenarioState,
                 stats,
                 cashflow,
-                site.dna
+                site.dna,
+                sensitivityMatrix,
+                riskTables // Pass the new tables
             );
         } catch (e) {
             console.error("PDF Generation Error", e);
@@ -476,12 +495,15 @@ export const FeasibilityEngine: React.FC<Props> = ({
                              <span className="text-sm font-black text-slate-900">${(stats.peakEquity/1e6).toFixed(2)}M</span>
                           </div>
                           <div className="flex justify-between items-center py-2 border-b border-slate-100">
-                             <span className="text-xs font-bold text-slate-600">Development Margin</span>
-                             <span className={`text-sm font-black ${stats.margin > 15 ? 'text-emerald-600' : 'text-amber-500'}`}>{stats.margin.toFixed(2)}%</span>
+                             <span className="text-xs font-bold text-slate-600">Margin on Equity (MoE)</span>
+                             <span className={`text-sm font-black ${stats.marginOnEquity > 80 ? 'text-emerald-600' : 'text-slate-800'}`}>{stats.marginOnEquity.toFixed(1)}%</span>
                           </div>
                           <div className="flex justify-between items-center py-2 border-b border-slate-100">
-                             <span className="text-xs font-bold text-slate-600">Loan to Cost (LTC)</span>
-                             <span className={`text-sm font-black ${stats.ltc > 85 ? 'text-red-600' : 'text-slate-800'}`}>{stats.ltc.toFixed(1)}%</span>
+                             <span className="text-xs font-bold text-slate-600">Peak Debt Exposure</span>
+                             <div className="text-right">
+                                <span className="block text-sm font-black text-red-600">${(stats.peakDebtAmount/1e6).toFixed(2)}M</span>
+                                <span className="text-[9px] text-slate-400">{stats.peakDebtDate}</span>
+                             </div>
                           </div>
                       </div>
                     </div>
@@ -576,9 +598,9 @@ export const FeasibilityEngine: React.FC<Props> = ({
                          className={`flex items-center text-[10px] font-bold uppercase tracking-wider bg-slate-800 hover:bg-slate-900 text-white px-3 py-2 rounded-lg transition-all shadow-sm disabled:opacity-50 ${isGeneratingPdf ? 'w-48 justify-center' : ''}`}
                        >
                          {isGeneratingPdf ? (
-                             <><i className="fa-solid fa-circle-notch fa-spin mr-2"></i> Processing...</>
+                             <><i className="fa-solid fa-circle-notch fa-spin mr-2"></i> Generating Board Pack...</>
                          ) : (
-                             <><i className="fa-solid fa-file-invoice mr-2"></i> Feastudy Report (PDF)</>
+                             <><i className="fa-solid fa-file-invoice mr-2"></i> Export Board Pack (PDF)</>
                          )}
                        </button>
                     </div>

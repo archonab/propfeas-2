@@ -96,7 +96,50 @@ export interface TaxBracket {
 export type TaxConfiguration = Record<TaxState, Record<TaxType, TaxBracket[]>>;
 
 // --- SENSITIVITY TYPES ---
-export type SensitivityVariable = 'revenue' | 'cost' | 'duration' | 'interest';
+export type SensitivityVariable = 'revenue' | 'cost' | 'duration' | 'interest' | 'land';
+
+export interface SensitivityRow {
+  varianceLabel: string; // e.g. "+5%"
+  variableValue: number; // The input value being tested (e.g. Land Price $)
+  devCost: number;       // Total Dev Cost
+  netProfit: number;
+  margin: number;
+  irr: number;
+  isBaseCase: boolean;
+}
+
+// --- REPORTING METRICS ---
+export interface ProjectMetrics {
+  // Core Financials
+  totalDevelopmentCost: number;
+  grossRevenue: number;
+  netRevenue: number;
+  netProfit: number;
+  totalFinanceCost: number;
+  
+  // Margins
+  devMarginPct: number; // Net Profit / TDC
+  marginBeforeInterest: number; // $ Amount
+  marginOnEquity: number; // Net Profit / Peak Equity
+  
+  // Returns
+  equityIRR: number;
+  projectIRR: number; // Unlevered
+  
+  // Tax
+  gstCollected: number;
+  gstInputCredits: number;
+  netGstPayable: number;
+
+  // Debt Analysis
+  peakDebtAmount: number;
+  peakDebtMonthIndex: number;
+  peakDebtDate: string; // "Mar 2026"
+  
+  // Equity Analysis
+  peakEquity: number;
+  residualLandValue?: number;
+}
 
 // --- SITE-FIRST DATA MODEL ---
 
@@ -411,4 +454,26 @@ export interface ProjectBudget {
   baselineDate: string;
   lineItems: BudgetLineItem[];
   vendors: VendorPlaceholder[];
+}
+
+// --- REPORTING TYPES ---
+export interface ItemisedRow {
+  label: string;
+  total: number;
+  values: number[]; // Length = duration
+}
+
+export interface ItemisedCategory {
+  id: string;
+  name: string;
+  rows: ItemisedRow[];
+  total: number;
+  monthlyTotals: number[];
+}
+
+export interface ItemisedCashflow {
+  headers: string[]; // Month Labels
+  categories: ItemisedCategory[];
+  netCashflow: number[];
+  cumulativeCashflow: number[];
 }

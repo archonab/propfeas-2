@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState } from 'react';
 import { useProject } from '../contexts/SiteContext';
 import { FeasibilityScenario, Site, ScenarioStatus, LeadStatus } from '../types';
@@ -436,7 +435,15 @@ export const GlobalFeasibilityList: React.FC = () => {
 };
 
 // --- Sub-Component: Table Row ---
-const Row = ({ item, isSelected, onToggle, onClick, showSite }: { item: EnrichedScenario, isSelected: boolean, onToggle: () => void, onClick: () => void, showSite: boolean }) => {
+interface RowProps {
+  item: EnrichedScenario;
+  isSelected: boolean;
+  onToggle: () => void;
+  onClick: () => void;
+  showSite: boolean;
+}
+
+const Row: React.FC<RowProps> = ({ item, isSelected, onToggle, onClick, showSite }) => {
     return (
         <tr className={`group transition-colors ${isSelected ? 'bg-indigo-50 hover:bg-indigo-100' : 'hover:bg-slate-50'}`}>
             <td className="p-4 text-center" onClick={(e) => e.stopPropagation()}>

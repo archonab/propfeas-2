@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { Site, FeasibilityScenario, SmartRates, LineItem, TaxConfiguration, TaxState, LeadStatus, CostCategory, ScenarioStatus } from '../types';
 import { MOCK_SITES, DEFAULT_RATES, DEFAULT_TAX_SCALES } from '../constants';
@@ -43,7 +42,7 @@ const flattenLibrary = (lib: Record<CostCategory, LineItem[]>): LineItem[] => {
   return Object.values(lib).flat();
 };
 
-export const ProjectProvider = ({ children }: { children: ReactNode }) => {
+export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // --- STATE ---
   const [sites, setSites] = useState<Site[]>(MOCK_SITES);
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);

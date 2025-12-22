@@ -108,13 +108,26 @@ export interface SensitivityRow {
   isBaseCase: boolean;
 }
 
-// --- REPORTING METRICS ---
-export interface ProjectMetrics {
-  // Core Financials
-  totalDevelopmentCost: number;
-  grossRevenue: number;
-  netRevenue: number;
+// --- CANONICAL FINANCIAL MODEL ---
+export interface ProjectFinancials {
+  grossRealisation: number; // Inc GST
+  gstOnSales: number;
+  netRealisation: number; // Ex GST
+  
+  totalCostGross: number; // Invoice value
+  gstInputCredits: number;
+  totalCostNet: number; // Economic cost
+  
   netProfit: number;
+  marginOnCost: number;
+}
+
+// --- REPORTING METRICS ---
+export interface ProjectMetrics extends ProjectFinancials {
+  // Core Financials (Legacy Compatibility)
+  totalDevelopmentCost: number; // Maps to totalCostNet
+  grossRevenue: number;         // Maps to grossRealisation
+  netRevenue: number;           // Maps to netRealisation
   totalFinanceCost: number;
   
   // Margins
@@ -128,7 +141,7 @@ export interface ProjectMetrics {
   
   // Tax
   gstCollected: number;
-  gstInputCredits: number;
+  // gstInputCredits exists in ProjectFinancials
   netGstPayable: number;
 
   // Debt Analysis
@@ -331,6 +344,7 @@ export interface EquityStructure {
   initialContribution: number;
   instalments: DatedAmount[];
   percentageInput: number;
+  includeAcquisitionCosts?: boolean; // New flag for PCT_LAND mode
 }
 
 export interface JointVenture {
@@ -404,10 +418,19 @@ export interface FeasibilitySettings {
 export interface MonthlyFlow {
   month: number;
   label: string;
-  developmentCosts: number; 
+  
+  // Costs
+  developmentCosts: number; // Net
+  grossCosts: number; // New: Gross Invoice
+  gstOnCosts: number; // New: Input Tax Credits
   costBreakdown: Record<CostCategory, number>;
+  
+  // Revenue
   grossRevenue: number;
   netRevenue: number; 
+  gstOnSales: number; // New: GST Liability
+  
+  // Funding
   drawDownEquity: number;
   drawDownMezz: number;
   drawDownSenior: number;
@@ -422,8 +445,12 @@ export interface MonthlyFlow {
   interestSenior: number;
   interestMezz: number;
   lineFeeSenior: number;
+  
+  // Net
   netCashflow: number;
   cumulativeCashflow: number;
+  
+  // Asset
   investmentBalance: number;
   investmentInterest: number;
   assetValue: number;

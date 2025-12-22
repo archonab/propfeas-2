@@ -4,6 +4,7 @@ import {
   FeasibilitySettings, DebtLimitMethod, InterestRateMode, FeeBase, EquityMode, 
   CapitalTier, DatedRate, DatedAmount
 } from './types';
+import { FinanceEngine } from './services/financeEngine';
 
 interface Props {
   settings: FeasibilitySettings;
@@ -302,15 +303,30 @@ export const FinanceSettings: React.FC<Props> = ({ settings, onUpdate, peakEquit
 
   // Helper to calculate preview amount for percentage modes
   const getCalculatedEquity = () => {
+      let basis = settings.acquisition.purchasePrice;
+      let label = "Land Only";
+
       if (capitalStack.equity.mode === EquityMode.PCT_LAND) {
-          const landPrice = settings.acquisition.purchasePrice;
-          const val = (landPrice * capitalStack.equity.percentageInput) / 100;
-          return val;
+          if (capitalStack.equity.includeAcquisitionCosts) {
+              const duty = FinanceEngine.calculateStampDuty(
+                  basis,
+                  settings.acquisition.stampDutyState,
+                  settings.acquisition.isForeignBuyer,
+                  undefined,
+                  settings.acquisition.stampDutyOverride
+              );
+              const agentFee = basis * (settings.acquisition.buyersAgentFee / 100);
+              const legal = settings.acquisition.legalFeeEstimate;
+              basis = basis + duty + agentFee + legal;
+              label = "Land + Acq. Costs";
+          }
+          const val = (basis * capitalStack.equity.percentageInput) / 100;
+          return { val, label };
       }
       return null;
   };
 
-  const calcEquityValue = getCalculatedEquity();
+  const calculated = getCalculatedEquity();
   const isPercentageMode = capitalStack.equity.mode === EquityMode.PCT_LAND || capitalStack.equity.mode === EquityMode.PCT_TOTAL_COST;
 
   return (
@@ -450,15 +466,32 @@ export const FinanceSettings: React.FC<Props> = ({ settings, onUpdate, peakEquit
                              <span className="absolute right-4 top-3 text-sm font-bold text-slate-400">%</span>
                           </div>
                           
+                          {capitalStack.equity.mode === EquityMode.PCT_LAND && (
+                              <div className="mt-4">
+                                  <label className="flex items-start cursor-pointer">
+                                      <input 
+                                        type="checkbox"
+                                        checked={capitalStack.equity.includeAcquisitionCosts || false}
+                                        onChange={e => updateEquity('includeAcquisitionCosts', e.target.checked)}
+                                        className="mt-0.5 w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500"
+                                      />
+                                      <div className="ml-2">
+                                          <span className="block text-xs font-bold text-slate-700">Include Stamp Duty & Transaction Costs</span>
+                                          <span className="block text-[10px] text-slate-400 leading-tight">If checked, equity % applies to (Price + Duty + Legal + Agent). <br/>Ensures full settlement coverage.</span>
+                                      </div>
+                                  </label>
+                              </div>
+                          )}
+
                           {/* Auto-Calc Visual Display */}
                           <div className="mt-4 p-3 bg-slate-50 border border-slate-200 rounded-lg">
                               <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Calculated Limit</label>
                               <div className="flex items-baseline space-x-2">
                                 <span className="text-sm font-mono font-bold text-slate-700">
-                                    {calcEquityValue !== null ? `$${calcEquityValue.toLocaleString()}` : 'Calculating...'}
+                                    {calculated ? `$${calculated.val.toLocaleString()}` : 'Calculating...'}
                                 </span>
-                                {capitalStack.equity.mode === EquityMode.PCT_LAND && (
-                                    <span className="text-[10px] text-slate-400 font-medium">(Based on Land Purchase Price)</span>
+                                {capitalStack.equity.mode === EquityMode.PCT_LAND && calculated && (
+                                    <span className="text-[10px] text-slate-400 font-medium">(Based on {calculated.label})</span>
                                 )}
                                 {capitalStack.equity.mode === EquityMode.PCT_TOTAL_COST && (
                                     <span className="text-[10px] text-slate-400 font-medium">(Based on Total Development Costs)</span>

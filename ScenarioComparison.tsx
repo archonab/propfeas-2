@@ -22,24 +22,18 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios, siteDNA }) => {
   // Calculate metrics for all scenarios
   const results = useMemo(() => {
     return scenarios.map(scenario => {
-      // 1. Run Engine
+      // 1. Run Engine to get Monthly Flows
       const cashflow = FinanceEngine.calculateMonthlyCashflow(scenario, siteDNA);
       
-      // 2. Extract Key Aggregates
-      const totalOut = cashflow.reduce((acc, curr) => acc + curr.developmentCosts + curr.interestSenior + curr.interestMezz, 0);
-      const totalIn = cashflow.reduce((acc, curr) => acc + curr.netRevenue, 0);
-      const profit = totalIn - totalOut;
-      const margin = totalOut > 0 ? (profit / totalOut) * 100 : 0;
+      // 2. Use Canonical Metrics Calculator to avoid logic duplication
+      const metrics = FinanceEngine.calculateProjectMetrics(cashflow, scenario.settings);
       
-      // 3. Land Value (Input)
+      // 3. Extract Land Value (Input) for reference
       const landValue = scenario.costs
         .filter(c => c.category === CostCategory.LAND)
         .reduce((acc, c) => acc + c.amount, 0);
 
-      // 4. IRR & Equity Multiple
-      const equityFlows = cashflow.map(f => f.repayEquity - f.drawDownEquity);
-      const irr = FinanceEngine.calculateIRR(equityFlows);
-      
+      // 4. Calculate Equity Multiple (not in standard metrics object yet)
       const totalEquityIn = cashflow.reduce((acc, c) => acc + c.drawDownEquity, 0);
       const totalEquityOut = cashflow.reduce((acc, c) => acc + c.repayEquity, 0);
       const equityMultiple = totalEquityIn > 0 ? totalEquityOut / totalEquityIn : 0;
@@ -48,10 +42,10 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios, siteDNA }) => {
         id: scenario.id,
         metrics: {
           landValue,
-          developmentCost: totalOut,
-          netProfit: profit,
-          margin,
-          irr,
+          developmentCost: metrics.totalDevelopmentCost,
+          netProfit: metrics.netProfit,
+          margin: metrics.devMarginPct,
+          irr: metrics.equityIRR,
           equityMultiple
         }
       };
@@ -159,7 +153,8 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios, siteDNA }) => {
            <div className="flex items-end justify-center space-x-12 h-32">
               {results.map(res => {
                  const maxProfit = Math.max(...results.map(r => r.metrics.netProfit));
-                 const heightPct = (res.metrics.netProfit / maxProfit) * 100;
+                 // Avoid division by zero if all profits are 0
+                 const heightPct = maxProfit > 0 ? (res.metrics.netProfit / maxProfit) * 100 : 0;
                  const isBaseline = res.id === baselineResult.id;
                  
                  return (
@@ -169,7 +164,7 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios, siteDNA }) => {
                        </span>
                        <div 
                          className={`w-full rounded-t-lg transition-all duration-500 ${isBaseline ? 'bg-slate-300' : 'bg-blue-500 shadow-lg shadow-blue-500/20'}`} 
-                         style={{ height: `${heightPct}%` }}
+                         style={{ height: `${Math.max(1, heightPct)}%` }} // Ensure at least 1% visible line
                        ></div>
                        <span className="text-[10px] font-bold text-slate-500 uppercase mt-3 text-center leading-tight">
                          {scenarios.find(s => s.id === res.id)?.name}

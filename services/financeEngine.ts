@@ -321,6 +321,13 @@ const calcCostSchedule = (
       if (sm < schedule.length) {
           schedule[sm].totalNet = schedule[sm].totalNet.plus(settlementAmount);
           schedule[sm].breakdown[CostCategory.LAND] += settlementAmount.toNumber();
+          
+          // Buyer's Agent Fee (added in Canonical Refactor)
+          const agentFee = new Decimal(purchasePrice).times(baseSettings.acquisition.buyersAgentFee).div(100);
+          if (agentFee.gt(0)) {
+              schedule[sm].totalNet = schedule[sm].totalNet.plus(agentFee);
+              schedule[sm].breakdown[CostCategory.CONSULTANTS] += agentFee.toNumber();
+          }
       }
   }
 
@@ -342,7 +349,7 @@ const calcCostSchedule = (
               // GST Logic
               if (cost.gstTreatment === GstTreatment.TAXABLE) {
                   const gst = monthlyEscalated.times(0.1);
-                  schedule[m].totalNet = schedule[m].totalNet.plus(monthlyEscalated).plus(gst);
+                  schedule[m].totalNet = schedule[m].totalNet.plus(monthlyEscalated).plus(gst); // Note: totalNet tracks cash out, usually includes GST for payment
                   schedule[m].totalGST = schedule[m].totalGST.plus(gst);
               } else {
                   schedule[m].totalNet = schedule[m].totalNet.plus(monthlyEscalated);
@@ -535,7 +542,8 @@ const calcFundingSchedule = (
   costSchedule: CostFlow[],
   revenueSchedule: RevenueFlow[],
   taxSchedule: TaxFlow[],
-  settings: FeasibilitySettings
+  settings: FeasibilitySettings,
+  taxScales: TaxConfiguration // Added for Duty Calc
 ) => {
   const { capitalStack } = settings;
   const flows: MonthlyFlow[] = [];
@@ -566,8 +574,24 @@ const calcFundingSchedule = (
 
   if (capitalStack.equity.mode === EquityMode.PCT_LAND) {
       // Logic: X% of Land Purchase Price
-      const landBasis = new Decimal(settings.acquisition.purchasePrice);
-      equityLimit = landBasis.times(capitalStack.equity.percentageInput).div(100);
+      let basis = new Decimal(settings.acquisition.purchasePrice);
+      
+      // If includeAcquisitionCosts is TRUE, add Duty, Legal, Agent
+      if (capitalStack.equity.includeAcquisitionCosts) {
+          const duty = calculateStampDuty(
+              settings.acquisition.purchasePrice, 
+              settings.acquisition.stampDutyState, 
+              settings.acquisition.isForeignBuyer,
+              taxScales,
+              settings.acquisition.stampDutyOverride
+          );
+          const agentFee = settings.acquisition.purchasePrice * (settings.acquisition.buyersAgentFee / 100);
+          const legal = settings.acquisition.legalFeeEstimate;
+          basis = basis.plus(duty).plus(agentFee).plus(legal);
+      }
+
+      equityLimit = basis.times(capitalStack.equity.percentageInput).div(100);
+
   } else if (capitalStack.equity.mode === EquityMode.PCT_TOTAL_COST) {
       // Logic: X% of Total Costs (Excl Finance)
       // We sum up the net costs from the schedule we just calculated
@@ -738,10 +762,17 @@ const calcFundingSchedule = (
       flows.push({
           month: m,
           label: timeline.monthLabels[m],
+          
           developmentCosts: costs.totalNet.toNumber(),
           costBreakdown: costs.breakdown,
+          // New Explicit GST Tracking
+          grossCosts: costs.totalNet.plus(costs.totalGST).toNumber(), 
+          gstOnCosts: costs.totalGST.toNumber(),
+
           grossRevenue: rev.gross.toNumber(),
           netRevenue: rev.net.toNumber(),
+          gstOnSales: rev.gstLiability.toNumber(),
+
           drawDownEquity: drawEq.toNumber(),
           drawDownMezz: drawMz.toNumber(),
           drawDownSenior: drawSn.toNumber(),
@@ -787,7 +818,7 @@ const calculateMonthlyCashflow = (
   const taxes = calcTaxSchedule(costs, revenues, timeline);
 
   // 3. Run Dependent Waterfall
-  return calcFundingSchedule(timeline, costs, revenues, taxes, scenario.settings);
+  return calcFundingSchedule(timeline, costs, revenues, taxes, scenario.settings, taxScales);
 };
 
 // --- LEGACY EXPORTS (METRICS & ITEMISED) ---
@@ -917,37 +948,60 @@ const calculateNPV = (flows: number[], annualRate: number): number => {
   return npv;
 };
 
+// Updated IRR - Uses Newton-Raphson with robust divergence handling
 const calculateIRR = (flows: number[]): number => {
-  let guest = 0.1;
-  for (let i = 0; i < 40; i++) {
-    let npv = 0, dnpv = 0;
+  let guest = 0.1; // 10% Initial Guess
+  const maxIterations = 50;
+  const tolerance = 1e-7;
+
+  for (let i = 0; i < maxIterations; i++) {
+    let npv = 0;
+    let dnpv = 0;
+    
     for (let t = 0; t < flows.length; t++) {
-      npv += flows[t] / Math.pow(1 + guest, t);
-      dnpv -= t * flows[t] / Math.pow(1 + guest, t + 1);
+      const discount = Math.pow(1 + guest, t);
+      npv += flows[t] / discount;
+      dnpv -= (t * flows[t]) / (discount * (1 + guest));
     }
-    if (Math.abs(dnpv) < 1e-10) break;
+
+    if (Math.abs(dnpv) < 1e-10) break; // Avoid division by zero
     const newGuest = guest - npv / dnpv;
-    if (Math.abs(newGuest - guest) < 1e-7) return newGuest * 12 * 100;
+    
+    if (Math.abs(newGuest - guest) < tolerance) {
+        // Converged
+        // Formula: ((1 + monthly)^12 - 1) * 100 for Annual Effective Rate
+        return (Math.pow(1 + newGuest, 12) - 1) * 100;
+    }
+    
     guest = newGuest;
+    
+    // Divergence check
+    if (Math.abs(guest) > 10) return 0; // Likely diverged
   }
-  return 0;
+  
+  return 0; // Failed to converge
 };
 
 const calculateProjectMetrics = (cashflow: MonthlyFlow[], settings: FeasibilitySettings): ProjectMetrics => {
-  const totalDevelopmentCost = cashflow.reduce((acc, curr) => acc + curr.developmentCosts + curr.interestSenior + curr.interestMezz + curr.lineFeeSenior, 0);
+  // Canonical Financials Aggregation
+  const grossRealisation = cashflow.reduce((acc, c) => acc + c.grossRevenue + c.lendingInterestIncome, 0);
+  const gstOnSales = cashflow.reduce((acc, c) => acc + c.gstOnSales, 0);
+  const netRealisation = grossRealisation - gstOnSales;
+
   const totalFinanceCost = cashflow.reduce((acc, curr) => acc + curr.interestSenior + curr.interestMezz + curr.lineFeeSenior, 0);
-  const grossRevenue = cashflow.reduce((acc, curr) => acc + curr.grossRevenue, 0);
-  const otherIncome = cashflow.reduce((acc, curr) => acc + curr.lendingInterestIncome, 0);
   
-  const totalGrossRevenue = grossRevenue + otherIncome;
-  const gstCollected = grossRevenue / 11;
-  const netRealisation = totalGrossRevenue - gstCollected;
+  // Total Development Costs (Net) = DevCosts + Finance
+  const devCostsNet = cashflow.reduce((acc, c) => acc + c.developmentCosts, 0);
+  const totalCostNet = devCostsNet + totalFinanceCost;
+
+  // GST Calculation
+  const gstInputCredits = cashflow.reduce((acc, c) => acc + c.gstOnCosts, 0);
   
-  const rawDevCost = cashflow.reduce((acc, c) => acc + c.developmentCosts, 0);
-  const gstInputCredits = rawDevCost * 0.09; 
-  
-  const exactProfit = netRealisation - (totalDevelopmentCost - gstInputCredits); 
-  const devMarginPct = totalDevelopmentCost > 0 ? (exactProfit / (totalDevelopmentCost - gstInputCredits)) * 100 : 0;
+  // Gross Costs (Net + ITC)
+  const totalCostGross = totalCostNet + gstInputCredits;
+
+  const exactProfit = netRealisation - totalCostNet;
+  const devMarginPct = totalCostNet > 0 ? (exactProfit / totalCostNet) * 100 : 0;
   const marginBeforeInterest = exactProfit + totalFinanceCost;
   
   let peakDebtAmount = 0;
@@ -968,25 +1022,34 @@ const calculateProjectMetrics = (cashflow: MonthlyFlow[], settings: FeasibilityS
 
   const projectFlows = cashflow.map(f => {
       const inF = f.netRevenue + f.lendingInterestIncome; 
-      const outF = f.developmentCosts / 1.1; 
+      const outF = f.developmentCosts / 1.1; // Approximation for legacy project flow
       return inF - outF;
   });
   const projectIRR = calculateIRR(projectFlows);
 
   return {
-      totalDevelopmentCost: totalDevelopmentCost - gstInputCredits,
-      grossRevenue: totalGrossRevenue,
-      netRevenue: netRealisation,
+      // Canonical Financials
+      grossRealisation,
+      gstOnSales,
+      netRealisation,
+      totalCostGross,
+      gstInputCredits,
+      totalCostNet,
       netProfit: exactProfit,
+      marginOnCost: devMarginPct,
+
+      // Legacy & UI Compatibility
+      totalDevelopmentCost: totalCostNet,
+      grossRevenue: grossRealisation,
+      netRevenue: netRealisation,
       totalFinanceCost,
       devMarginPct,
       marginBeforeInterest,
       marginOnEquity,
       equityIRR,
       projectIRR,
-      gstCollected,
-      gstInputCredits,
-      netGstPayable: gstCollected - gstInputCredits,
+      gstCollected: gstOnSales,
+      netGstPayable: gstOnSales - gstInputCredits,
       peakDebtAmount,
       peakDebtMonthIndex,
       peakDebtDate,

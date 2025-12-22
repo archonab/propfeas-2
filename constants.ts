@@ -67,6 +67,7 @@ export const INITIAL_SETTINGS: FeasibilitySettings = {
       initialContribution: 2000000,
       instalments: [],
       percentageInput: 20,
+      includeAcquisitionCosts: false
     },
     jv: {
       enabled: false,

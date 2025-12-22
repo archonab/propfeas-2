@@ -66,7 +66,7 @@ export class PdfService {
     const builder = new PdfService();
     const itemisedData = FinanceEngine.generateItemisedCashflowData(scenario, siteDNA);
     
-    // Recalculate robust metrics for the report
+    // Recalculate robust metrics for the report using the new Canonical Financials
     const metrics = FinanceEngine.calculateProjectMetrics(cashflow, scenario.settings);
 
     // 1. Cover Page (Portrait)
@@ -151,13 +151,13 @@ export class PdfService {
       this.doc.text("Project Returns", leftX, y);
       y += 8;
 
-      drawDottedRow("Total Development Cost", formatCurrency(metrics.totalDevelopmentCost), leftX, 80);
-      drawDottedRow("Gross Realisation", formatCurrency(metrics.grossRevenue), leftX, 80);
+      drawDottedRow("Total Development Cost (Ex GST)", formatCurrency(metrics.totalCostNet), leftX, 80);
+      drawDottedRow("Gross Realisation (Ex GST)", formatCurrency(metrics.netRealisation), leftX, 80);
       drawDottedRow("Net Development Profit", formatCurrency(metrics.netProfit), leftX, 80, true);
       y += 4;
       drawDottedRow("Development Margin (MDC)", formatPct(metrics.devMarginPct), leftX, 80, true);
       drawDottedRow("Margin on Equity (MoE)", formatPct(metrics.marginOnEquity), leftX, 80, true);
-      drawDottedRow("Internal Rate of Return", formatPct(metrics.equityIRR), leftX, 80, true);
+      drawDottedRow("Internal Rate of Return (Pa)", formatPct(metrics.equityIRR), leftX, 80, true);
       y += 4;
       drawDottedRow("Margin Before Interest", formatCurrency(metrics.marginBeforeInterest), leftX, 80);
 
@@ -172,18 +172,13 @@ export class PdfService {
       drawDottedRow("Peak Debt Date", metrics.peakDebtDate, rightX, 80);
       drawDottedRow("Equity Contribution", formatCurrency(metrics.peakEquity), rightX, 80);
       y += 4;
-      drawDottedRow("GST Collected", formatCurrency(metrics.gstCollected), rightX, 80);
-      drawDottedRow("GST Input Credits", formatCurrency(metrics.gstInputCredits), rightX, 80);
+      drawDottedRow("GST Collected (Sales)", formatCurrency(metrics.gstCollected), rightX, 80);
+      drawDottedRow("GST Input Credits (Costs)", formatCurrency(metrics.gstInputCredits), rightX, 80);
       drawDottedRow("Net GST Payable", formatCurrency(metrics.netGstPayable), rightX, 80);
 
       this.currentY = y + 10;
 
-      // RISK ALERT BOX (Task 3)
-      // Locate Cost +5% / Revenue 0% cell. Assume center x=0 is index 3. y+5% is index 4.
-      // Matrix order: matrix[row(y)][col(x)].
-      // In sensitivityService: matrix rows are yAxis (cost), cols are xAxis (rev).
-      // Center is usually index 3 (0%). Index 4 is +5%.
-      // Check margin at Cost +5% (row 4) and Revenue 0% (col 3).
+      // RISK ALERT BOX
       let isRisk = false;
       if (sensitivityMatrix && sensitivityMatrix.length > 4 && sensitivityMatrix[4][3]) {
           if (sensitivityMatrix[4][3].margin < 0) isRisk = true;
@@ -268,7 +263,8 @@ export class PdfService {
           theme: 'grid',
           styles: { fontSize: 9, cellPadding: 2, font: FONTS.body },
           headStyles: { fillColor: COLORS.secondary, textColor: 255, fontStyle: 'bold' },
-          columnStyles: { 0: { fontStyle: 'bold', cellWidth: 35 } }
+          columnStyles: { 0: { fontStyle: 'bold', cellWidth: 35 } },
+          showHead: 'everyPage' // Prevent orphan headers
       });
 
       this.currentY = y + 70;
@@ -294,7 +290,8 @@ export class PdfService {
           theme: 'striped',
           styles: { fontSize: 9, cellPadding: 3, font: FONTS.body },
           headStyles: { fillColor: COLORS.primary },
-          columnStyles: { 0: { fontStyle: 'bold' } }
+          columnStyles: { 0: { fontStyle: 'bold' } },
+          showHead: 'everyPage'
       });
   }
 
@@ -374,13 +371,13 @@ export class PdfService {
 
     // 1. Revenue
     addRow("GROSS REALISATION", null, null, 'header');
-    addRow("Gross Sales Revenue", formatCurrency(reportStats.totalRevenueGross), null);
-    addRow("Less: GST Liability", formatCurrency(reportStats.gstCollected * -1), null);
-    addRow("NET REALISATION", null, formatCurrency(reportStats.netRealisation), 'total');
+    addRow("Gross Sales Revenue", formatCurrency(metrics.grossRealisation), null);
+    addRow("Less: GST Liability", formatCurrency(metrics.gstOnSales * -1), null);
+    addRow("NET REALISATION", null, formatCurrency(metrics.netRealisation), 'total');
     addRow("", null, null, 'spacer');
 
     // 2. Costs
-    addRow("DEVELOPMENT COSTS", null, null, 'header');
+    addRow("DEVELOPMENT COSTS (NET EX GST)", null, null, 'header');
     
     // Helper to process cost categories
     const addCategory = (name: string, catId: CostCategory) => {
@@ -416,7 +413,8 @@ export class PdfService {
     addRow("", null, null, 'spacer');
 
     // Bottom Line
-    addRow("TOTAL DEVELOPMENT COSTS", null, formatCurrency(metrics.totalDevelopmentCost + metrics.gstInputCredits), 'header'); 
+    // Note: ProjectMetrics map totalDevelopmentCost to totalCostNet in new engine
+    addRow("TOTAL DEVELOPMENT COSTS", null, formatCurrency(metrics.totalCostNet), 'header'); 
     addRow("", null, null, 'spacer');
     addRow("NET DEVELOPMENT PROFIT", null, formatCurrency(metrics.netProfit), 'header');
     addRow("DEVELOPMENT MARGIN", null, formatPct(metrics.devMarginPct), 'total');
@@ -433,6 +431,7 @@ export class PdfService {
             1: { cellWidth: 40, halign: 'right', font: FONTS.mono },
             2: { cellWidth: 40, halign: 'right', font: FONTS.mono, fontStyle: 'bold' }
         },
+        showHead: 'everyPage', // Fix orphan headers
         didParseCell: (data) => {
             const rowInfo = rows[data.row.index];
             if (data.section === 'head') {
@@ -486,6 +485,7 @@ export class PdfService {
         headStyles: { fillColor: COLORS.primary, halign: 'center' },
         columnStyles: { 0: { fontStyle: 'bold', fillColor: COLORS.lightGray, halign: 'center' } },
         styles: { halign: 'center', cellPadding: 4, fontSize: 10 },
+        showHead: 'everyPage',
         didParseCell: (data) => {
             if (data.section === 'body' && data.column.index > 0) {
                 const val = parseFloat(data.cell.raw as string);
@@ -541,6 +541,7 @@ export class PdfService {
                 1: { fontStyle: 'bold' }
             },
             headStyles: { fillColor: COLORS.secondary, halign: 'center' },
+            showHead: 'everyPage',
             didParseCell: (data) => {
                 const rowIndex = data.row.index;
                 const isBaseCase = data.table.body[rowIndex].raw[0] === 'Base Case';
@@ -655,6 +656,7 @@ export class PdfService {
             styles: { fontSize: 7, cellPadding: 1.5, halign: 'right', font: FONTS.mono },
             columnStyles: colStyles,
             headStyles: { fillColor: COLORS.primary, textColor: 255, halign: 'center', fontStyle: 'bold' },
+            showHead: 'everyPage',
             didParseCell: (data) => {
                 if (data.section === 'body') {
                     const type = data.row.raw.type;

@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState } from 'react';
-import { FeasibilityScenario, CostCategory, SiteDNA, LineItem, GstTreatment, Site } from './types';
+import { FeasibilityScenario, CostCategory, SiteDNA, LineItem, GstTreatment, Site, ProjectMetrics } from './types';
 import { FinanceEngine } from './services/financeEngine';
 import { SensitivityService } from './services/sensitivityService';
 import { HelpTooltip } from './components/HelpTooltip';
@@ -9,21 +9,7 @@ interface Props {
   scenario: FeasibilityScenario;
   siteDNA: SiteDNA;
   site?: Site; 
-  stats: {
-    profit: number;
-    margin: number;
-    irr: number;
-    interestTotal: number;
-    totalOut: number;
-    totalIn: number;
-    peakEquity: number;
-    peakSenior: number;
-    peakMezz: number;
-    peakTotalDebt: number;
-    constructionTotal: number;
-    ltc: number;
-    lvr: number;
-  };
+  stats: ProjectMetrics; // Now strictly typed to ProjectMetrics
   onNavigate?: (tab: string, section?: string) => void;
 }
 
@@ -66,7 +52,7 @@ const useDetailedCosts = (scenario: FeasibilityScenario, siteDNA: SiteDNA) => {
 };
 
 // --- SUB-COMPONENT: VALUER STYLE REPORT ---
-const ValuerReport = ({ scenario, reportStats, stats, detailedCosts, onNavigate }: { scenario: FeasibilityScenario, reportStats: any, stats: any, detailedCosts: any[], onNavigate?: (t: string, s?: string) => void }) => {
+const ValuerReport = ({ scenario, stats, detailedCosts, onNavigate }: { scenario: FeasibilityScenario, stats: ProjectMetrics, detailedCosts: any[], onNavigate?: (t: string, s?: string) => void }) => {
   const { settings } = scenario;
   
   // -- COST AGGREGATION LOGIC --
@@ -95,15 +81,13 @@ const ValuerReport = ({ scenario, reportStats, stats, detailedCosts, onNavigate 
   
   // Sensitivity Analysis
   const sensitivity = useMemo(() => {
-      const baseMargin = stats.margin;
-      
-      const costPlus5 = (stats.totalOut * 1.05);
-      const profitCostPlus5 = stats.totalIn - costPlus5;
+      const costPlus5 = (stats.totalDevelopmentCost * 1.05);
+      const profitCostPlus5 = stats.netRevenue - costPlus5;
       const marginCostPlus5 = (profitCostPlus5 / costPlus5) * 100;
 
-      const revMinus5 = (stats.totalIn * 0.95);
-      const profitRevMinus5 = revMinus5 - stats.totalOut;
-      const marginRevMinus5 = (profitRevMinus5 / stats.totalOut) * 100;
+      const revMinus5 = (stats.netRevenue * 0.95);
+      const profitRevMinus5 = revMinus5 - stats.totalDevelopmentCost;
+      const marginRevMinus5 = (profitRevMinus5 / stats.totalDevelopmentCost) * 100;
 
       return { marginCostPlus5, marginRevMinus5 };
   }, [stats]);
@@ -142,7 +126,7 @@ const ValuerReport = ({ scenario, reportStats, stats, detailedCosts, onNavigate 
                     Development (Sell)
                 </div>
                 <div className="text-3xl font-black text-emerald-600 tracking-tighter">
-                    {stats.margin.toFixed(2)}%
+                    {stats.devMarginPct.toFixed(2)}%
                 </div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Return on Cost (MDC)</p>
             </div>
@@ -151,11 +135,11 @@ const ValuerReport = ({ scenario, reportStats, stats, detailedCosts, onNavigate 
         {/* --- SECTION 1: REVENUE --- */}
         <div className="mb-8">
             <h3 className="text-sm font-black text-slate-900 uppercase border-b-2 border-slate-200 pb-1 mb-2">1. Gross Realisation</h3>
-            <Row label="Gross Sales Revenue (Inc. GST)" value={reportStats.totalRevenueGross} onClick={() => onNavigate?.('sales')} highlight />
-            <Row label="Less: GST Liability (1/11th)" value={reportStats.gstCollected} negative indent />
+            <Row label="Gross Sales Revenue (Inc. GST)" value={stats.grossRealisation} onClick={() => onNavigate?.('sales')} highlight />
+            <Row label="Less: GST Liability (1/11th)" value={stats.gstOnSales} negative indent />
             <div className="flex justify-between items-center py-2 mt-1 border-t-2 border-slate-800 bg-slate-50/50">
                 <span className="font-black text-sm uppercase pl-2">Net Realisation (Ex GST)</span>
-                <span className="font-black text-sm font-mono pr-0">{formatCurrency(reportStats.netRealisation)}</span>
+                <span className="font-black text-sm font-mono pr-0">{formatCurrency(stats.netRealisation)}</span>
             </div>
         </div>
 
@@ -199,11 +183,11 @@ const ValuerReport = ({ scenario, reportStats, stats, detailedCosts, onNavigate 
         {/* --- SECTION 3: FINANCE & PROFIT --- */}
         <div className="mb-12">
             <h3 className="text-sm font-black text-slate-900 uppercase border-b-2 border-slate-200 pb-1 mb-2">3. Finance & Performance</h3>
-            <Row label="Interest Expense (Net)" value={stats.interestTotal} onClick={() => onNavigate?.('inputs')} />
+            <Row label="Interest Expense (Net)" value={stats.totalFinanceCost} onClick={() => onNavigate?.('inputs')} />
             
             <div className="flex justify-between items-center py-3 mt-4 border-t-4 border-double border-slate-900 bg-emerald-50 px-2 rounded-sm">
                 <span className="font-black text-base uppercase text-emerald-900">Net Development Profit</span>
-                <span className="font-black text-xl font-mono text-emerald-700">{formatCurrency(stats.profit)}</span>
+                <span className="font-black text-xl font-mono text-emerald-700">{formatCurrency(stats.netProfit)}</span>
             </div>
         </div>
 
@@ -248,7 +232,7 @@ const ValuerReport = ({ scenario, reportStats, stats, detailedCosts, onNavigate 
 };
 
 // --- HOLD REPORT ---
-const HoldReport = ({ scenario, siteDNA, stats }: { scenario: FeasibilityScenario, siteDNA: SiteDNA, stats: any }) => {
+const HoldReport = ({ scenario, siteDNA, stats }: { scenario: FeasibilityScenario, siteDNA: SiteDNA, stats: ProjectMetrics }) => {
     
     // Generate an Annual Summary for the Hold Period
     const annualData = useMemo(() => {
@@ -305,7 +289,7 @@ const HoldReport = ({ scenario, siteDNA, stats }: { scenario: FeasibilityScenari
                         Build to Rent
                     </div>
                     <div className="text-3xl font-black text-indigo-600 tracking-tighter">
-                        {stats.irr.toFixed(2)}%
+                        {stats.equityIRR.toFixed(2)}%
                     </div>
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Equity IRR (10 Yr)</p>
                 </div>
@@ -316,13 +300,13 @@ const HoldReport = ({ scenario, siteDNA, stats }: { scenario: FeasibilityScenari
                 <div className="bg-slate-50 p-4 rounded border border-slate-100">
                     <p className="text-[10px] font-bold text-slate-400 uppercase">Initial Yield</p>
                     <p className="text-xl font-bold text-slate-800">
-                        {annualData.length > 0 ? ((annualData[0].netIncome / stats.totalOut) * 100).toFixed(2) : 0}%
+                        {annualData.length > 0 ? ((annualData[0].netIncome / stats.totalDevelopmentCost) * 100).toFixed(2) : 0}%
                     </p>
                 </div>
                 <div className="bg-slate-50 p-4 rounded border border-slate-100">
                     <p className="text-[10px] font-bold text-slate-400 uppercase">10 Yr Cash Multiple</p>
                     <p className="text-xl font-bold text-slate-800">
-                        {(stats.totalIn / stats.totalOut).toFixed(2)}x
+                        {(stats.netRevenue / stats.totalDevelopmentCost).toFixed(2)}x
                     </p>
                 </div>
                 <div className="bg-slate-50 p-4 rounded border border-slate-100">
@@ -387,20 +371,14 @@ const HoldReport = ({ scenario, siteDNA, stats }: { scenario: FeasibilityScenari
 export const FeasibilityReport: React.FC<Props> = ({ scenario, siteDNA, stats, onNavigate, site }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('valuer');
 
-  const reportStats = useMemo(() => 
-    FinanceEngine.calculateReportStats(scenario, siteDNA), 
-    [scenario, siteDNA]
-  );
-
   const detailedCosts = useDetailedCosts(scenario, siteDNA);
 
   return (
     <div className="flex flex-col relative">
-       
        <div className="bg-white p-12 max-w-5xl mx-auto shadow-xl print-container border border-slate-200 print:border-none w-full">
           {scenario.strategy === 'HOLD' 
             ? <HoldReport scenario={scenario} siteDNA={siteDNA} stats={stats} />
-            : <ValuerReport scenario={scenario} reportStats={reportStats} stats={stats} detailedCosts={detailedCosts} onNavigate={onNavigate} />
+            : <ValuerReport scenario={scenario} stats={stats} detailedCosts={detailedCosts} onNavigate={onNavigate} />
           }
           <div className="mt-12 text-center text-[10px] text-slate-300 border-t border-slate-100 pt-4 flex justify-between uppercase tracking-widest font-bold">
             <p>DevFeas Pro System</p>

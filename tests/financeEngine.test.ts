@@ -1,4 +1,3 @@
-
 import { describe, it, expect } from 'vitest';
 import { FinanceEngine } from '../services/financeEngine';
 import { 
@@ -167,7 +166,7 @@ describe('FinanceEngine Pure Modules', () => {
       const revSchedule = Array(timeline.horizonMonths + 1).fill(null).map(() => ({ gross: new Decimal(0), net: new Decimal(0), gstLiability: new Decimal(0), sellingCosts: new Decimal(0), rentalOpex: new Decimal(0), terminalValue: new Decimal(0) }));
       const taxSchedule = Array(timeline.horizonMonths + 1).fill(null).map(() => ({ netGstMovement: new Decimal(0), liability: new Decimal(0), credits: new Decimal(0), cumulativeCredits: new Decimal(0) }));
 
-      const flows = calcFundingSchedule(timeline, costSchedule as any, revSchedule, taxSchedule, scenario.settings);
+      const flows = calcFundingSchedule(timeline, costSchedule as any, revSchedule, taxSchedule, scenario.settings, DEFAULT_TAX_SCALES);
 
       // M1: Draw 100k. Balance 100k.
       expect(flows[1].drawDownSenior).toBeCloseTo(100000);

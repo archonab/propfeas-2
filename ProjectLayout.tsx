@@ -11,104 +11,92 @@ interface Props {
 export const ProjectLayout: React.FC<Props> = ({ site, onBack }) => {
   const [activeModule, setActiveModule] = useState<ProjectModule>('feasibility');
 
-  const menuItems: { id: ProjectModule; label: string; icon: string }[] = [
-    { id: 'overview', label: 'Overview', icon: 'fa-solid fa-house' },
-    { id: 'feasibility', label: 'Feasibility', icon: 'fa-solid fa-calculator' },
-    { id: 'tasks', label: 'Construction (PM)', icon: 'fa-solid fa-helmet-safety' },
-    { id: 'sales', label: 'Sales & Marketing', icon: 'fa-solid fa-tags' }
-  ];
+  const ModuleTab = ({ id, label, icon }: { id: ProjectModule, label: string, icon: string }) => (
+    <button
+      onClick={() => setActiveModule(id)}
+      className={`relative px-4 py-3 text-sm font-bold flex items-center transition-colors ${
+        activeModule === id 
+        ? 'text-slate-900' 
+        : 'text-slate-500 hover:text-slate-700'
+      }`}
+    >
+      <i className={`${icon} mr-2 ${activeModule === id ? 'text-indigo-600' : 'text-slate-400'}`}></i>
+      {label}
+      {/* Active Underline */}
+      {activeModule === id && (
+        <div className="absolute bottom-0 left-0 w-full h-0.5 bg-indigo-600 rounded-t-full"></div>
+      )}
+    </button>
+  );
 
   return (
-    <div className="flex h-full animate-in slide-in-from-left duration-300">
-      {/* Project Sidebar */}
-      <aside className="w-64 bg-slate-800 text-slate-300 flex flex-col no-print">
-        <div className="p-6 border-b border-slate-700">
-          <button onClick={onBack} className="text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-white mb-4 flex items-center">
-            <i className="fa-solid fa-chevron-left mr-2"></i> Back to Portfolio
-          </button>
-          <div className="flex items-center space-x-3">
-            <img src={site.thumbnail} className="w-10 h-10 rounded object-cover border border-slate-700" alt={site.name} />
-            <div className="overflow-hidden">
-              <h2 className="text-sm font-bold text-white truncate leading-tight">{site.name}</h2>
-              <p className="text-[10px] truncate text-slate-500">{site.dna.address}</p>
-            </div>
-          </div>
+    <div className="flex flex-col h-full bg-slate-50">
+      
+      {/* PROJECT HEADER (Context) */}
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shrink-0">
+        
+        {/* Top Row: Breadcrumbs & Actions */}
+        <div className="px-6 py-3 flex justify-between items-center border-b border-slate-100">
+           <div className="flex items-center space-x-3 text-sm">
+              <button onClick={onBack} className="text-slate-400 hover:text-slate-700 font-medium transition-colors">
+                 Portfolio
+              </button>
+              <span className="text-slate-300">/</span>
+              <div className="flex items-center space-x-2">
+                 <div className="font-bold text-slate-800">{site.name}</div>
+                 <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border ${
+                     site.status === 'Acquired' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 
+                     'bg-amber-50 text-amber-700 border-amber-100'
+                 }`}>
+                    {site.status}
+                 </span>
+              </div>
+           </div>
+
+           <div className="flex items-center space-x-3">
+              <button className="text-slate-400 hover:text-slate-600 px-2">
+                 <i className="fa-solid fa-bell"></i>
+              </button>
+              <button className="px-3 py-1.5 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-lg hover:bg-indigo-100 transition-colors">
+                 Share
+              </button>
+           </div>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1">
-          {menuItems.map(item => (
-            <button
-              key={item.id}
-              onClick={() => setActiveModule(item.id)}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all ${
-                activeModule === item.id ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'hover:bg-slate-700'
-              }`}
-            >
-              <i className={`${item.icon} w-5`}></i>
-              <span>{item.label}</span>
-            </button>
-          ))}
-        </nav>
-
-        <div className="p-6 bg-slate-900/50">
-          <div className="text-[9px] font-bold text-slate-500 uppercase mb-2 tracking-widest">Project Stats</div>
-          <div className="flex justify-between items-center mb-1">
-            <span className="text-[10px]">Status</span>
-            <span className="text-[10px] text-emerald-400 font-bold">{site.status}</span>
-          </div>
-          <div className="w-full bg-slate-700 h-1 rounded-full mt-2 overflow-hidden">
-            <div className="bg-blue-500 h-full w-[35%]"></div>
-          </div>
+        {/* Bottom Row: Module Navigation */}
+        <div className="px-6 flex space-x-2">
+           <ModuleTab id="overview" label="Overview" icon="fa-solid fa-chart-pie" />
+           <ModuleTab id="feasibility" label="Feasibility" icon="fa-solid fa-calculator" />
+           <ModuleTab id="tasks" label="Construction" icon="fa-solid fa-helmet-safety" />
+           <ModuleTab id="sales" label="Sales & CRM" icon="fa-solid fa-tags" />
         </div>
-      </aside>
+      </header>
 
-      {/* Module Content */}
-      <main className="flex-1 overflow-y-auto bg-slate-50 p-8 print:p-0">
-        <header className="mb-8 no-print">
-          <div className="flex justify-between items-end">
-            <div>
-              <h1 className="text-2xl font-bold text-slate-800">{menuItems.find(i => i.id === activeModule)?.label}</h1>
-              <p className="text-sm text-slate-500 mt-1">{site.name} • Internal Module</p>
-            </div>
-            <div className="flex items-center space-x-4">
-               <div className="flex -space-x-2">
-                  <div className="w-8 h-8 rounded-full bg-blue-500 border-2 border-slate-50 flex items-center justify-center text-[10px] font-bold text-white">JD</div>
-                  <div className="w-8 h-8 rounded-full bg-emerald-500 border-2 border-slate-50 flex items-center justify-center text-[10px] font-bold text-white">SK</div>
-                  <div className="w-8 h-8 rounded-full bg-slate-300 border-2 border-slate-50 flex items-center justify-center text-[10px] font-bold text-slate-600">+3</div>
-               </div>
-               <button className="w-10 h-10 rounded-full border border-slate-200 flex items-center justify-center text-slate-400 hover:bg-white hover:text-slate-600 transition-colors">
-                  <i className="fa-solid fa-bell text-sm"></i>
-               </button>
-            </div>
-          </div>
-        </header>
-
+      {/* CANVAS CONTENT */}
+      <main className="flex-1 overflow-hidden relative">
         {activeModule === 'feasibility' && <FeasibilityModule site={site} />}
         
+        {/* Placeholders for future modules */}
         {activeModule === 'overview' && (
-          <div className="bg-white p-12 rounded-2xl border border-dashed border-slate-300 text-center animate-in zoom-in-95 duration-500">
-            <i className="fa-solid fa-compass-drafting text-4xl text-slate-200 mb-4 block"></i>
-            <h3 className="text-xl font-bold text-slate-800">Project Overview Dashboard</h3>
-            <p className="text-slate-500 mt-2 max-w-md mx-auto">Consolidating high-level metrics across all active modules. Coming soon to your DevFeas Pro workspace.</p>
-          </div>
+           <div className="p-12 text-center text-slate-400">
+              <i className="fa-solid fa-chart-pie text-4xl mb-4 opacity-20"></i>
+              <p>Project Dashboard Coming Soon</p>
+           </div>
         )}
-
         {activeModule === 'tasks' && (
-          <div className="bg-white p-12 rounded-2xl border border-dashed border-slate-300 text-center animate-in zoom-in-95 duration-500">
-            <i className="fa-solid fa-helmet-safety text-4xl text-slate-200 mb-4 block"></i>
-            <h3 className="text-xl font-bold text-slate-800">Gantt & Tasks Module</h3>
-            <p className="text-slate-500 mt-2">The construction module will integrate with feasibility baseline to track variance in real-time. Coming soon.</p>
-          </div>
+           <div className="p-12 text-center text-slate-400">
+              <i className="fa-solid fa-helmet-safety text-4xl mb-4 opacity-20"></i>
+              <p>Construction Management Module</p>
+           </div>
         )}
-
         {activeModule === 'sales' && (
-          <div className="bg-white p-12 rounded-2xl border border-dashed border-slate-300 text-center animate-in zoom-in-95 duration-500">
-            <i className="fa-solid fa-tags text-4xl text-slate-200 mb-4 block"></i>
-            <h3 className="text-xl font-bold text-slate-800">Inventory & Leads</h3>
-            <p className="text-slate-500 mt-2">Manage unit sales, commissions, and buyer communications in one secure portal. Coming soon.</p>
-          </div>
+           <div className="p-12 text-center text-slate-400">
+              <i className="fa-solid fa-tags text-4xl mb-4 opacity-20"></i>
+              <p>Sales & CRM Module</p>
+           </div>
         )}
       </main>
+
     </div>
   );
 };

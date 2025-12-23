@@ -3,7 +3,7 @@ import Decimal from 'decimal.js';
 import { 
   LineItem, RevenueItem, FeasibilitySettings, MonthlyFlow, DistributionMethod, 
   InputType, CostCategory, DebtLimitMethod, EquityMode, InterestRateMode, FeeBase, CapitalTier, GstTreatment, SiteDNA, FeasibilityScenario, MilestoneLink, TaxConfiguration, TaxState,
-  ItemisedRow, ItemisedCategory, ItemisedCashflow, ProjectMetrics
+  ItemisedRow, ItemisedCategory, ItemisedCashflow, ProjectMetrics, LineItemSummary
 } from '../types';
 import { TaxLibrary } from './TaxLibrary';
 import { DEFAULT_TAX_SCALES } from '../constants';
@@ -62,6 +62,12 @@ export const getMonthLabel = (startDate: string, offset: number): string => {
   const month = d.toLocaleString('default', { month: 'short' });
   const year = d.getFullYear().toString().substr(2, 2);
   return `${month} ${year}`;
+};
+
+// --- HELPER: ANNUALISATION ---
+export const annualiseMonthlyRate = (monthlyRate: number): number => {
+  // Effective Annual Rate = (1 + monthly)^12 - 1
+  return Math.pow(1 + monthlyRate, 12) - 1;
 };
 
 // --- HELPER: STAMP DUTY ---
@@ -901,6 +907,72 @@ const calcFundingSchedule = (
   return flows;
 };
 
+// --- HELPER: ITEM SUMMARY CALCULATOR ---
+const calculateLineItemSummaries = (
+  scenario: FeasibilityScenario, 
+  siteDNA: SiteDNA,
+  taxScales: TaxConfiguration
+): LineItemSummary[] => {
+  const { settings } = scenario;
+  const timeline = buildTimeline(scenario);
+  
+  // Implicit Items
+  const implicitCosts = getImplicitAcquisitionCosts(settings, taxScales).map(i => ({...i, isImplicit: true}));
+  
+  // Combined Costs
+  const allCosts = [...implicitCosts, ...scenario.costs.map(c => ({...c, isImplicit: false}))];
+
+  // Calculators Bases
+  const constructionSum = scenario.costs
+    .filter(c => c.category === CostCategory.CONSTRUCTION)
+    .reduce((acc, c) => acc + c.amount, 0);
+  
+  const estTotalRevenue = scenario.revenues.reduce((acc, rev) => {
+     if (rev.strategy === 'Hold') return acc + ((rev.weeklyRent||0) * 52 * rev.units);
+     return acc + (rev.units * rev.pricePerUnit);
+  }, 0);
+
+  // Process Each Item
+  return allCosts.map(item => {
+      const effectiveStart = getEffectiveStartMonth(item, timeline);
+      const totalAmt = calculateLineItemTotal(item, settings, siteDNA, constructionSum, estTotalRevenue, taxScales);
+      const escRate = item.escalationRate || getEscalationRate(item.category, settings);
+
+      let totalNetEscalated = new Decimal(0);
+
+      // Iterate Distribution over Span
+      for (let m = effectiveStart; m < effectiveStart + item.span; m++) {
+          if (m > timeline.horizonMonths) break;
+          
+          const monthlyBase = distributeValue(totalAmt, m - effectiveStart, item);
+          // Apply compounding escalation monthly
+          const compounding = new Decimal(Math.pow(1 + (escRate/100), m/12));
+          const monthlyEscalated = monthlyBase.times(compounding);
+          
+          totalNetEscalated = totalNetEscalated.plus(monthlyEscalated);
+      }
+
+      // Calc GST on Final Net
+      let gstAmount = new Decimal(0);
+      let grossAmount = totalNetEscalated;
+
+      if (item.gstTreatment === GstTreatment.TAXABLE) {
+          gstAmount = totalNetEscalated.times(0.1);
+          grossAmount = totalNetEscalated.plus(gstAmount);
+      }
+
+      return {
+          id: item.id,
+          category: item.category,
+          description: item.description,
+          netAmount: totalNetEscalated.toNumber(),
+          gstAmount: gstAmount.toNumber(),
+          grossAmount: grossAmount.toNumber(),
+          isImplicit: (item as any).isImplicit
+      };
+  });
+};
+
 // --- ORCHESTRATOR ---
 const calculateMonthlyCashflow = (
   scenario: FeasibilityScenario,
@@ -920,43 +992,77 @@ const calculateMonthlyCashflow = (
   return calcFundingSchedule(timeline, costs, revenues, taxes, scenario.settings, taxScales);
 };
 
-// --- Updated IRR - Uses Newton-Raphson with robust divergence handling and proper annualization ---
-const calculateIRR = (flows: number[]): number | null => {
-  let guest = 0.1; // 10% Initial Guess
-  const maxIterations = 50;
-  const tolerance = 1e-7;
-
-  // Check if at least one positive and one negative flow exists, otherwise IRR is impossible
-  const hasPositive = flows.some(f => f > 0);
-  const hasNegative = flows.some(f => f < 0);
-  if (!hasPositive || !hasNegative) return null;
-
-  for (let i = 0; i < maxIterations; i++) {
-    let npv = 0;
-    let dnpv = 0;
-    
-    for (let t = 0; t < flows.length; t++) {
-      const discount = Math.pow(1 + guest, t);
-      npv += flows[t] / discount;
-      dnpv -= (t * flows[t]) / (discount * (1 + guest));
-    }
-
-    if (Math.abs(dnpv) < 1e-10) break; // Avoid division by zero
-    const newGuest = guest - npv / dnpv;
-    
-    if (Math.abs(newGuest - guest) < tolerance) {
-        // Converged
-        // Formula: ((1 + monthly)^12 - 1) * 100 for Annual Effective Rate
-        return (Math.pow(1 + newGuest, 12) - 1) * 100;
-    }
-    
-    guest = newGuest;
-    
-    // Divergence check
-    if (Math.abs(guest) > 10) return null; // Likely diverged
+// --- HELPER: NPV (Exported for testing or internal use) ---
+export const calculateNPV = (flows: number[], rate: number): number => {
+  let npv = 0;
+  for (let i = 0; i < flows.length; i++) {
+    npv += flows[i] / Math.pow(1 + rate, i);
   }
+  return npv;
+};
+
+// --- Updated IRR: Robust Bracketing + Bisection ---
+// Returns Monthly Effective Rate (Decimal) or null
+const calculateIRR = (flows: number[]): number | null => {
+  // 1. Sanity Check: Must have signs changes
+  let hasPos = false;
+  let hasNeg = false;
+  for (const f of flows) {
+    if (f > 0) hasPos = true;
+    if (f < 0) hasNeg = true;
+    if (hasPos && hasNeg) break;
+  }
+  if (!hasPos || !hasNeg) return null;
+
+  // 2. Define NPV function for convenience
+  const npv = (r: number) => calculateNPV(flows, r);
+
+  // 3. Find Bracket
+  // We search for a range [a, b] where signs of NPV differ.
+  // Monthly rates typically between -100% (-1.0) and +100% (1.0).
+  // Extreme cases might go higher.
   
-  return null; // Failed to converge
+  let low = -0.99; // Near -100% loss
+  let high = 1.0;  // 100% monthly return
+  let fLow = npv(low);
+  let fHigh = npv(high);
+
+  if (fLow * fHigh > 0) {
+      // Signs match, try expanding upper bound
+      if (fLow > 0) {
+          // NPV positive at 100% monthly? Try 1000%
+          high = 10.0; 
+          fHigh = npv(high);
+      } else {
+          // NPV negative at -99%? Extremely bad project.
+          return null; 
+      }
+  }
+
+  if (fLow * fHigh > 0) return null; // Still no sign change, unsolvable in range
+
+  // 4. Bisection Method (Robust)
+  const tolerance = 1e-8;
+  const maxIter = 100;
+
+  for (let i = 0; i < maxIter; i++) {
+      const mid = (low + high) / 2;
+      const fMid = npv(mid);
+
+      if (Math.abs(fMid) < tolerance || (high - low) < tolerance) {
+          return mid;
+      }
+
+      if (fLow * fMid < 0) {
+          high = mid;
+          fHigh = fMid;
+      } else {
+          low = mid;
+          fLow = fMid;
+      }
+  }
+
+  return (low + high) / 2;
 };
 
 // --- DEPRECATED: Legacy metric calculators ---
@@ -984,22 +1090,13 @@ const calculateReportStats = (scenario: FeasibilityScenario, siteDNA: SiteDNA, t
   return { totalRevenueGross, gstCollected, netRealisation, totalItc };
 };
 
-const calculateNPV = (flows: number[], annualRate: number): number => {
-  const monthlyRate = annualRate / 100 / 12;
-  let npv = 0;
-  for (let i = 0; i < flows.length; i++) {
-    npv += flows[i] / Math.pow(1 + monthlyRate, i);
-  }
-  return npv;
-};
-
 // --- LEGACY EXPORTS (METRICS & ITEMISED) - Updated to handle implicit land items ---
 const generateItemisedCashflowData = (
   scenario: FeasibilityScenario, 
   siteDNA: SiteDNA,
+  mainFlows: MonthlyFlow[],
   taxScales: TaxConfiguration = DEFAULT_TAX_SCALES
 ): ItemisedCashflow => {
-  const mainFlows = calculateMonthlyCashflow(scenario, siteDNA, undefined, taxScales);
   const months = mainFlows.map(f => f.label);
   const duration = months.length;
 
@@ -1128,15 +1225,23 @@ const calculateProjectMetrics = (cashflow: MonthlyFlow[], settings: FeasibilityS
   const peakDebtDate = getMonthLabel(settings.startDate, peakDebtMonthIndex);
   const equityFlows = cashflow.map(f => f.repayEquity - f.drawDownEquity);
   const peakEquity = Math.max(...cashflow.map(f => f.balanceEquity));
+  
   const marginOnEquity = peakEquity > 0 ? (exactProfit / peakEquity) * 100 : 0;
-  const equityIRR = calculateIRR(equityFlows);
+  
+  // IRR Calculations
+  // 1. Calculate Monthly IRR (Decimal)
+  const equityMonthlyIRR = calculateIRR(equityFlows);
+  // 2. Convert to Effective Annual Rate (%) if solvable
+  const equityIRR = equityMonthlyIRR !== null ? annualiseMonthlyRate(equityMonthlyIRR) * 100 : null;
 
   const projectFlows = cashflow.map(f => {
       const inF = f.netRevenue + f.lendingInterestIncome; 
       const outF = f.developmentCosts / 1.1; // Approximation for legacy project flow
       return inF - outF;
   });
-  const projectIRR = calculateIRR(projectFlows);
+  
+  const projectMonthlyIRR = calculateIRR(projectFlows);
+  const projectIRR = projectMonthlyIRR !== null ? annualiseMonthlyRate(projectMonthlyIRR) * 100 : null;
 
   return {
       // Canonical Financials
@@ -1175,11 +1280,14 @@ export const FinanceEngine = {
   calculateReportStats,
   generateItemisedCashflowData,
   calculateProjectMetrics,
+  calculateLineItemSummaries, // Exported for ReportModel
   getMonthLabel,
   calculateNPV,
   calculateIRR,
   calculateStampDuty,
   getImplicitAcquisitionCosts,
+  annualiseMonthlyRate,
+  distributeValue, // Added distributeValue here
   _internal: {
     buildTimeline,
     calcCostSchedule,

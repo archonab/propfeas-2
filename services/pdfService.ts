@@ -1,8 +1,10 @@
 
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import { Site, FeasibilityScenario, CostCategory, SiteDNA, MonthlyFlow, ItemisedCashflow, SensitivityRow, ReportModel } from "../types";
+import { Site, FeasibilityScenario, CostCategory, SiteDNA, MonthlyFlow, ItemisedCashflow, SensitivityRow, ReportModel, LineItem, GstTreatment, MilestoneLink, TaxConfiguration } from "../types";
 import { SensitivityCell } from "./sensitivityService";
+import { FinanceEngine } from "./financeEngine";
+import { DEFAULT_TAX_SCALES } from '../constants';
 
 // --- THEME CONSTANTS ---
 const COLORS = {
@@ -81,7 +83,7 @@ export class PdfService {
 
     // 4. Valuer's P&L (Portrait)
     builder.addNewPage("portrait");
-    builder.addValuersPnL(scenario, report); 
+    builder.addValuersPnL(scenario, report, siteDNA); 
     builder.addPageFooter(4, site.name);
 
     // 5. Sensitivity Analysis (Portrait)
@@ -155,7 +157,7 @@ export class PdfService {
       y += 4;
       drawDottedRow("Development Margin (MDC)", formatPct(metrics.devMarginPct), leftX, 80, true);
       drawDottedRow("Margin on Equity (MoE)", formatPct(metrics.marginOnEquity), leftX, 80, true);
-      drawDottedRow("Internal Rate of Return (Pa)", formatPct(metrics.equityIRR), leftX, 80, true);
+      drawDottedRow("Internal Rate of Return (p.a.)", formatPct(metrics.equityIRR), leftX, 80, true);
       y += 4;
       drawDottedRow("Margin Before Interest", formatCurrency(metrics.marginBeforeInterest), leftX, 80);
 
@@ -390,91 +392,56 @@ export class PdfService {
   }
 
   // --- COMPONENT: VALUER'S P&L ---
-  private addValuersPnL(scenario: FeasibilityScenario, report: ReportModel) {
+  private addValuersPnL(scenario: FeasibilityScenario, report: ReportModel, siteDNA: SiteDNA) {
     this.addPageHeader("Financial Analysis", "Profit & Loss Statement", false);
 
     const metrics = report.metrics;
-    const itemised = report.cashflow.itemised;
-    const rows: any[] = [];
+    
+    // Use pre-calculated Item Summaries from the Report Model
+    // These contain strict NET amounts inclusive of escalation logic
+    const detailedItems = report.itemSummaries || [];
 
-    // Helper to format rows for autoTable
-    const addRow = (label: string, detail: string | null, subtotal: string | null, style: 'header'|'item'|'total'|'spacer' = 'item') => {
-        rows.push({ label, detail, subtotal, style });
+    // 2. Prepare Table Data
+    const rows: any[] = [];
+    const addRow = (label: string, detail: string | null, subtotal: string | null, style: 'header'|'item'|'total'|'spacer' = 'item', indent = false) => {
+        rows.push({ label, detail, subtotal, style, indent });
     };
 
-    // 1. Revenue
+    // --- REVENUE SECTION ---
     addRow("GROSS REALISATION", null, null, 'header');
     addRow("Gross Sales Revenue", formatCurrency(metrics.grossRealisation), null);
     addRow("Less: GST Liability", formatCurrency(metrics.gstOnSales * -1), null);
     addRow("NET REALISATION", null, formatCurrency(metrics.netRealisation), 'total');
     addRow("", null, null, 'spacer');
 
-    // 2. Costs - Using Itemised Categories from Report Model for Consistency
+    // --- COSTS SECTION ---
     addRow("DEVELOPMENT COSTS (NET EX GST)", null, null, 'header');
-    
-    // Process categories
-    itemised.categories.forEach(cat => {
-        // Skip Income & Finance in this section
-        if (cat.name === 'Income' || cat.name === 'Finance & Funding') return;
+
+    // Helper to process a category
+    const processCategory = (cat: CostCategory, label: string) => {
+        const catItems = detailedItems.filter(i => i.category === cat);
+        if (catItems.length === 0) return;
+
+        addRow(label, null, null, 'header');
+        let catSum = 0;
         
-        addRow(cat.name, null, null, 'header');
-        
-        let catTotal = 0;
-        // The rows in ItemisedCashflow are GROSS or NET? 
-        // FinanceEngine generates them using netAmount usually, but let's check
-        // The standard generation adds GST if taxable. We need NET for P&L.
-        // The ItemisedCashflow generator in FinanceEngine.ts has been updated to use implicit items.
-        // However, P&L typically shows Net figures. 
-        // We will assume the itemised rows are Net for this display or re-calculate?
-        // Actually, the new FinanceEngine logic for itemised rows adds GST if taxable.
-        // So itemised.rows[i].total is Gross.
-        // We should probably rely on the MonthlyFlows or recalculate Net for P&L presentation
-        // For now, let's use the report metrics for category totals if possible or just divide by 1.1 if needed.
-        // BETTER APPROACH: Read from the new Reconciliation block? No, that's high level.
-        // Let's use the MonthlyFlow breakdown which tracks Net.
-        
-        // Actually, looking at FinanceEngine code: 
-        // row.values[m] = item.gstTreatment === TAXABLE ? base * 1.1 : base.
-        // So Itemised rows are Gross.
-        // We need Net for Valuer's P&L.
-        
-        // Fallback: We iterate the scenario costs again? No, we want to use the report model.
-        // The P&L should probably just show the high level categories derived from monthlyFlow.costBreakdown (which IS Net).
-        // But we want line items.
-        
-        // FIX: We will list the rows from itemised, but strip GST for display.
-        cat.rows.forEach(row => {
-            // Approximation: We don't know the exact GST status of each row here easily without looking up the item.
-            // But we can just list the Gross and label it? Or stick to high level.
-            // Let's list them as Gross (Cash Flow View) or Net (P&L View).
-            // Standard Valuer P&L is usually Net.
-            // Let's use the row total / 1.1 as a heuristic if we can't link back. 
-            // OR better: The previous implementation re-calculated `calculateLineItemTotal` which returns Net.
-            // We should stick to that pattern for the P&L details to ensure it matches the Net Profit bottom line.
-            
-            // Wait, we can't easily re-calculate here without re-importing FinanceEngine logic which we want to avoid in PDF Service.
-            // Compromise: We will display the Itemised Rows as they appear in the cashflow (Gross/Cash) but denote it, 
-            // OR we rely on the high-level category totals from the MonthlyFlow aggregation which we know are Net.
-            
-            // Let's do High Level Categories from Monthly Flows to guarantee reconciliation with Net Profit.
-            // Detailed line items in P&L are risky if we mix Gross/Net logic in the PDF renderer.
+        catItems.forEach(i => {
+            addRow(i.description, formatCurrency(i.netAmount), null, 'item', true);
+            catSum += i.netAmount;
         });
         
-        // NEW STRATEGY: Use the category totals from report.reconciliation or monthly aggregation
-        // We can't get individual line items easily as NET without re-calculation.
-        // Let's list the categories based on the monthly breakdown.
-        const catId = cat.id as CostCategory;
-        const netTotal = report.cashflow.monthly.reduce((sum, m) => sum + (m.costBreakdown[catId] || 0), 0);
-        
-        // List items?
-        // Ideally we want items. Let's filter scenario.costs + implicit items.
-        // But PDF service shouldn't know about implicit items logic.
-        // OK, let's just show the Category Total (Net) for now to ensure 100% accuracy.
-        addRow(`Total ${cat.name}`, null, formatCurrency(netTotal), 'item');
+        addRow(`Total ${label}`, null, formatCurrency(catSum), 'total');
         addRow("", null, null, 'spacer');
-    });
+    };
 
-    // Calculated Finance (Interest)
+    processCategory(CostCategory.LAND, "Land & Acquisition");
+    processCategory(CostCategory.CONSTRUCTION, "Construction");
+    processCategory(CostCategory.CONSULTANTS, "Consultants");
+    processCategory(CostCategory.STATUTORY, "Statutory & General");
+    processCategory(CostCategory.SELLING, "Selling & Marketing");
+    processCategory(CostCategory.MISCELLANEOUS, "Miscellaneous");
+
+    // Finance (High Level from Metrics)
     addRow("Finance Costs", null, null, 'header');
     addRow("Interest & Line Fees", null, formatCurrency(metrics.totalFinanceCost), 'total');
     addRow("", null, null, 'spacer');
@@ -485,19 +452,19 @@ export class PdfService {
     addRow("NET DEVELOPMENT PROFIT", null, formatCurrency(metrics.netProfit), 'header');
     addRow("DEVELOPMENT MARGIN", null, formatPct(metrics.devMarginPct), 'total');
 
-    // Render Table
+    // Render Main P&L Table
     autoTable(this.doc, {
         startY: this.currentY,
         head: [['Item', 'Amount', 'Subtotal']],
         body: rows.map(r => [r.label, r.detail, r.subtotal]),
         theme: 'plain',
-        styles: { fontSize: 9, cellPadding: 1.5, font: FONTS.body },
+        styles: { fontSize: 8, cellPadding: 1.2, font: FONTS.body },
         columnStyles: {
             0: { cellWidth: 110 },
             1: { cellWidth: 40, halign: 'right', font: FONTS.mono },
             2: { cellWidth: 40, halign: 'right', font: FONTS.mono, fontStyle: 'bold' }
         },
-        showHead: 'everyPage', // Fix orphan headers
+        showHead: 'everyPage',
         didParseCell: (data) => {
             const rowInfo = rows[data.row.index];
             if (data.section === 'head') {
@@ -513,7 +480,9 @@ export class PdfService {
                         data.cell.styles.textColor = COLORS.accent;
                     }
                 } else if (rowInfo.style === 'item') {
-                    if (data.column.index === 0) data.cell.styles.cellPadding = { top: 1, bottom: 1, left: 8, right: 1 };
+                    if (data.column.index === 0) {
+                        data.cell.styles.cellPadding = { top: 1, bottom: 1, left: rowInfo.indent ? 8 : 2, right: 1 };
+                    }
                 } else if (rowInfo.style === 'total') {
                     if (data.column.index === 2) {
                         data.cell.styles.lineWidth = { top: 0.1, bottom: 0, left: 0, right: 0 };
@@ -522,6 +491,59 @@ export class PdfService {
             }
         }
     });
+
+    this.currentY = (this.doc as any).lastAutoTable.finalY + 10;
+
+    // --- BASIS & RECONCILIATION BOX ---
+    // Ensure we don't break page
+    if (this.currentY > 250) this.doc.addPage();
+
+    this.doc.setDrawColor(COLORS.border);
+    this.doc.setFillColor(250, 250, 250);
+    this.doc.rect(20, this.currentY, 170, 30); // Box background
+
+    this.doc.setFont(FONTS.header, "bold");
+    this.doc.setFontSize(9);
+    this.doc.setTextColor(COLORS.secondary);
+    this.doc.text("Basis of Presentation: Net (Ex GST)", 25, this.currentY + 6);
+
+    // Mini Table for GST Rec
+    const startTableY = this.currentY + 10;
+    
+    // Headers
+    this.doc.setFontSize(8);
+    this.doc.text("Metric", 25, startTableY);
+    this.doc.text("Gross (Inc GST)", 80, startTableY, { align: 'right' });
+    this.doc.text("GST Component", 120, startTableY, { align: 'right' });
+    this.doc.text("Net (Ex GST)", 160, startTableY, { align: 'right' });
+    
+    this.doc.line(25, startTableY + 2, 185, startTableY + 2); // Header Line
+
+    const drawRecRow = (label: string, gross: number, gst: number, net: number, yPos: number) => {
+        this.doc.setFont(FONTS.body, "normal");
+        this.doc.text(label, 25, yPos);
+        this.doc.setFont(FONTS.mono, "normal");
+        this.doc.text(formatCurrency(gross), 80, yPos, { align: 'right' });
+        this.doc.text(formatCurrency(gst), 120, yPos, { align: 'right' });
+        this.doc.setFont(FONTS.mono, "bold");
+        this.doc.text(formatCurrency(net), 160, yPos, { align: 'right' });
+    };
+
+    drawRecRow("Total Revenue", metrics.grossRealisation, metrics.gstOnSales, metrics.netRealisation, startTableY + 7);
+    drawRecRow("Total Costs", metrics.totalCostGross, metrics.gstInputCredits, metrics.totalCostNet, startTableY + 13);
+    
+    // Net Position
+    this.doc.setFont(FONTS.body, "bold");
+    this.doc.text("Net Position", 25, startTableY + 19);
+    // Gross Profit
+    this.doc.setFont(FONTS.mono, "normal");
+    this.doc.text(formatCurrency(metrics.grossRealisation - metrics.totalCostGross), 80, startTableY + 19, { align: 'right' });
+    // Net GST Payable
+    this.doc.text(formatCurrency(metrics.netGstPayable), 120, startTableY + 19, { align: 'right' });
+    // Net Profit
+    this.doc.text(formatCurrency(metrics.netProfit), 160, startTableY + 19, { align: 'right' });
+
+    this.currentY += 35;
   }
 
   // --- COMPONENT: SENSITIVITY ANALYSIS ---

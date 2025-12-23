@@ -13,7 +13,7 @@ interface ScenarioMetrics {
   developmentCost: number; // TDC
   netProfit: number;
   margin: number;
-  irr: number;
+  irr: number | null; // Updated to allow null
   equityMultiple: number;
 }
 
@@ -57,10 +57,11 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios, siteDNA }) => {
   const formatCurrency = (val: number) => 
     `$${(val / 1000000).toFixed(2)}M`;
   
-  const formatPct = (val: number) => 
-    `${val.toFixed(2)}%`;
+  const formatPct = (val: number | null) => 
+    val !== null ? `${val.toFixed(2)}%` : 'N/A';
 
-  const renderVariance = (val: number, baselineVal: number, type: 'currency' | 'pct', inverse = false) => {
+  const renderVariance = (val: number | null, baselineVal: number | null, type: 'currency' | 'pct', inverse = false) => {
+    if (val === null || baselineVal === null) return <span className="text-slate-300">N/A</span>;
     if (val === baselineVal) return <span className="text-slate-300">-</span>;
     
     const diff = val - baselineVal;
@@ -87,7 +88,7 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios, siteDNA }) => {
     { label: 'Total Dev. Cost (TDC)', key: 'developmentCost', type: 'currency', inverse: true },
     { label: 'Net Profit', key: 'netProfit', type: 'currency' },
     { label: 'Development Margin', key: 'margin', type: 'pct' },
-    { label: 'Equity IRR', key: 'irr', type: 'pct' },
+    { label: 'Equity IRR (p.a.)', key: 'irr', type: 'pct' },
     { label: 'Equity Multiple', key: 'equityMultiple', type: 'pct' } // formatting as decimal actually
   ];
 
@@ -128,8 +129,9 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios, siteDNA }) => {
                   const val = res.metrics[row.key];
                   
                   let displayVal = '';
-                  if (row.key === 'equityMultiple') displayVal = `${val.toFixed(2)}x`;
-                  else displayVal = row.type === 'currency' ? formatCurrency(val) : formatPct(val);
+                  if (row.key === 'equityMultiple' && typeof val === 'number') displayVal = `${val.toFixed(2)}x`;
+                  else if (row.key === 'irr') displayVal = formatPct(val);
+                  else if (typeof val === 'number') displayVal = row.type === 'currency' ? formatCurrency(val) : formatPct(val);
 
                   return (
                     <td key={res.id} className="px-6 py-4">

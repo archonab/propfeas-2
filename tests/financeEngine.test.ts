@@ -89,9 +89,12 @@ describe('FinanceEngine Pure Modules', () => {
       scenario.settings.acquisition.purchasePrice = 1000000;
       scenario.settings.acquisition.depositPercent = 10;
       
+      // Calculate cashflow first
+      const cashflow = FinanceEngine.calculateMonthlyCashflow(scenario, mockSiteDNA, undefined, DEFAULT_TAX_SCALES);
+
       // We expect the itemised report to contain a Deposit item and Settlement item
       // even though scenario.costs is empty
-      const itemised = FinanceEngine.generateItemisedCashflowData(scenario, mockSiteDNA, DEFAULT_TAX_SCALES);
+      const itemised = FinanceEngine.generateItemisedCashflowData(scenario, mockSiteDNA, cashflow, DEFAULT_TAX_SCALES);
       
       const landCat = itemised.categories.find(c => c.name === 'Land & Acquisition');
       expect(landCat).toBeDefined();
@@ -107,7 +110,7 @@ describe('FinanceEngine Pure Modules', () => {
   });
 
   describe('3. IRR & Stability', () => {
-    it('should return null for divergent IRR', () => {
+    it('should return null for divergent IRR (all positive)', () => {
       // Cashflow with only positive numbers -> Infinite IRR
       const flows = [100, 100, 100];
       const irr = FinanceEngine.calculateIRR(flows);
@@ -116,13 +119,33 @@ describe('FinanceEngine Pure Modules', () => {
 
     it('should calculate correct annualised IRR for simple case', () => {
       // Invest 100, Return 110 in 1 month -> 10% monthly yield
-      // Annualised = (1.1)^12 - 1 ~= 213%
+      // Annualised = (1.1)^12 - 1 ~= 213.84%
       const flows = [-100, 110];
-      const irr = FinanceEngine.calculateIRR(flows);
+      // calculateIRR returns Monthly Decimal (0.1)
+      const monthlyIRR = FinanceEngine.calculateIRR(flows);
       
-      // Monthly rate is 0.1
-      const expectedAnnual = (Math.pow(1.1, 12) - 1) * 100;
-      expect(irr).toBeCloseTo(expectedAnnual, 1);
+      expect(monthlyIRR).not.toBeNull();
+      expect(monthlyIRR).toBeCloseTo(0.1, 4);
+
+      // Verify Annualisation Helper
+      const annual = FinanceEngine.annualiseMonthlyRate(monthlyIRR!);
+      const expectedAnnual = (Math.pow(1.1, 12) - 1);
+      expect(annual).toBeCloseTo(expectedAnnual, 4);
+    });
+
+    it('should calculate IRR correctly for standard project cashflow', () => {
+        // -100, -100, 0, 0, 250
+        // Total Invest: 200. Total Return: 250 in month 4.
+        const flows = [-100, -100, 0, 0, 250];
+        const monthlyIRR = FinanceEngine.calculateIRR(flows);
+        expect(monthlyIRR).not.toBeNull();
+        
+        // Manual verification or check solvability
+        // NPV at rate r: -100 - 100/(1+r) + 250/(1+r)^4 = 0
+        // r approx 0.04 (4% monthly)
+        const r = monthlyIRR!;
+        const npv = -100 - 100/Math.pow(1+r,1) + 250/Math.pow(1+r,4);
+        expect(npv).toBeCloseTo(0, 3);
     });
   });
 
@@ -141,10 +164,6 @@ describe('FinanceEngine Pure Modules', () => {
 
       // GST is 10% of Net Amount (10,000)
       // Gross Cost is Net + GST (110,000)
-      
-      // Implicit Land costs are also there! 
-      // Purchase Price 1M (Margin Scheme usually implies NO ITC or different handling, but our engine treats Margin Scheme input as Gross = Net currently for simplicity unless full GST logic applied)
-      // Let's check the CONSTRUCTION part specifically if possible, or total.
       
       // Total Gross = Total Net + GST Credits
       // Note: This relies on floating point precision, so check closeTo

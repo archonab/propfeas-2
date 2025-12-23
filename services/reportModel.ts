@@ -27,14 +27,22 @@ export const ReportService = {
     // Note: generateItemisedCashflowData has been updated to include implicit land costs
     const itemisedCashflow = FinanceEngine.generateItemisedCashflowData(
         scenario, 
-        siteDNA, 
+        siteDNA,
+        monthlyFlows,
         taxScales
     );
 
-    // 3. Calculate Metrics (Using Canonical Logic)
+    // 3. Calculate Item Summaries (For P&L) - Precise Net/GST Calculation per Item
+    const itemSummaries = FinanceEngine.calculateLineItemSummaries(
+        scenario,
+        siteDNA,
+        taxScales
+    );
+
+    // 4. Calculate Metrics (Using Canonical Logic)
     const metrics = FinanceEngine.calculateProjectMetrics(monthlyFlows, scenario.settings);
 
-    // 4. Construct Report Model
+    // 5. Construct Report Model
     return {
         timestamp: new Date().toISOString(),
         basis: {
@@ -42,6 +50,7 @@ export const ReportService = {
             gstMethod: 'FULL_GST' 
         },
         metrics: metrics,
+        itemSummaries: itemSummaries,
         reconciliation: {
             totalCostGross: metrics.totalCostGross,
             gstInputCredits: metrics.gstInputCredits,

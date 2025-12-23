@@ -1,6 +1,6 @@
 
 import { FeasibilitySettings, LineItem, RevenueItem, CostCategory, SensitivityVariable, SiteDNA, FeasibilityScenario, ScenarioStatus, SensitivityRow } from '../types';
-import { FinanceEngine } from './financeEngine';
+import { ReportService } from './reportModel';
 
 export interface SensitivityCell {
   xVar: number; 
@@ -115,18 +115,14 @@ export const calculateMatrixSync = (
           revenues: finalScenarioParts.revenues
         };
 
-        const flows = FinanceEngine.calculateMonthlyCashflow(tempScenario, siteDNA);
-
-        const totalOut = flows.reduce((acc, curr) => acc + curr.developmentCosts + curr.interestSenior + curr.interestMezz, 0);
-        const totalIn = flows.reduce((acc, curr) => acc + curr.netRevenue, 0);
-        const profit = totalIn - totalOut;
-        const margin = totalOut > 0 ? (profit / totalOut) * 100 : 0;
+        // Use Canonical Calculator
+        const report = ReportService.runFeasibility(tempScenario, siteDNA);
 
         row.push({
           xVar: xVal,
           yVar: yVal,
-          margin,
-          profit
+          margin: report.metrics.marginOnCost,
+          profit: report.metrics.netProfit
         });
       }
       matrix.push(row);
@@ -251,21 +247,15 @@ export const SensitivityService = {
             revenues: variant.revenues
         };
 
-        const flows = FinanceEngine.calculateMonthlyCashflow(tempScenario, siteDNA);
-        const totalOut = flows.reduce((acc, curr) => acc + curr.developmentCosts + curr.interestSenior + curr.interestMezz, 0);
-        const totalIn = flows.reduce((acc, curr) => acc + curr.netRevenue, 0);
-        const profit = totalIn - totalOut;
-        const margin = totalOut > 0 ? (profit / totalOut) * 100 : 0;
-        const equityFlows = flows.map(f => f.repayEquity - f.drawDownEquity);
-        const irr = FinanceEngine.calculateIRR(equityFlows);
+        const report = ReportService.runFeasibility(tempScenario, siteDNA);
 
         rows.push({
             varianceLabel,
             variableValue,
-            devCost: totalOut,
-            netProfit: profit,
-            margin,
-            irr,
+            devCost: report.metrics.totalDevelopmentCost,
+            netProfit: report.metrics.netProfit,
+            margin: report.metrics.marginOnCost,
+            irr: report.metrics.equityIRR,
             isBaseCase: step === 0
         });
     }

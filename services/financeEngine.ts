@@ -83,6 +83,105 @@ const calculateStampDuty = (
   return duty;
 };
 
+// --- HELPER: GENERATE IMPLICIT LAND ITEMS ---
+// This ensures Land costs appear in itemised reports exactly as they do in the cashflow
+const getImplicitAcquisitionCosts = (settings: FeasibilitySettings, taxScales: TaxConfiguration): LineItem[] => {
+    const { acquisition } = settings;
+    const items: LineItem[] = [];
+    const price = acquisition.purchasePrice;
+    
+    // 1. Deposit
+    const depositAmt = price * (acquisition.depositPercent / 100);
+    if (depositAmt > 0) {
+        items.push({
+            id: 'IMP-DEPOSIT',
+            code: 'LND-DEP',
+            category: CostCategory.LAND,
+            description: 'Land Deposit',
+            inputType: InputType.FIXED,
+            amount: depositAmt,
+            startDate: 0,
+            span: 1,
+            method: DistributionMethod.UPFRONT,
+            escalationRate: 0,
+            gstTreatment: GstTreatment.MARGIN_SCHEME // Assuming Margin Scheme for Land usually
+        });
+    }
+
+    // 2. Settlement
+    const settlementAmt = price - depositAmt;
+    if (settlementAmt > 0) {
+        items.push({
+            id: 'IMP-SETTLE',
+            code: 'LND-SET',
+            category: CostCategory.LAND,
+            description: 'Land Settlement',
+            inputType: InputType.FIXED,
+            amount: settlementAmt,
+            startDate: acquisition.settlementPeriod, // Absolute month relative to start
+            span: 1,
+            method: DistributionMethod.UPFRONT,
+            escalationRate: 0,
+            gstTreatment: GstTreatment.MARGIN_SCHEME
+        });
+    }
+
+    // 3. Stamp Duty
+    const dutyAmt = calculateStampDuty(price, acquisition.stampDutyState, acquisition.isForeignBuyer, taxScales, acquisition.stampDutyOverride);
+    if (dutyAmt > 0) {
+        items.push({
+            id: 'IMP-DUTY',
+            code: 'STAT-DUTY',
+            category: CostCategory.STATUTORY,
+            description: `Stamp Duty (${acquisition.stampDutyState})`,
+            inputType: InputType.FIXED,
+            amount: dutyAmt,
+            startDate: acquisition.stampDutyTiming === 'EXCHANGE' ? 0 : acquisition.settlementPeriod,
+            span: 1,
+            method: DistributionMethod.UPFRONT,
+            escalationRate: 0,
+            gstTreatment: GstTreatment.GST_FREE
+        });
+    }
+
+    // 4. Legal Fees
+    if (acquisition.legalFeeEstimate > 0) {
+        items.push({
+            id: 'IMP-LEGAL',
+            code: 'LND-LEG',
+            category: CostCategory.LAND,
+            description: 'Acquisition Legal Fees',
+            inputType: InputType.FIXED,
+            amount: acquisition.legalFeeEstimate,
+            startDate: 0,
+            span: 1,
+            method: DistributionMethod.UPFRONT,
+            escalationRate: 0,
+            gstTreatment: GstTreatment.TAXABLE
+        });
+    }
+
+    // 5. Agent Fees
+    const agentAmt = price * (acquisition.buyersAgentFee / 100);
+    if (agentAmt > 0) {
+        items.push({
+            id: 'IMP-AGENT',
+            code: 'LND-AGT',
+            category: CostCategory.CONSULTANTS,
+            description: "Buyer's Agent Fee",
+            inputType: InputType.FIXED,
+            amount: agentAmt,
+            startDate: acquisition.settlementPeriod,
+            span: 1,
+            method: DistributionMethod.UPFRONT,
+            escalationRate: 0,
+            gstTreatment: GstTreatment.TAXABLE
+        });
+    }
+
+    return items;
+};
+
 // --- HELPER: LINE ITEM TOTAL ---
 export const calculateLineItemTotal = (
   item: LineItem, 
@@ -334,7 +433,7 @@ const calcCostSchedule = (
   // B. Development Costs (Line Items)
   if (!isHold) {
       baseCosts.forEach(cost => {
-          if (cost.category === CostCategory.LAND) return; // Handled above
+          if (cost.category === CostCategory.LAND) return; // Handled above (mostly, though we might want to check for user added land items)
           const effectiveStart = getEffectiveStartMonth(cost, timeline);
           const totalAmt = calculateLineItemTotal(cost, baseSettings, siteDNA, constructionSum, estTotalRevenue, taxScales);
           const escRate = cost.escalationRate || getEscalationRate(cost.category, baseSettings);
@@ -821,7 +920,80 @@ const calculateMonthlyCashflow = (
   return calcFundingSchedule(timeline, costs, revenues, taxes, scenario.settings, taxScales);
 };
 
-// --- LEGACY EXPORTS (METRICS & ITEMISED) ---
+// --- Updated IRR - Uses Newton-Raphson with robust divergence handling and proper annualization ---
+const calculateIRR = (flows: number[]): number | null => {
+  let guest = 0.1; // 10% Initial Guess
+  const maxIterations = 50;
+  const tolerance = 1e-7;
+
+  // Check if at least one positive and one negative flow exists, otherwise IRR is impossible
+  const hasPositive = flows.some(f => f > 0);
+  const hasNegative = flows.some(f => f < 0);
+  if (!hasPositive || !hasNegative) return null;
+
+  for (let i = 0; i < maxIterations; i++) {
+    let npv = 0;
+    let dnpv = 0;
+    
+    for (let t = 0; t < flows.length; t++) {
+      const discount = Math.pow(1 + guest, t);
+      npv += flows[t] / discount;
+      dnpv -= (t * flows[t]) / (discount * (1 + guest));
+    }
+
+    if (Math.abs(dnpv) < 1e-10) break; // Avoid division by zero
+    const newGuest = guest - npv / dnpv;
+    
+    if (Math.abs(newGuest - guest) < tolerance) {
+        // Converged
+        // Formula: ((1 + monthly)^12 - 1) * 100 for Annual Effective Rate
+        return (Math.pow(1 + newGuest, 12) - 1) * 100;
+    }
+    
+    guest = newGuest;
+    
+    // Divergence check
+    if (Math.abs(guest) > 10) return null; // Likely diverged
+  }
+  
+  return null; // Failed to converge
+};
+
+// --- DEPRECATED: Legacy metric calculators ---
+// These are marked deprecated. Consumers should use ReportModel logic instead.
+// We keep them minimally operational for components not yet fully migrated if any.
+const calculateReportStats = (scenario: FeasibilityScenario, siteDNA: SiteDNA, taxScales: TaxConfiguration = DEFAULT_TAX_SCALES) => {
+  const revenues = scenario.revenues;
+  const totalRevenueGross = revenues.reduce((acc, rev) => {
+      if (rev.strategy === 'Hold') return acc; 
+      return acc + (rev.units * rev.pricePerUnit);
+  }, 0);
+
+  let gstCollected = 0;
+  if (scenario.strategy === 'SELL') gstCollected = totalRevenueGross / 11; 
+  const netRealisation = totalRevenueGross - gstCollected;
+  
+  const totalItc = scenario.costs.reduce((acc, item) => {
+      if (item.gstTreatment === GstTreatment.TAXABLE) {
+          const total = calculateLineItemTotal(item, scenario.settings, siteDNA, 0, 0, taxScales); 
+          return acc + (total * 0.1); 
+      }
+      return acc;
+  }, 0);
+
+  return { totalRevenueGross, gstCollected, netRealisation, totalItc };
+};
+
+const calculateNPV = (flows: number[], annualRate: number): number => {
+  const monthlyRate = annualRate / 100 / 12;
+  let npv = 0;
+  for (let i = 0; i < flows.length; i++) {
+    npv += flows[i] / Math.pow(1 + monthlyRate, i);
+  }
+  return npv;
+};
+
+// --- LEGACY EXPORTS (METRICS & ITEMISED) - Updated to handle implicit land items ---
 const generateItemisedCashflowData = (
   scenario: FeasibilityScenario, 
   siteDNA: SiteDNA,
@@ -860,12 +1032,16 @@ const generateItemisedCashflowData = (
   incomeCat.total = salesRow.total + otherRow.total;
   incomeCat.rows.push(salesRow, otherRow);
 
+  // Combine Manual Costs + Implicit Land Costs
+  const virtualLandItems = getImplicitAcquisitionCosts(scenario.settings, taxScales);
+  const allCosts = [...scenario.costs, ...virtualLandItems];
+
   // Re-run cost distribution logic individually for reporting granularity
   const timeline = buildTimeline(scenario);
   const constructionSum = scenario.costs.filter(c => c.category === CostCategory.CONSTRUCTION).reduce((a,b) => a+b.amount, 0);
   const revenueSum = incomeCat.total;
 
-  scenario.costs.forEach(item => {
+  allCosts.forEach(item => {
       let targetCat: ItemisedCategory | undefined;
       if (item.category === CostCategory.LAND) targetCat = getCat('Land & Acquisition');
       else if (item.category === CostCategory.CONSTRUCTION) targetCat = getCat('Construction');
@@ -915,71 +1091,6 @@ const generateItemisedCashflowData = (
   });
 
   return { headers: months, categories, netCashflow, cumulativeCashflow: [] };
-};
-
-const calculateReportStats = (scenario: FeasibilityScenario, siteDNA: SiteDNA, taxScales: TaxConfiguration = DEFAULT_TAX_SCALES) => {
-  const revenues = scenario.revenues;
-  const totalRevenueGross = revenues.reduce((acc, rev) => {
-      if (rev.strategy === 'Hold') return acc; 
-      return acc + (rev.units * rev.pricePerUnit);
-  }, 0);
-
-  let gstCollected = 0;
-  if (scenario.strategy === 'SELL') gstCollected = totalRevenueGross / 11; 
-  const netRealisation = totalRevenueGross - gstCollected;
-  
-  const totalItc = scenario.costs.reduce((acc, item) => {
-      if (item.gstTreatment === GstTreatment.TAXABLE) {
-          const total = calculateLineItemTotal(item, scenario.settings, siteDNA, 0, 0, taxScales); 
-          return acc + (total * 0.1); 
-      }
-      return acc;
-  }, 0);
-
-  return { totalRevenueGross, gstCollected, netRealisation, totalItc };
-};
-
-const calculateNPV = (flows: number[], annualRate: number): number => {
-  const monthlyRate = annualRate / 100 / 12;
-  let npv = 0;
-  for (let i = 0; i < flows.length; i++) {
-    npv += flows[i] / Math.pow(1 + monthlyRate, i);
-  }
-  return npv;
-};
-
-// Updated IRR - Uses Newton-Raphson with robust divergence handling
-const calculateIRR = (flows: number[]): number => {
-  let guest = 0.1; // 10% Initial Guess
-  const maxIterations = 50;
-  const tolerance = 1e-7;
-
-  for (let i = 0; i < maxIterations; i++) {
-    let npv = 0;
-    let dnpv = 0;
-    
-    for (let t = 0; t < flows.length; t++) {
-      const discount = Math.pow(1 + guest, t);
-      npv += flows[t] / discount;
-      dnpv -= (t * flows[t]) / (discount * (1 + guest));
-    }
-
-    if (Math.abs(dnpv) < 1e-10) break; // Avoid division by zero
-    const newGuest = guest - npv / dnpv;
-    
-    if (Math.abs(newGuest - guest) < tolerance) {
-        // Converged
-        // Formula: ((1 + monthly)^12 - 1) * 100 for Annual Effective Rate
-        return (Math.pow(1 + newGuest, 12) - 1) * 100;
-    }
-    
-    guest = newGuest;
-    
-    // Divergence check
-    if (Math.abs(guest) > 10) return 0; // Likely diverged
-  }
-  
-  return 0; // Failed to converge
 };
 
 const calculateProjectMetrics = (cashflow: MonthlyFlow[], settings: FeasibilitySettings): ProjectMetrics => {
@@ -1068,6 +1179,7 @@ export const FinanceEngine = {
   calculateNPV,
   calculateIRR,
   calculateStampDuty,
+  getImplicitAcquisitionCosts,
   _internal: {
     buildTimeline,
     calcCostSchedule,

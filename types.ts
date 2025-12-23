@@ -104,7 +104,7 @@ export interface SensitivityRow {
   devCost: number;       // Total Dev Cost
   netProfit: number;
   margin: number;
-  irr: number;
+  irr: number | null;    // Updated to allow null
   isBaseCase: boolean;
 }
 
@@ -136,8 +136,8 @@ export interface ProjectMetrics extends ProjectFinancials {
   marginOnEquity: number; // Net Profit / Peak Equity
   
   // Returns
-  equityIRR: number;
-  projectIRR: number; // Unlevered
+  equityIRR: number | null; // Nullable if calculation fails/diverges
+  projectIRR: number | null;
   
   // Tax
   gstCollected: number;
@@ -152,6 +152,29 @@ export interface ProjectMetrics extends ProjectFinancials {
   // Equity Analysis
   peakEquity: number;
   residualLandValue?: number;
+}
+
+// --- NEW CANONICAL REPORT MODEL ---
+export interface ReportModel {
+  timestamp: string;
+  basis: {
+    pricesIncludeGST: boolean;
+    gstMethod: 'FULL_GST' | 'MARGIN_SCHEME';
+  };
+  metrics: ProjectMetrics;
+  reconciliation: {
+    totalCostGross: number;
+    gstInputCredits: number;
+    totalCostNet: number;
+    grossRealisation: number;
+    gstPayable: number;
+    netRealisation: number;
+    netProfit: number;
+  };
+  cashflow: {
+    monthly: MonthlyFlow[];
+    itemised: ItemisedCashflow;
+  };
 }
 
 // --- SITE-FIRST DATA MODEL ---

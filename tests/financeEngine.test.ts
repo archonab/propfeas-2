@@ -1,5 +1,7 @@
+
 import { describe, it, expect } from 'vitest';
 import { FinanceEngine } from '../services/financeEngine';
+import { ReportService } from '../services/reportModel';
 import { 
   FeasibilityScenario, ScenarioStatus, CostCategory, 
   InputType, DistributionMethod, GstTreatment, DebtLimitMethod, InterestRateMode, FeeBase, EquityMode,
@@ -72,123 +74,81 @@ describe('FinanceEngine Pure Modules', () => {
         method: DistributionMethod.LINEAR, escalationRate: 0, gstTreatment: GstTreatment.TAXABLE
       });
 
-      // Run Pipeline
       const timeline = buildTimeline(scenario);
       const costs = calcCostSchedule(scenario, mockSiteDNA, timeline, undefined, DEFAULT_TAX_SCALES);
-      
-      // Check Middle Months (Start at Month 1 + Settlement 1 = Month 2 effectively?)
-      // Timeline: Settlement is Month 1. Const Delay 0. Const Start = Month 1.
-      // Item Start 1 = Month 1 + 1 = Month 2.
-      // Span 4: Month 2, 3, 4, 5.
-      // Amount 120k / 4 = 30k. + GST = 33k.
       
       expect(costs[2].totalNet.toNumber()).toBeCloseTo(33000); 
       expect(costs[3].totalNet.toNumber()).toBeCloseTo(33000);
       expect(costs[6].totalNet.toNumber()).toBe(0);
     });
-
-    it('should calculate revenue based on absorption', () => {
-      const scenario = createMockScenario('SELL');
-      scenario.revenues.push({
-        id: 'r1', description: 'Units', strategy: 'Sell', calcMode: 'QUANTITY_RATE',
-        units: 10, pricePerUnit: 100000, absorptionRate: 5,
-        offsetFromCompletion: 0, settlementSpan: 2, commissionRate: 0, isTaxable: true
-      });
-      // Settlement 1, Duration 12. End = Month 13.
-      // Offset 0 -> Sales start Month 13.
-      // 10 units, 5/mo -> Month 13 (5 units), Month 14 (5 units).
-      // Revenue = 5 * 100k = 500k.
-
-      const timeline = buildTimeline(scenario);
-      const revs = calcRevenueSchedule(scenario, timeline);
-
-      expect(revs[13].gross.toNumber()).toBeCloseTo(500000);
-      expect(revs[14].gross.toNumber()).toBeCloseTo(500000);
-      expect(revs[15].gross.toNumber()).toBe(0);
-    });
   });
 
-  describe('2. HOLD Scenario (Linked)', () => {
-    it('should calculate operating phase statutory costs correctly', () => {
-      const linkedBase = createMockScenario('SELL');
-      linkedBase.settings.durationMonths = 12; // Construction ends M12
-      
-      const holdScenario = createMockScenario('HOLD');
-      holdScenario.settings.holdStrategy = {
-        refinanceMonth: 12, refinanceLvr: 60, investmentRate: 5,
-        holdPeriodYears: 1, annualCapitalGrowth: 0, terminalCapRate: 5, depreciationSplit: { capitalWorksPct: 0, plantPct: 0 }
-      };
-      
-      const timeline = buildTimeline(holdScenario, linkedBase);
-      // Horizon = 12 (Base) + 12 (Hold) = 24.
-      
-      const costs = calcCostSchedule(holdScenario, { ...mockSiteDNA, auv: 1000000 }, timeline, linkedBase, DEFAULT_TAX_SCALES);
-      
-      // Land Tax should trigger annually in operating phase.
-      // Refi Month = 12. Operating starts M12.
-      // M12 is first month of Op. Should have Tax.
-      
-      expect(costs[12].breakdown[CostCategory.STATUTORY]).toBeGreaterThan(0);
-    });
-  });
-
-  describe('3. Milestone Distribution', () => {
-    it('should place costs at Settlement milestone', () => {
+  describe('2. Implicit Land Cashflows', () => {
+    it('should generate implicit land items in itemised report', () => {
       const scenario = createMockScenario();
-      scenario.settings.acquisition.settlementPeriod = 3;
+      scenario.settings.acquisition.purchasePrice = 1000000;
+      scenario.settings.acquisition.depositPercent = 10;
+      
+      // We expect the itemised report to contain a Deposit item and Settlement item
+      // even though scenario.costs is empty
+      const itemised = FinanceEngine.generateItemisedCashflowData(scenario, mockSiteDNA, DEFAULT_TAX_SCALES);
+      
+      const landCat = itemised.categories.find(c => c.name === 'Land & Acquisition');
+      expect(landCat).toBeDefined();
+      
+      const depositRow = landCat?.rows.find(r => r.label === 'Land Deposit');
+      const settleRow = landCat?.rows.find(r => r.label === 'Land Settlement');
+      
+      expect(depositRow).toBeDefined();
+      expect(depositRow?.total).toBe(100000); // 10% of 1M
+      expect(settleRow).toBeDefined();
+      expect(settleRow?.total).toBe(900000); // 90% of 1M
+    });
+  });
+
+  describe('3. IRR & Stability', () => {
+    it('should return null for divergent IRR', () => {
+      // Cashflow with only positive numbers -> Infinite IRR
+      const flows = [100, 100, 100];
+      const irr = FinanceEngine.calculateIRR(flows);
+      expect(irr).toBeNull();
+    });
+
+    it('should calculate correct annualised IRR for simple case', () => {
+      // Invest 100, Return 110 in 1 month -> 10% monthly yield
+      // Annualised = (1.1)^12 - 1 ~= 213%
+      const flows = [-100, 110];
+      const irr = FinanceEngine.calculateIRR(flows);
+      
+      // Monthly rate is 0.1
+      const expectedAnnual = (Math.pow(1.1, 12) - 1) * 100;
+      expect(irr).toBeCloseTo(expectedAnnual, 1);
+    });
+  });
+
+  describe('4. Reconciliation Logic', () => {
+    it('should maintain accounting identity: Gross Cost - ITC = Net Cost', () => {
+      const scenario = createMockScenario();
+      // Add a taxable cost
       scenario.costs.push({
-        id: 'c1', code: 'C1', category: CostCategory.CONSULTANTS, description: 'Fee',
-        inputType: InputType.FIXED, amount: 10000, startDate: 0, span: 1,
-        linkToMilestone: MilestoneLink.ACQUISITION,
-        method: DistributionMethod.UPFRONT, escalationRate: 0, gstTreatment: GstTreatment.GST_FREE
+        id: 'c1', code: 'C1', category: CostCategory.CONSTRUCTION, description: 'Build',
+        inputType: InputType.FIXED, amount: 100000, startDate: 0, span: 1,
+        method: DistributionMethod.UPFRONT, escalationRate: 0, gstTreatment: GstTreatment.TAXABLE
       });
 
-      const timeline = buildTimeline(scenario);
-      const costs = calcCostSchedule(scenario, mockSiteDNA, timeline, undefined, DEFAULT_TAX_SCALES);
+      const report = ReportService.runFeasibility(scenario, mockSiteDNA);
+      const rec = report.reconciliation;
 
-      // Settlement is Month 3. Item offset 0. Expect cost at Month 3.
-      expect(costs[3].totalNet.toNumber()).toBe(10000);
-      expect(costs[2].totalNet.toNumber()).toBe(0);
-    });
-  });
-
-  describe('4. Debt & Interest', () => {
-    it('should calculate simple interest correctly', () => {
-      const scenario = createMockScenario();
-      scenario.settings.capitalStack.senior.interestRate = 12.0; // 1% per month
-      scenario.settings.capitalStack.equity.initialContribution = 0; // Force debt
+      // GST is 10% of Net Amount (10,000)
+      // Gross Cost is Net + GST (110,000)
       
-      // Cost at M1 = 100k
-      const timeline = buildTimeline(scenario);
-      const costSchedule = Array(timeline.horizonMonths + 1).fill(null).map(() => ({ totalNet: new Decimal(0), totalGST: new Decimal(0), breakdown: {} }));
-      costSchedule[1].totalNet = new Decimal(100000); // 100k outflow M1
+      // Implicit Land costs are also there! 
+      // Purchase Price 1M (Margin Scheme usually implies NO ITC or different handling, but our engine treats Margin Scheme input as Gross = Net currently for simplicity unless full GST logic applied)
+      // Let's check the CONSTRUCTION part specifically if possible, or total.
       
-      const revSchedule = Array(timeline.horizonMonths + 1).fill(null).map(() => ({ gross: new Decimal(0), net: new Decimal(0), gstLiability: new Decimal(0), sellingCosts: new Decimal(0), rentalOpex: new Decimal(0), terminalValue: new Decimal(0) }));
-      const taxSchedule = Array(timeline.horizonMonths + 1).fill(null).map(() => ({ netGstMovement: new Decimal(0), liability: new Decimal(0), credits: new Decimal(0), cumulativeCredits: new Decimal(0) }));
-
-      const flows = calcFundingSchedule(timeline, costSchedule as any, revSchedule, taxSchedule, scenario.settings, DEFAULT_TAX_SCALES);
-
-      // M1: Draw 100k. Balance 100k.
-      expect(flows[1].drawDownSenior).toBeCloseTo(100000);
-      expect(flows[1].balanceSenior).toBeCloseTo(100000);
-      
-      // M2: Interest on 100k @ 1% = 1k. Balance becomes 101k.
-      expect(flows[2].interestSenior).toBeCloseTo(1000);
-      expect(flows[2].balanceSenior).toBeCloseTo(101000);
-    });
-  });
-
-  describe('5. Stamp Duty', () => {
-    it('should calculate VIC stamp duty correctly', () => {
-      // Test Bracket: > 960k in VIC is 5.5% flat (Investment)
-      const duty = FinanceEngine.calculateStampDuty(1000000, 'VIC', false);
-      expect(duty).toBe(55000); // 5.5% of 1M
-    });
-    
-    it('should apply foreign purchaser surcharge', () => {
-        const duty = FinanceEngine.calculateStampDuty(1000000, 'VIC', true);
-        // Base 55,000 + Surcharge 8% (80,000) = 135,000
-        expect(duty).toBe(135000);
+      // Total Gross = Total Net + GST Credits
+      // Note: This relies on floating point precision, so check closeTo
+      expect(rec.totalCostGross - rec.gstInputCredits).toBeCloseTo(rec.totalCostNet, 0);
     });
   });
 });

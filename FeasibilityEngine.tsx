@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { FeasibilitySettings, LineItem, RevenueItem, CostCategory, DistributionMethod, InputType, ScenarioStatus, GstTreatment, Site, SmartRates, FeasibilityScenario, TaxConfiguration } from './types';
-import { FinanceEngine } from './services/financeEngine';
+import { ReportService } from './services/reportModel';
 import { SolverService } from './services/solverService';
 import { SensitivityMatrix } from './SensitivityMatrix';
 import { FeasibilityInputGrid } from './FeasibilityInputGrid';
@@ -68,7 +68,7 @@ const StickyKpiHeader = ({ stats, strategy, siteName }: { stats: any, strategy: 
                   IRR <span className="hidden md:inline"><HelpTooltip term="IRR" className="ml-1 text-slate-300" /></span>
               </span>
               <span className="text-sm md:text-lg font-black font-mono leading-none text-indigo-600">
-                  {stats.equityIRR.toFixed(1)}%
+                  {stats.equityIRR !== null ? stats.equityIRR.toFixed(1) + '%' : 'N/A'}
               </span>
           </div>
           {strategy === 'SELL' && (
@@ -161,14 +161,17 @@ export const FeasibilityEngine: React.FC<Props> = ({
     setActiveTab(site.status === 'Acquired' ? 'summary' : (activeScenario.strategy === 'HOLD' ? 'strategy' : 'deal'));
   }, [activeScenario.id]);
 
-  const cashflow = useMemo(() => 
-    FinanceEngine.calculateMonthlyCashflow(currentScenarioState, site.dna, linkedScenario, taxScales), 
+  // --- CANONICAL CALCULATION ---
+  const report = useMemo(() => 
+    ReportService.runFeasibility(currentScenarioState, site.dna, linkedScenario, taxScales),
     [currentScenarioState, site.dna, linkedScenario, taxScales]
   );
 
+  const cashflow = report.cashflow.monthly;
+  const metrics = report.metrics;
+
   const stats = useMemo(() => {
-    const metrics = FinanceEngine.calculateProjectMetrics(cashflow, settings);
-    
+    // Augment Metrics with specific chart data
     let maxSenior = 0;
     let maxMezz = 0;
     cashflow.forEach(c => {
@@ -194,7 +197,7 @@ export const FeasibilityEngine: React.FC<Props> = ({
         constructionTotal: constructionTotal,
         interestTotal: metrics.totalFinanceCost
     };
-  }, [cashflow, costs, settings, linkedScenario, isHoldStrategy]);
+  }, [cashflow, costs, metrics]);
 
   const handleUpdateCost = (id: string, field: keyof LineItem, value: any) => {
     if (!isEditable) return;
@@ -266,8 +269,7 @@ export const FeasibilityEngine: React.FC<Props> = ({
             await PdfService.generateBoardReport(
                 site,
                 currentScenarioState,
-                stats,
-                cashflow,
+                report,
                 site.dna,
                 sensitivityMatrix,
                 riskTables

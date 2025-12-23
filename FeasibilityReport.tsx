@@ -289,7 +289,7 @@ const HoldReport = ({ scenario, siteDNA, stats }: { scenario: FeasibilityScenari
                         Build to Rent
                     </div>
                     <div className="text-3xl font-black text-indigo-600 tracking-tighter">
-                        {stats.equityIRR.toFixed(2)}%
+                        {stats.equityIRR !== null ? stats.equityIRR.toFixed(2) + '%' : 'N/A'}
                     </div>
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Equity IRR (10 Yr)</p>
                 </div>

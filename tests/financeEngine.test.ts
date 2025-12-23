@@ -3,10 +3,11 @@ import { describe, it, expect } from 'vitest';
 import { FinanceEngine } from '../services/financeEngine';
 import { ReportService } from '../services/reportModel';
 import { 
-  FeasibilityScenario, ScenarioStatus, CostCategory, 
+  ScenarioStatus, CostCategory, 
   InputType, DistributionMethod, GstTreatment, DebtLimitMethod, InterestRateMode, FeeBase, EquityMode,
-  SiteDNA, FeasibilitySettings, MilestoneLink 
+  MilestoneLink 
 } from '../types';
+import { Site, FeasibilityScenario, FeasibilitySettings } from '../types-v2';
 import { DEFAULT_TAX_SCALES } from '../constants';
 import Decimal from 'decimal.js';
 
@@ -14,16 +15,7 @@ import Decimal from 'decimal.js';
 const createMockSettings = (): FeasibilitySettings => ({
   description: 'Test',
   projectName: 'Test Project',
-  acquisition: {
-    purchasePrice: 1000000,
-    settlementPeriod: 1,
-    depositPercent: 10,
-    stampDutyState: 'VIC',
-    stampDutyTiming: 'SETTLEMENT',
-    isForeignBuyer: false,
-    buyersAgentFee: 0,
-    legalFeeEstimate: 0
-  },
+  // acquisition removed from settings in V2
   startDate: '2024-01-01',
   durationMonths: 12,
   constructionDelay: 0,
@@ -57,9 +49,37 @@ const createMockScenario = (strategy: 'SELL' | 'HOLD' = 'SELL'): FeasibilityScen
   revenues: []
 });
 
-const mockSiteDNA: SiteDNA = {
-  address: '123 Test St', state: 'VIC', landArea: 1000, lga: '', zoning: '', overlays: [],
-  agent: { name: '', company: '' }, vendor: { name: '' }, milestones: {}
+const mockSite: Site = {
+  id: 'site-1',
+  code: 'TEST',
+  name: 'Test Site',
+  thumbnail: '',
+  status: 'Prospect',
+  stage: 'Analysis',
+  identity: {
+    address: '123 Test St', state: 'VIC', landArea: 1000, lga: '', zoning: '', overlays: []
+  },
+  acquisition: {
+    purchasePrice: 1000000,
+    settlementPeriod: 1,
+    depositPercent: 10,
+    stampDutyState: 'VIC',
+    stampDutyTiming: 'SETTLEMENT',
+    isForeignBuyer: false,
+    buyersAgentFee: 0,
+    legalFeeEstimate: 0,
+    vendor: { name: '' },
+    purchaser: { entity: '' }
+  },
+  planning: {
+    permitStatus: 'Not Started'
+  },
+  stakeholders: [],
+  scenarios: [],
+  openTasks: 0,
+  openRFIs: 0,
+  createdAt: '',
+  updatedAt: ''
 };
 
 describe('FinanceEngine Pure Modules', () => {
@@ -74,8 +94,8 @@ describe('FinanceEngine Pure Modules', () => {
         method: DistributionMethod.LINEAR, escalationRate: 0, gstTreatment: GstTreatment.TAXABLE
       });
 
-      const timeline = buildTimeline(scenario);
-      const costs = calcCostSchedule(scenario, mockSiteDNA, timeline, undefined, DEFAULT_TAX_SCALES);
+      const timeline = buildTimeline(scenario, mockSite);
+      const costs = calcCostSchedule(scenario, mockSite, timeline, undefined, DEFAULT_TAX_SCALES);
       
       expect(costs[2].totalNet.toNumber()).toBeCloseTo(33000); 
       expect(costs[3].totalNet.toNumber()).toBeCloseTo(33000);
@@ -86,15 +106,15 @@ describe('FinanceEngine Pure Modules', () => {
   describe('2. Implicit Land Cashflows', () => {
     it('should generate implicit land items in itemised report', () => {
       const scenario = createMockScenario();
-      scenario.settings.acquisition.purchasePrice = 1000000;
-      scenario.settings.acquisition.depositPercent = 10;
+      // Modify Site Acquisition for this test (mocking site state)
+      const testSite = { ...mockSite, acquisition: { ...mockSite.acquisition, purchasePrice: 1000000, depositPercent: 10 } };
       
       // Calculate cashflow first
-      const cashflow = FinanceEngine.calculateMonthlyCashflow(scenario, mockSiteDNA, undefined, DEFAULT_TAX_SCALES);
+      const cashflow = FinanceEngine.calculateMonthlyCashflow(scenario, testSite, undefined, DEFAULT_TAX_SCALES);
 
       // We expect the itemised report to contain a Deposit item and Settlement item
       // even though scenario.costs is empty
-      const itemised = FinanceEngine.generateItemisedCashflowData(scenario, mockSiteDNA, cashflow, DEFAULT_TAX_SCALES);
+      const itemised = FinanceEngine.generateItemisedCashflowData(scenario, testSite, cashflow, DEFAULT_TAX_SCALES);
       
       const landCat = itemised.categories.find(c => c.name === 'Land & Acquisition');
       expect(landCat).toBeDefined();
@@ -159,7 +179,7 @@ describe('FinanceEngine Pure Modules', () => {
         method: DistributionMethod.UPFRONT, escalationRate: 0, gstTreatment: GstTreatment.TAXABLE
       });
 
-      const report = ReportService.runFeasibility(scenario, mockSiteDNA);
+      const report = ReportService.runFeasibility(scenario, mockSite);
       const rec = report.reconciliation;
 
       // GST is 10% of Net Amount (10,000)

@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { CostCategory, DistributionMethod, InputType, LineItem, FeasibilitySettings, LineItemTag, MilestoneLink, SiteDNA, TaxConfiguration, CalculationLink, GstTreatment, InputScale } from './types';
+import { Site } from './types-v2';
 import { PhasingChart } from './PhasingChart';
 import { CostLibraryModal } from './CostLibraryModal';
 import { HelpTooltip } from './components/HelpTooltip';
@@ -21,7 +22,8 @@ interface Props {
   libraryData?: LineItem[];
   landArea: number; 
   strategy?: 'SELL' | 'HOLD';
-  siteDNA?: SiteDNA;
+  siteDNA?: SiteDNA; // Deprecated but kept for signature compatibility if needed
+  site: Site; // V2 Required
   taxScales?: TaxConfiguration;
 }
 
@@ -78,6 +80,7 @@ const CostSection: React.FC<{
   categories: CostCategory[];
   costs: LineItem[];
   settings: FeasibilitySettings;
+  site: Site;
   defaultOpen?: boolean;
   onUpdate: (id: string, field: keyof LineItem, value: any) => void;
   onAdd: (category: CostCategory) => void;
@@ -86,12 +89,11 @@ const CostSection: React.FC<{
   estimatedRevenue: number;
   landArea: number;
   tooltipTerm?: string;
-  siteDNA: SiteDNA;
   taxScales: TaxConfiguration;
   isOperatingLedger?: boolean;
 }> = ({ 
-  title, icon, categories, costs, settings, defaultOpen = false, 
-  onUpdate, onAdd, onRemove, constructionTotal, estimatedRevenue, landArea, tooltipTerm, siteDNA, taxScales, isOperatingLedger = false
+  title, icon, categories, costs, settings, site, defaultOpen = false, 
+  onUpdate, onAdd, onRemove, constructionTotal, estimatedRevenue, landArea, tooltipTerm, taxScales, isOperatingLedger = false
 }) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
@@ -99,7 +101,7 @@ const CostSection: React.FC<{
   const sectionCosts = costs.filter(c => categories.includes(c.category));
   
   const sectionTotal = sectionCosts.reduce((acc, item) => {
-    const amount = FinanceEngine.calculateLineItemTotal(item, settings, siteDNA, constructionTotal, estimatedRevenue, taxScales);
+    const amount = FinanceEngine.calculateLineItemTotal(item, settings, site, constructionTotal, estimatedRevenue, taxScales);
     return acc + amount;
   }, 0);
 
@@ -108,7 +110,8 @@ const CostSection: React.FC<{
   // --- Helper: Smart Driver Context ---
   const getSmartContext = (item: LineItem) => {
     if (item.calculationLink && item.calculationLink !== 'NONE') {
-        const state = settings.acquisition.stampDutyState;
+        // Use Site V2 Acquisition data
+        const state = site.acquisition.stampDutyState;
         let driverLabel = '';
         
         switch (item.calculationLink) {
@@ -117,7 +120,7 @@ const CostSection: React.FC<{
             case 'AUTO_COUNCIL_RATES': driverLabel = `Rate on Capital Value`; break;
         }
         
-        const calculatedValue = FinanceEngine.calculateLineItemTotal(item, settings, siteDNA, constructionTotal, estimatedRevenue, taxScales);
+        const calculatedValue = FinanceEngine.calculateLineItemTotal(item, settings, site, constructionTotal, estimatedRevenue, taxScales);
         
         return { showDriver: true, driverLabel, calculatedValue, warning: null, isLinked: true };
     }
@@ -169,7 +172,13 @@ const CostSection: React.FC<{
            {!isOperatingLedger && (
                <div className="flex-1 hidden md:block">
                   <label className="text-[10px] font-bold uppercase text-slate-500 mb-2 block">Cashflow Distribution</label>
-                  <PhasingChart item={item} settings={settings} constructionTotal={constructionTotal} totalRevenue={estimatedRevenue} />
+                  <PhasingChart 
+                    item={item} 
+                    settings={settings} 
+                    site={site} // Pass site
+                    constructionTotal={constructionTotal} 
+                    totalRevenue={estimatedRevenue} 
+                  />
                </div>
            )}
 
@@ -523,7 +532,7 @@ const CostSection: React.FC<{
 export const FeasibilityInputGrid: React.FC<Props> = ({ 
   costs, settings, constructionTotal, estimatedRevenue = 0,
   onUpdate, onAdd, onBulkAdd, onRemove, smartRates, libraryData, landArea, strategy = 'SELL', 
-  siteDNA = { address: '', state: 'VIC', landArea: 0, lga: '', zoning: '', overlays: [], agent: {name:'', company:''}, vendor: {name:''}, milestones: {}}, 
+  site,
   taxScales = DEFAULT_TAX_SCALES
 }) => {
   const [showLibrary, setShowLibrary] = useState(false);
@@ -567,11 +576,11 @@ export const FeasibilityInputGrid: React.FC<Props> = ({
                 icon="fa-trowel-bricks"
                 categories={[CostCategory.CONSTRUCTION]}
                 costs={costs} settings={settings}
+                site={site}
                 defaultOpen={true}
                 onUpdate={onUpdate} onAdd={onAdd} onRemove={onRemove}
                 constructionTotal={constructionTotal} estimatedRevenue={estimatedRevenue}
                 landArea={landArea}
-                siteDNA={siteDNA}
                 taxScales={taxScales}
             />
             <CostSection 
@@ -579,10 +588,10 @@ export const FeasibilityInputGrid: React.FC<Props> = ({
                 icon="fa-user-tie"
                 categories={[CostCategory.CONSULTANTS]}
                 costs={costs} settings={settings}
+                site={site}
                 onUpdate={onUpdate} onAdd={onAdd} onRemove={onRemove}
                 constructionTotal={constructionTotal} estimatedRevenue={estimatedRevenue}
                 landArea={landArea}
-                siteDNA={siteDNA}
                 taxScales={taxScales}
             />
             <CostSection 
@@ -590,11 +599,11 @@ export const FeasibilityInputGrid: React.FC<Props> = ({
                 icon="fa-scale-balanced"
                 categories={[CostCategory.STATUTORY, CostCategory.MISCELLANEOUS]}
                 costs={costs} settings={settings}
+                site={site}
                 onUpdate={onUpdate} onAdd={onAdd} onRemove={onRemove}
                 constructionTotal={constructionTotal} estimatedRevenue={estimatedRevenue}
                 landArea={landArea}
                 tooltipTerm="AUV"
-                siteDNA={siteDNA}
                 taxScales={taxScales}
             />
             <CostSection 
@@ -602,10 +611,10 @@ export const FeasibilityInputGrid: React.FC<Props> = ({
                 icon="fa-bullhorn"
                 categories={[CostCategory.SELLING]}
                 costs={costs} settings={settings}
+                site={site}
                 onUpdate={onUpdate} onAdd={onAdd} onRemove={onRemove}
                 constructionTotal={constructionTotal} estimatedRevenue={estimatedRevenue}
                 landArea={landArea}
-                siteDNA={siteDNA}
                 taxScales={taxScales}
             />
           </>
@@ -617,12 +626,12 @@ export const FeasibilityInputGrid: React.FC<Props> = ({
                 icon="fa-file-invoice-dollar"
                 categories={[CostCategory.MISCELLANEOUS, CostCategory.SELLING]}
                 costs={costs} settings={settings}
+                site={site}
                 defaultOpen={true}
                 onUpdate={onUpdate} onAdd={onAdd} onRemove={onRemove}
                 constructionTotal={constructionTotal} estimatedRevenue={estimatedRevenue}
                 landArea={landArea}
                 tooltipTerm="OPEX"
-                siteDNA={siteDNA}
                 taxScales={taxScales}
                 isOperatingLedger={true}
             />
@@ -632,10 +641,10 @@ export const FeasibilityInputGrid: React.FC<Props> = ({
                 icon="fa-scale-balanced"
                 categories={[CostCategory.STATUTORY]}
                 costs={costs} settings={settings}
+                site={site}
                 onUpdate={onUpdate} onAdd={onAdd} onRemove={onRemove}
                 constructionTotal={constructionTotal} estimatedRevenue={estimatedRevenue}
                 landArea={landArea}
-                siteDNA={siteDNA}
                 taxScales={taxScales}
                 isOperatingLedger={true}
             />

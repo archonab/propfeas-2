@@ -1,4 +1,6 @@
-import { FeasibilitySettings, LineItem, RevenueItem, SiteDNA, FeasibilityScenario, ScenarioStatus } from '../types';
+
+import { LineItem, RevenueItem, ScenarioStatus } from '../types';
+import { Site, FeasibilitySettings, FeasibilityScenario } from '../types-v2';
 import { FinanceEngine } from './financeEngine';
 
 interface SolveResult {
@@ -20,7 +22,7 @@ export const SolverService = {
     settings: FeasibilitySettings,
     costs: LineItem[],
     revenues: RevenueItem[],
-    siteDNA: SiteDNA
+    site: Site
   ): SolveResult {
     
     // 1. Binary Search Setup
@@ -36,12 +38,12 @@ export const SolverService = {
     while (iterations < maxIterations) {
       const mid = (min + max) / 2;
       
-      // A. Construct Simulation Settings
-      // We create a copy of settings with the guessed purchase price
-      const simSettings: FeasibilitySettings = {
-        ...settings,
+      // A. Construct Simulation Site
+      // We create a copy of site with the guessed purchase price
+      const simSite: Site = {
+        ...site,
         acquisition: {
-          ...settings.acquisition,
+          ...site.acquisition,
           purchasePrice: mid
         }
       };
@@ -55,14 +57,14 @@ export const SolverService = {
         isBaseline: false,
         status: ScenarioStatus.DRAFT,
         strategy: 'SELL', // Defaulting to SELL for RLV solver
-        settings: simSettings,
+        settings: settings,
         costs: costs,
         revenues: revenues
       };
 
       // C. Run Engine
       // The engine automatically calculates Stamp Duty, Buyer's Agent Fee, and Loan Establishment Fees based on the new price
-      const cashflow = FinanceEngine.calculateMonthlyCashflow(simScenario, siteDNA);
+      const cashflow = FinanceEngine.calculateMonthlyCashflow(simScenario, simSite);
 
       // D. Calculate Metrics
       const totalOut = cashflow.reduce((acc, curr) => acc + curr.developmentCosts + curr.interestSenior + curr.interestMezz, 0);
@@ -76,7 +78,10 @@ export const SolverService = {
       } else {
         // IRR
         const equityFlows = cashflow.map(f => f.repayEquity - f.drawDownEquity);
-        achieved = FinanceEngine.calculateIRR(equityFlows);
+        achieved = FinanceEngine.calculateIRR(equityFlows) || -100; // Handle null IRR
+        if (achieved !== -100) {
+            achieved = FinanceEngine.annualiseMonthlyRate(achieved) * 100;
+        }
       }
 
       // E. Check & Adjust
@@ -103,8 +108,8 @@ export const SolverService = {
     const finalPrice = Math.floor(bestGuess);
     const finalDuty = FinanceEngine.calculateStampDuty(
         finalPrice, 
-        settings.acquisition.stampDutyState, 
-        settings.acquisition.isForeignBuyer
+        site.acquisition.stampDutyState, 
+        site.acquisition.isForeignBuyer
     );
 
     return {

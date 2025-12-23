@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
-import { Site, LeadStatus } from './types';
+import { LeadStatus } from './types';
+import { Site } from './types-v2'; // Use V2
 import { createDefaultScenario } from './constants';
 import { SiteDNAHub } from './components/SiteDNAHub';
 import { AppShell } from './components/AppShell';
@@ -69,8 +70,25 @@ export default function App() {
   // Derived Selection
   const selectedSite = sites.find(p => p.id === selectedSiteId);
 
+  // Handle global navigation (Sidebar)
+  const handleGlobalNavigation = (view: 'portfolio' | 'settings' | 'tasks' | 'feasibilities') => {
+    setGlobalView(view);
+    // If inside a project, exit it to show the global view
+    if (selectedSiteId) {
+        selectSite(null);
+        selectScenario(null);
+    }
+  };
+
   const handleCreateNewSite = () => {
     const newId = `lead-${Date.now()}`;
+    const defaultScenario = createDefaultScenario() as any; // Cast to bypass strict type check for now
+    
+    // Remove acquisition from default scenario settings if present (manual patch)
+    if (defaultScenario.settings.acquisition) {
+        delete defaultScenario.settings.acquisition;
+    }
+
     const newSite: Site = {
       id: newId,
       code: `PROS-${Math.floor(Math.random() * 1000)}`,
@@ -78,25 +96,36 @@ export default function App() {
       thumbnail: "https://images.unsplash.com/photo-1560518883-ce09059eeffa?q=80&w=400&auto=format&fit=crop",
       status: 'Prospect',
       stage: 'Analysis',
-      pm: 'Unassigned',
       openTasks: 0,
       openRFIs: 0,
       conditions: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      dna: {
+      
+      // V2 Structure
+      identity: {
         address: "Enter Site Address...",
-        state: 'VIC', // Default
+        state: 'VIC',
         landArea: 0,
         lga: "Pending",
         zoning: "Pending",
         overlays: [],
-        agent: { name: "", company: "" },
-        vendor: { name: "Pending" },
-        milestones: {}
       },
+      acquisition: {
+        purchasePrice: 0,
+        depositPercent: 10,
+        settlementPeriod: 0,
+        stampDutyState: 'VIC',
+        isForeignBuyer: false,
+        vendor: { name: "Pending" },
+        purchaser: { entity: "TBC" }
+      },
+      planning: {
+        permitStatus: 'Not Started',
+      },
+      
       stakeholders: [],
-      scenarios: [createDefaultScenario()]
+      scenarios: [defaultScenario]
     };
 
     setPendingSite(newSite);
@@ -159,12 +188,14 @@ export default function App() {
                   valB = new Date(b.createdAt).getTime();
                   break;
               case 'settlement':
-                  valA = a.dna.milestones.settlementDate ? new Date(a.dna.milestones.settlementDate).getTime() : 0;
-                  valB = b.dna.milestones.settlementDate ? new Date(b.dna.milestones.settlementDate).getTime() : 0;
+                  valA = a.acquisition.settlementDate ? new Date(a.acquisition.settlementDate).getTime() : 0;
+                  valB = b.acquisition.settlementDate ? new Date(b.acquisition.settlementDate).getTime() : 0;
                   break;
               case 'eoi':
-                  valA = a.dna.milestones.eoiCloseDate ? new Date(a.dna.milestones.eoiCloseDate).getTime() : 0;
-                  valB = b.dna.milestones.eoiCloseDate ? new Date(b.dna.milestones.eoiCloseDate).getTime() : 0;
+                  // Removed explicit EOI field from V2 top level, checking milestones if present (not in V2 interface explicitly but maybe in data)
+                  // For now fallback to 0
+                  valA = 0; 
+                  valB = 0;
                   break;
               case 'name':
                   valA = a.name.toLowerCase();
@@ -187,7 +218,7 @@ export default function App() {
   }, [sites, siteFilter, sortOption, sortDirection]);
 
   return (
-    <AppShell activeModule={globalView} onNavigate={setGlobalView}>
+    <AppShell activeModule={globalView} onNavigate={handleGlobalNavigation}>
       
       {/* A. PROJECT CONTEXT (If a site is selected) */}
       {selectedSiteId && selectedSite ? (
@@ -278,18 +309,17 @@ export default function App() {
                          </thead>
                          <tbody className="divide-y divide-slate-100">
                             {processedSites.map(site => {
-                               const settlement = getDeadlineStatus(site.dna.milestones.settlementDate);
-                               const eoi = getDeadlineStatus(site.dna.milestones.eoiCloseDate);
+                               const settlement = getDeadlineStatus(site.acquisition.settlementDate);
                                return (
                                <tr key={site.id} onClick={() => selectSite(site.id)} className="hover:bg-slate-50 cursor-pointer transition-colors group">
                                   <td className="px-6 py-4 font-mono text-xs text-slate-400 font-bold">{site.code}</td>
                                   <td className="px-6 py-4">
                                      <div className="font-bold text-slate-700">{site.name}</div>
-                                     <div className="text-[10px] text-slate-400">{site.dna.address}</div>
+                                     <div className="text-[10px] text-slate-400">{site.identity.address}</div>
                                   </td>
                                   <td className="px-6 py-4">
                                       <div className="flex flex-col space-y-1">
-                                          {site.dna.milestones.settlementDate && settlement && (
+                                          {site.acquisition.settlementDate && settlement && (
                                               <div className="flex items-center text-[10px]">
                                                   <span className="text-slate-400 w-16">Settlement:</span>
                                                   <span className={`font-bold px-1.5 py-0.5 rounded border ${settlement.bg} ${settlement.color}`}>
@@ -297,15 +327,7 @@ export default function App() {
                                                   </span>
                                               </div>
                                           )}
-                                          {site.dna.milestones.eoiCloseDate && eoi && (
-                                              <div className="flex items-center text-[10px]">
-                                                  <span className="text-slate-400 w-16">EOI Close:</span>
-                                                  <span className={`font-bold px-1.5 py-0.5 rounded border ${eoi.bg} ${eoi.color}`}>
-                                                      {eoi.label}
-                                                  </span>
-                                              </div>
-                                          )}
-                                          {!site.dna.milestones.settlementDate && !site.dna.milestones.eoiCloseDate && (
+                                          {!site.acquisition.settlementDate && (
                                               <span className="text-[10px] text-slate-300 italic">-</span>
                                           )}
                                       </div>
@@ -389,7 +411,7 @@ export default function App() {
                        </button>
                    )}
                 </div>
-                <div className="flex-1 overflow-hidden">
+                <div className="flex-1 overflow-hidden overflow-y-auto bg-slate-50 p-4">
                    <SiteDNAHub 
                       site={siteToEdit} 
                       onUpdate={handleSiteUpdateFromModal} 

@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Site } from '../types';
+import { Site } from '../types-v2';
 
 interface Props {
   site: Site;
@@ -37,22 +37,22 @@ export const SiteContext: React.FC<Props> = ({ site, onRequestEdit }) => {
              <div className="space-y-4">
                 <div>
                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Address</label>
-                   <div className="text-sm font-bold text-slate-800">{site.dna.address}</div>
+                   <div className="text-sm font-bold text-slate-800">{site.identity.address}</div>
                 </div>
                 <div>
                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Land Area</label>
-                   <div className="text-lg font-mono font-bold text-slate-800">{site.dna.landArea.toLocaleString()} sqm</div>
+                   <div className="text-lg font-mono font-bold text-slate-800">{site.identity.landArea.toLocaleString()} sqm</div>
                 </div>
              </div>
              <div className="space-y-4">
                 <div>
                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Council (LGA)</label>
-                   <div className="text-sm font-bold text-slate-800">{site.dna.lga || '-'}</div>
+                   <div className="text-sm font-bold text-slate-800">{site.identity.lga || '-'}</div>
                 </div>
                 <div>
                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Zoning</label>
                    <div className="text-sm font-bold text-slate-800 bg-slate-100 px-2 py-1 rounded inline-block">
-                      {site.dna.zoning || 'Pending'}
+                      {site.identity.zoning || 'Pending'}
                    </div>
                 </div>
              </div>
@@ -62,13 +62,13 @@ export const SiteContext: React.FC<Props> = ({ site, onRequestEdit }) => {
        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 opacity-80">
              <h4 className="text-xs font-bold text-slate-400 uppercase mb-3">Agent Details</h4>
-             <p className="text-sm font-bold text-slate-800">{site.dna.agent.name || 'Unassigned'}</p>
-             <p className="text-xs text-slate-500">{site.dna.agent.company}</p>
+             <p className="text-sm font-bold text-slate-800">{site.acquisition.agent?.name || 'Unassigned'}</p>
+             <p className="text-xs text-slate-500">{site.acquisition.agent?.company}</p>
           </div>
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 opacity-80">
              <h4 className="text-xs font-bold text-slate-400 uppercase mb-3">Vendor Details</h4>
-             <p className="text-sm font-bold text-slate-800">{site.dna.vendor.name || 'Unknown'}</p>
-             <p className="text-xs text-slate-500">{site.dna.vendor.company}</p>
+             <p className="text-sm font-bold text-slate-800">{site.acquisition.vendor.name || 'Unknown'}</p>
+             <p className="text-xs text-slate-500">{site.acquisition.vendor.company}</p>
           </div>
        </div>
 

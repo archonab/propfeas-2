@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { Site, CockpitTab, LineItem, CostCategory, RevenueItem, SmartRates, FeasibilityScenario, TaxConfiguration } from './types';
+import { CockpitTab, LineItem, CostCategory, RevenueItem, SmartRates, TaxConfiguration } from './types';
+import { Site, FeasibilityScenario } from './types-v2';
 import { FeasibilityEngine } from './FeasibilityEngine';
 import { ScenarioManager } from './components/ScenarioManager';
 import { SiteAssetRegister } from './components/SiteAssetRegister';
@@ -96,9 +97,9 @@ export const SiteCockpit: React.FC<Props> = ({ site, onBack, onUpdateSite, smart
                           </span>
                       </div>
                       <div className="text-[10px] font-bold text-slate-400 flex items-center mt-0.5">
-                          <i className="fa-solid fa-location-dot mr-1.5 opacity-60"></i> {site.dna.address}
+                          <i className="fa-solid fa-location-dot mr-1.5 opacity-60"></i> {site.identity.address}
                           <span className="mx-2">•</span>
-                          {site.dna.landArea.toLocaleString()} sqm
+                          {site.identity.landArea.toLocaleString()} sqm
                       </div>
                   </div>
               </div>
@@ -162,7 +163,7 @@ export const SiteCockpit: React.FC<Props> = ({ site, onBack, onUpdateSite, smart
                               </button>
                           </div>
                           <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
-                              <SiteSettings site={site} onUpdate={onUpdateSite} />
+                              <SiteSettings site={site as any} onUpdate={onUpdateSite as any} />
                           </div>
                           <div className="px-6 py-4 border-t border-slate-200 flex justify-end">
                               <button onClick={() => setIsEditingSettings(false)} className="px-6 py-2 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700">Done</button>
@@ -178,7 +179,7 @@ export const SiteCockpit: React.FC<Props> = ({ site, onBack, onUpdateSite, smart
                           <SummaryCard label="Models" val={site.scenarios.length} icon="fa-solid fa-layer-group" color="text-slate-800" />
                           <SummaryCard label="Open Tasks" val={site.openTasks} icon="fa-solid fa-list-check" color="text-slate-800" />
                           <SummaryCard label="Open RFIs" val={site.openRFIs} icon="fa-solid fa-circle-question" color="text-amber-600" />
-                          <SummaryCard label="Conditions" val={site.conditions} icon="fa-solid fa-file-contract" color="text-blue-600" />
+                          <SummaryCard label="Conditions" val={site.conditions || 0} icon="fa-solid fa-file-contract" color="text-blue-600" />
                       </div>
 
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -194,7 +195,7 @@ export const SiteCockpit: React.FC<Props> = ({ site, onBack, onUpdateSite, smart
                                   </button>
                               </div>
                               <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur px-3 py-1 rounded-lg text-xs font-bold text-slate-700 shadow-sm">
-                                  {site.dna.lga} Council
+                                  {site.identity.lga} Council
                               </div>
                           </div>
 
@@ -257,7 +258,7 @@ export const SiteCockpit: React.FC<Props> = ({ site, onBack, onUpdateSite, smart
                           // 2. LIST VIEW (Manager)
                           <div className="flex-1">
                               <ScenarioManager 
-                                  site={site} 
+                                  site={site as any} 
                                   onBack={() => setActiveTab('overview')}
                                   onRequestEdit={() => setIsEditingSettings(true)}
                               />
@@ -270,13 +271,13 @@ export const SiteCockpit: React.FC<Props> = ({ site, onBack, onUpdateSite, smart
               {activeTab === 'stakeholders' && (
                   <div className="h-full flex flex-col">
                       <StakeholderManager 
-                          site={site} 
-                          onUpdate={(updated) => onUpdateSite && onUpdateSite(updated)} 
+                          site={site as any} 
+                          onUpdate={(updated) => onUpdateSite && onUpdateSite(updated as any)} 
                           readOnly={!onUpdateSite}
                       />
                       
                       <div className="mt-12">
-                          <DocumentVault site={site} readOnly={!onUpdateSite} />
+                          <DocumentVault site={site as any} readOnly={!onUpdateSite} />
                       </div>
                   </div>
               )}

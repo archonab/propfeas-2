@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
-import { Site, SiteDNA, LeadStatus, InputScale } from '../types';
+import { LeadStatus, InputScale } from '../types';
+import { Site, SiteIdentity, SiteAcquisition } from '../types-v2';
 
 interface Props {
   site: Site;
@@ -11,29 +12,33 @@ interface Props {
 const MOCK_ADDRESS_DATABASE = {
   "49 King St": {
     address: "49 King Street, Dandenong VIC 3175",
-    dna: {
+    identity: {
       landArea: 1240,
       zoning: "GRZ1 (General Residential)",
       lga: "City of Greater Dandenong",
       overlays: ["Heritage Overlay (HO102)", "Vegetation Protection (VPO1)"],
-      agent: { name: "John Smith", company: "Ray White Commercial" },
-      vendor: { name: "Private Holding Co" },
       auv: 1200000,
       acv: 1450000
+    },
+    acquisition: {
+      agent: { name: "John Smith", company: "Ray White Commercial" },
+      vendor: { name: "Private Holding Co" }
     },
     geometry: { lat: -37.9875, lng: 145.2146 }
   },
   "Default": {
     address: "New Site Scenario",
-    dna: {
+    identity: {
       landArea: 1000,
       zoning: "Pending",
       lga: "Pending",
       overlays: [],
-      agent: { name: "", company: "" },
-      vendor: { name: "" },
       auv: 0,
       acv: 0
+    },
+    acquisition: {
+      agent: { name: "", company: "" },
+      vendor: { name: "" }
     }
   }
 };
@@ -55,25 +60,28 @@ export const SiteSettings: React.FC<Props> = ({ site, onUpdate }) => {
         match = MOCK_ADDRESS_DATABASE["49 King St"];
       }
       
-      // Update Global Site DNA
-      const newDNA: SiteDNA = {
-        ...site.dna,
-        address: match.address,
-        landArea: match.dna.landArea,
-        zoning: match.dna.zoning,
-        lga: match.dna.lga,
-        overlays: match.dna.overlays,
-        agent: { ...site.dna.agent, ...match.dna.agent },
-        vendor: { ...site.dna.vendor, ...match.dna.vendor },
-        auv: match.dna.auv,
-        acv: match.dna.acv
+      // Update Global Site
+      const updatedSite: Site = {
+        ...site,
+        name: match.address.split(',')[0],
+        identity: {
+            ...site.identity,
+            address: match.address,
+            landArea: match.identity.landArea,
+            zoning: match.identity.zoning,
+            lga: match.identity.lga,
+            overlays: match.identity.overlays,
+            auv: match.identity.auv,
+            acv: match.identity.acv
+        },
+        acquisition: {
+            ...site.acquisition,
+            agent: { ...site.acquisition.agent, ...match.acquisition.agent },
+            vendor: { ...site.acquisition.vendor, ...match.acquisition.vendor }
+        }
       };
 
-      onUpdate({
-        ...site,
-        name: match.address.split(',')[0], // Auto-update project name
-        dna: newDNA
-      });
+      onUpdate(updatedSite);
       
       setSearchQuery(match.address);
     }, 800);
@@ -89,19 +97,19 @@ export const SiteSettings: React.FC<Props> = ({ site, onUpdate }) => {
     }
   };
 
-  const updateDNAField = (field: keyof SiteDNA, value: any) => {
+  const updateIdentityField = (field: keyof SiteIdentity, value: any) => {
     onUpdate({
       ...site,
-      dna: { ...site.dna, [field]: value }
+      identity: { ...site.identity, [field]: value }
     });
   };
 
-  const updateNestedDNA = (parent: 'agent' | 'vendor', field: string, value: any) => {
+  const updateAcquisitionNested = (parent: 'agent' | 'vendor', field: string, value: any) => {
     onUpdate({
       ...site,
-      dna: {
-        ...site.dna,
-        [parent]: { ...site.dna[parent], [field]: value }
+      acquisition: {
+        ...site.acquisition,
+        [parent]: { ...site.acquisition[parent], [field]: value }
       }
     });
   };
@@ -186,7 +194,7 @@ export const SiteSettings: React.FC<Props> = ({ site, onUpdate }) => {
             </div>
             <input 
                 type="text" 
-                value={searchQuery || site.dna.address}
+                value={searchQuery || site.identity.address}
                 onChange={handleSearchChange}
                 onKeyDown={handleKeyDown}
                 placeholder="Start typing address (e.g. 49 King St)..."
@@ -208,8 +216,8 @@ export const SiteSettings: React.FC<Props> = ({ site, onUpdate }) => {
                     <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Land Area (sqm)</label>
                     <input 
                         type="number" 
-                        value={site.dna.landArea}
-                        onChange={(e) => updateDNAField('landArea', parseFloat(e.target.value))}
+                        value={site.identity.landArea}
+                        onChange={(e) => updateIdentityField('landArea', parseFloat(e.target.value))}
                         className="w-full border-slate-200 rounded-lg font-mono font-bold text-slate-800 focus:ring-blue-500 bg-blue-50/30"
                     />
                     <p className="text-[10px] text-blue-600 mt-1 font-medium">
@@ -221,8 +229,8 @@ export const SiteSettings: React.FC<Props> = ({ site, onUpdate }) => {
                     <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Local Government Area (LGA)</label>
                     <input 
                         type="text" 
-                        value={site.dna.lga}
-                        onChange={(e) => updateDNAField('lga', e.target.value)}
+                        value={site.identity.lga}
+                        onChange={(e) => updateIdentityField('lga', e.target.value)}
                         className="w-full border-slate-200 rounded-lg text-sm font-medium text-slate-800 focus:ring-blue-500"
                     />
                 </div>
@@ -230,8 +238,8 @@ export const SiteSettings: React.FC<Props> = ({ site, onUpdate }) => {
                     <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Zoning Code</label>
                     <input 
                         type="text" 
-                        value={site.dna.zoning}
-                        onChange={(e) => updateDNAField('zoning', e.target.value)}
+                        value={site.identity.zoning}
+                        onChange={(e) => updateIdentityField('zoning', e.target.value)}
                         className="w-full border-slate-200 rounded-lg text-sm font-medium text-slate-800 focus:ring-blue-500"
                     />
                 </div>
@@ -251,8 +259,8 @@ export const SiteSettings: React.FC<Props> = ({ site, onUpdate }) => {
                         <span className="absolute left-3 top-2.5 text-slate-400 font-bold">$</span>
                         <input 
                             type="number" 
-                            value={site.dna.auv || 0}
-                            onChange={(e) => updateDNAField('auv', parseFloat(e.target.value))}
+                            value={site.identity.auv || 0}
+                            onChange={(e) => updateIdentityField('auv', parseFloat(e.target.value))}
                             className="w-full pl-8 border-slate-200 rounded-lg font-mono font-bold text-slate-800 focus:ring-indigo-500"
                         />
                     </div>
@@ -264,8 +272,8 @@ export const SiteSettings: React.FC<Props> = ({ site, onUpdate }) => {
                         <span className="absolute left-3 top-2.5 text-slate-400 font-bold">$</span>
                         <input 
                             type="number" 
-                            value={site.dna.acv || 0}
-                            onChange={(e) => updateDNAField('acv', parseFloat(e.target.value))}
+                            value={site.identity.acv || 0}
+                            onChange={(e) => updateIdentityField('acv', parseFloat(e.target.value))}
                             className="w-full pl-8 border-slate-200 rounded-lg font-mono font-bold text-slate-800 focus:ring-indigo-500"
                         />
                     </div>
@@ -283,14 +291,14 @@ export const SiteSettings: React.FC<Props> = ({ site, onUpdate }) => {
                 <div className="space-y-3">
                     <input 
                     type="text" placeholder="Agent Name"
-                    value={site.dna.agent.name}
-                    onChange={(e) => updateNestedDNA('agent', 'name', e.target.value)}
+                    value={site.acquisition.agent?.name || ''}
+                    onChange={(e) => updateAcquisitionNested('agent', 'name', e.target.value)}
                     className="w-full text-sm border-slate-200 rounded-lg focus:ring-blue-500"
                     />
                     <input 
                     type="text" placeholder="Agency / Company"
-                    value={site.dna.agent.company}
-                    onChange={(e) => updateNestedDNA('agent', 'company', e.target.value)}
+                    value={site.acquisition.agent?.company || ''}
+                    onChange={(e) => updateAcquisitionNested('agent', 'company', e.target.value)}
                     className="w-full text-sm border-slate-200 rounded-lg focus:ring-blue-500"
                     />
                 </div>
@@ -303,14 +311,14 @@ export const SiteSettings: React.FC<Props> = ({ site, onUpdate }) => {
                 <div className="space-y-3">
                     <input 
                     type="text" placeholder="Vendor Name / Entity"
-                    value={site.dna.vendor.name}
-                    onChange={(e) => updateNestedDNA('vendor', 'name', e.target.value)}
+                    value={site.acquisition.vendor.name}
+                    onChange={(e) => updateAcquisitionNested('vendor', 'name', e.target.value)}
                     className="w-full text-sm border-slate-200 rounded-lg focus:ring-indigo-500"
                     />
                     <input 
                     type="text" placeholder="Vendor Solicitor"
-                    value={site.dna.vendor.company}
-                    onChange={(e) => updateNestedDNA('vendor', 'company', e.target.value)}
+                    value={site.acquisition.vendor.company}
+                    onChange={(e) => updateAcquisitionNested('vendor', 'company', e.target.value)}
                     className="w-full text-sm border-slate-200 rounded-lg focus:ring-indigo-500"
                     />
                 </div>

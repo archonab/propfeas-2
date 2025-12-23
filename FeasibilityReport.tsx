@@ -1,15 +1,15 @@
 
 import React, { useMemo, useState } from 'react';
-import { FeasibilityScenario, CostCategory, SiteDNA, LineItem, GstTreatment, Site, ProjectMetrics } from './types';
+import { CostCategory, LineItem, GstTreatment, ProjectMetrics } from './types';
+import { FeasibilityScenario, Site } from './types-v2';
 import { FinanceEngine } from './services/financeEngine';
 import { SensitivityService } from './services/sensitivityService';
 import { HelpTooltip } from './components/HelpTooltip';
 
 interface Props {
   scenario: FeasibilityScenario;
-  siteDNA: SiteDNA;
-  site?: Site; 
-  stats: ProjectMetrics; // Now strictly typed to ProjectMetrics
+  site: Site;
+  stats: ProjectMetrics;
   onNavigate?: (tab: string, section?: string) => void;
 }
 
@@ -22,7 +22,7 @@ const formatCurrency = (val: number) => {
 };
 
 // --- HELPER: Detailed Cost Mapper ---
-const useDetailedCosts = (scenario: FeasibilityScenario, siteDNA: SiteDNA) => {
+const useDetailedCosts = (scenario: FeasibilityScenario, site: Site) => {
   return useMemo(() => {
     // Construction Sum for % calculations
     const constructionSum = scenario.costs
@@ -33,7 +33,7 @@ const useDetailedCosts = (scenario: FeasibilityScenario, siteDNA: SiteDNA) => {
     const totalRevenue = scenario.revenues.reduce((acc, r) => acc + (r.units * r.pricePerUnit), 0);
 
     return scenario.costs.map(item => {
-      const netAmount = FinanceEngine.calculateLineItemTotal(item, scenario.settings, siteDNA, constructionSum, totalRevenue);
+      const netAmount = FinanceEngine.calculateLineItemTotal(item, scenario.settings, site, constructionSum, totalRevenue);
       
       // Calculate GST
       let gstAmount = 0;
@@ -48,18 +48,19 @@ const useDetailedCosts = (scenario: FeasibilityScenario, siteDNA: SiteDNA) => {
         grossAmount: netAmount + gstAmount
       };
     });
-  }, [scenario, siteDNA]);
+  }, [scenario, site]);
 };
 
 // --- SUB-COMPONENT: VALUER STYLE REPORT ---
-const ValuerReport = ({ scenario, stats, detailedCosts, onNavigate }: { scenario: FeasibilityScenario, stats: ProjectMetrics, detailedCosts: any[], onNavigate?: (t: string, s?: string) => void }) => {
+const ValuerReport = ({ scenario, stats, detailedCosts, onNavigate, site }: { scenario: FeasibilityScenario, stats: ProjectMetrics, detailedCosts: any[], onNavigate?: (t: string, s?: string) => void, site: Site }) => {
   const { settings } = scenario;
   
   // -- COST AGGREGATION LOGIC --
-  const purchasePrice = settings.acquisition.purchasePrice;
-  const stampDuty = FinanceEngine.calculateStampDuty(purchasePrice, settings.acquisition.stampDutyState, settings.acquisition.isForeignBuyer);
-  const agentFeeNet = purchasePrice * (settings.acquisition.buyersAgentFee / 100); 
-  const legalFeeNet = settings.acquisition.legalFeeEstimate; 
+  // Use Site Acquisition data
+  const purchasePrice = site.acquisition.purchasePrice;
+  const stampDuty = FinanceEngine.calculateStampDuty(purchasePrice, site.acquisition.stampDutyState, site.acquisition.isForeignBuyer);
+  const agentFeeNet = purchasePrice * ((site.acquisition.buyersAgentFee || 0) / 100); 
+  const legalFeeNet = site.acquisition.legalFeeEstimate || 0; 
   
   const costsByCategory = detailedCosts.reduce((acc, item) => {
     if (!acc[item.category]) acc[item.category] = 0;
@@ -232,11 +233,11 @@ const ValuerReport = ({ scenario, stats, detailedCosts, onNavigate }: { scenario
 };
 
 // --- HOLD REPORT ---
-const HoldReport = ({ scenario, siteDNA, stats }: { scenario: FeasibilityScenario, siteDNA: SiteDNA, stats: ProjectMetrics }) => {
+const HoldReport = ({ scenario, site, stats }: { scenario: FeasibilityScenario, site: Site, stats: ProjectMetrics }) => {
     
     // Generate an Annual Summary for the Hold Period
     const annualData = useMemo(() => {
-        const cashflow = FinanceEngine.calculateMonthlyCashflow(scenario, siteDNA);
+        const cashflow = FinanceEngine.calculateMonthlyCashflow(scenario, site);
         const refiMonth = scenario.settings.holdStrategy?.refinanceMonth || 0;
         const opFlows = cashflow.slice(refiMonth); // Start from operating phase
         
@@ -272,7 +273,7 @@ const HoldReport = ({ scenario, siteDNA, stats }: { scenario: FeasibilityScenari
             });
         }
         return years.slice(0, 10); // Show max 10 years
-    }, [scenario, siteDNA]);
+    }, [scenario, site]);
 
     // Calculate Exit Metrics
     const exitValuation = annualData.length > 0 ? (annualData[annualData.length - 1].netIncome / ((scenario.settings.holdStrategy?.terminalCapRate || 5) / 100)) : 0;
@@ -361,24 +362,24 @@ const HoldReport = ({ scenario, siteDNA, stats }: { scenario: FeasibilityScenari
             </div>
             
             <div className="mt-6 p-4 bg-slate-50 rounded border border-slate-200 text-[10px] text-slate-500 space-y-2">
-                <p><span className="font-bold uppercase">Dynamic Statutory Logic:</span> Land Tax is recalculated annually based on the projected Statutory Land Value (AUV) appreciating at {scenario.settings.growth?.landAppreciation || 3}% p.a. Brackets adjust dynamically based on 2024/25 {scenario.settings.acquisition.stampDutyState} progressive tax scales.</p>
+                <p><span className="font-bold uppercase">Dynamic Statutory Logic:</span> Land Tax is recalculated annually based on the projected Statutory Land Value (AUV) appreciating at {scenario.settings.growth?.landAppreciation || 3}% p.a. Brackets adjust dynamically based on 2024/25 {site.acquisition.stampDutyState} progressive tax scales.</p>
                 <p><span className="font-bold uppercase">Terminal Value:</span> Calculated as Net Operating Income in Year 10 divided by the Terminal Capitalisation Rate of {scenario.settings.holdStrategy?.terminalCapRate}%.</p>
             </div>
         </div>
     );
 };
 
-export const FeasibilityReport: React.FC<Props> = ({ scenario, siteDNA, stats, onNavigate, site }) => {
+export const FeasibilityReport: React.FC<Props> = ({ scenario, site, stats, onNavigate }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('valuer');
 
-  const detailedCosts = useDetailedCosts(scenario, siteDNA);
+  const detailedCosts = useDetailedCosts(scenario, site);
 
   return (
     <div className="flex flex-col relative">
        <div className="bg-white p-12 max-w-5xl mx-auto shadow-xl print-container border border-slate-200 print:border-none w-full">
           {scenario.strategy === 'HOLD' 
-            ? <HoldReport scenario={scenario} siteDNA={siteDNA} stats={stats} />
-            : <ValuerReport scenario={scenario} stats={stats} detailedCosts={detailedCosts} onNavigate={onNavigate} />
+            ? <HoldReport scenario={scenario} site={site} stats={stats} />
+            : <ValuerReport scenario={scenario} stats={stats} detailedCosts={detailedCosts} onNavigate={onNavigate} site={site} />
           }
           <div className="mt-12 text-center text-[10px] text-slate-300 border-t border-slate-100 pt-4 flex justify-between uppercase tracking-widest font-bold">
             <p>DevFeas Pro System</p>

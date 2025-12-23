@@ -2,17 +2,19 @@
 import React, { useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line } from 'recharts';
 import { LineItem, FeasibilitySettings, CostCategory } from './types';
+import { Site } from './types-v2';
 import { distributeValue, getMonthLabel } from './services/financeEngine';
 import Decimal from 'decimal.js';
 
 interface Props {
   item: LineItem;
   settings: FeasibilitySettings;
+  site: Site; // Added Site V2
   constructionTotal: number;
   totalRevenue: number;
 }
 
-export const PhasingChart: React.FC<Props> = ({ item, settings, constructionTotal, totalRevenue }) => {
+export const PhasingChart: React.FC<Props> = ({ item, settings, site, constructionTotal, totalRevenue }) => {
   
   const data = useMemo(() => {
     const chartData = [];
@@ -24,7 +26,8 @@ export const PhasingChart: React.FC<Props> = ({ item, settings, constructionTota
     // Determine the effective start date based on category
     let effectiveStart = item.startDate;
     if (item.category === CostCategory.CONSTRUCTION) {
-       const settlement = settings.acquisition.settlementPeriod || 0;
+       // Source settlement from Site V2
+       const settlement = site.acquisition.settlementPeriod || 0;
        const delay = settings.constructionDelay || 0;
        effectiveStart += (settlement + delay);
     }
@@ -57,7 +60,7 @@ export const PhasingChart: React.FC<Props> = ({ item, settings, constructionTota
       });
     }
     return chartData;
-  }, [item, settings.durationMonths, settings.startDate, settings.acquisition.settlementPeriod, settings.constructionDelay, constructionTotal, totalRevenue]);
+  }, [item, settings.durationMonths, settings.startDate, settings.constructionDelay, site.acquisition.settlementPeriod, constructionTotal, totalRevenue]);
 
   if (item.span <= 0) return <div className="h-full flex items-center justify-center text-xs text-slate-400">Invalid Duration</div>;
 

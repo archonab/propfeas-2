@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
-import { FeasibilitySettings, SiteDNA, Site } from '../types';
+import { FeasibilitySettings } from '../types';
+import { Site, SiteIdentity } from '../types-v2';
 
 interface Props {
   settings: FeasibilitySettings;
@@ -14,11 +15,13 @@ interface Props {
 const MOCK_ADDRESS_DATABASE = {
   "49 King St": {
     address: "49 King Street, Dandenong VIC 3175",
-    dna: {
+    identity: {
       landArea: 1240,
       zoning: "GRZ1 (General Residential)",
       lga: "City of Greater Dandenong",
       overlays: ["Heritage Overlay (HO102)", "Vegetation Protection (VPO1)"],
+    },
+    acquisition: {
       agent: { name: "John Smith", company: "Ray White Commercial" },
       vendor: { name: "Private Holding Co" }
     },
@@ -26,11 +29,13 @@ const MOCK_ADDRESS_DATABASE = {
   },
   "Default": {
     address: "New Site Scenario",
-    dna: {
+    identity: {
       landArea: 1000,
       zoning: "Pending",
       lga: "Pending",
       overlays: [],
+    },
+    acquisition: {
       agent: { name: "", company: "" },
       vendor: { name: "" }
     }
@@ -42,8 +47,6 @@ export const SiteSetup: React.FC<Props> = ({ settings, siteLead, onUpdateSetting
   const [isSearching, setIsSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
   
-  const site = siteLead.dna;
-
   const handleSimulatedFetch = (query: string) => {
     setIsSearching(true);
     setShowResults(false);
@@ -58,22 +61,22 @@ export const SiteSetup: React.FC<Props> = ({ settings, siteLead, onUpdateSetting
         match = MOCK_ADDRESS_DATABASE["49 King St"];
       }
       
-      // Populate Global State
-      const newSiteDNA: SiteDNA = {
-        ...site,
-        address: match.address,
-        landArea: match.dna.landArea,
-        zoning: match.dna.zoning,
-        lga: match.dna.lga,
-        overlays: match.dna.overlays,
-        agent: { ...site.agent, ...match.dna.agent },
-        vendor: { ...site.vendor, ...match.dna.vendor }
-      };
-
       onUpdateSite({
         ...siteLead,
         name: match.address.split(',')[0],
-        dna: newSiteDNA
+        identity: {
+            ...siteLead.identity,
+            address: match.address,
+            landArea: match.identity.landArea,
+            zoning: match.identity.zoning,
+            lga: match.identity.lga,
+            overlays: match.identity.overlays,
+        },
+        acquisition: {
+            ...siteLead.acquisition,
+            agent: { ...siteLead.acquisition.agent, ...match.acquisition.agent },
+            vendor: { ...siteLead.acquisition.vendor, ...match.acquisition.vendor }
+        }
       });
       
       onUpdateSettings({
@@ -95,19 +98,19 @@ export const SiteSetup: React.FC<Props> = ({ settings, siteLead, onUpdateSetting
     }
   };
 
-  const updateSiteField = (field: keyof SiteDNA, value: any) => {
+  const updateSiteField = (field: keyof SiteIdentity, value: any) => {
     onUpdateSite({ 
         ...siteLead, 
-        dna: { ...site, [field]: value } 
+        identity: { ...siteLead.identity, [field]: value } 
     });
   };
 
-  const updateNestedField = (parent: 'agent' | 'vendor' | 'milestones', field: string, value: any) => {
+  const updateAcquisitionNested = (parent: 'agent' | 'vendor', field: string, value: any) => {
     onUpdateSite({
       ...siteLead,
-      dna: {
-        ...site,
-        [parent]: { ...site[parent], [field]: value }
+      acquisition: {
+        ...siteLead.acquisition,
+        [parent]: { ...siteLead.acquisition[parent], [field]: value }
       }
     });
   };
@@ -121,7 +124,7 @@ export const SiteSetup: React.FC<Props> = ({ settings, siteLead, onUpdateSetting
   };
 
   // Timeline Visualization Helpers
-  const settlementPeriod = settings.acquisition.settlementPeriod;
+  const settlementPeriod = siteLead.acquisition.settlementPeriod || settings.acquisition.settlementPeriod || 0; // Fallback to settings if migrating
   const constDelay = settings.constructionDelay || 0;
   const constStart = settlementPeriod + constDelay;
   const totalDuration = settings.durationMonths;
@@ -145,7 +148,7 @@ export const SiteSetup: React.FC<Props> = ({ settings, siteLead, onUpdateSetting
           </div>
           <input 
             type="text" 
-            value={searchQuery || site.address}
+            value={searchQuery || siteLead.identity.address}
             onChange={handleSearchChange}
             onKeyDown={handleKeyDown}
             placeholder="Start typing address (e.g. 49 King St)..."
@@ -193,14 +196,14 @@ export const SiteSetup: React.FC<Props> = ({ settings, siteLead, onUpdateSetting
                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Land Area (sqm)</label>
                        <input 
                          type="number" 
-                         value={site.landArea}
+                         value={siteLead.identity.landArea}
                          onChange={(e) => updateSiteField('landArea', parseFloat(e.target.value))}
                          className="w-full border-slate-200 rounded-lg font-mono font-bold text-slate-800 focus:ring-blue-500"
                        />
-                       {landCost > 0 && site.landArea > 0 && (
+                       {landCost > 0 && siteLead.identity.landArea > 0 && (
                           <div className="mt-2 inline-flex items-center px-2 py-1 bg-blue-50 border border-blue-100 rounded text-[10px] font-bold text-blue-700">
                              <i className="fa-solid fa-calculator mr-1.5 opacity-50"></i>
-                             ${(landCost / site.landArea).toFixed(0)} / sqm
+                             ${(landCost / siteLead.identity.landArea).toFixed(0)} / sqm
                           </div>
                        )}
                     </div>
@@ -208,7 +211,7 @@ export const SiteSetup: React.FC<Props> = ({ settings, siteLead, onUpdateSetting
                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Local Government Area (LGA)</label>
                        <input 
                          type="text" 
-                         value={site.lga}
+                         value={siteLead.identity.lga}
                          onChange={(e) => updateSiteField('lga', e.target.value)}
                          className="w-full border-slate-200 rounded-lg text-sm font-medium text-slate-800 focus:ring-blue-500"
                        />
@@ -217,7 +220,7 @@ export const SiteSetup: React.FC<Props> = ({ settings, siteLead, onUpdateSetting
                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Zoning Code</label>
                        <input 
                          type="text" 
-                         value={site.zoning}
+                         value={siteLead.identity.zoning}
                          onChange={(e) => updateSiteField('zoning', e.target.value)}
                          className="w-full border-slate-200 rounded-lg text-sm font-medium text-slate-800 focus:ring-blue-500"
                        />
@@ -225,12 +228,12 @@ export const SiteSetup: React.FC<Props> = ({ settings, siteLead, onUpdateSetting
                     <div>
                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Planning Overlays</label>
                        <div className="flex flex-wrap gap-2">
-                          {site.overlays.map((ov, i) => (
+                          {siteLead.identity.overlays.map((ov, i) => (
                              <span key={i} className="px-2 py-1 bg-amber-50 border border-amber-100 text-amber-800 rounded text-[10px] font-bold flex items-center">
                                 <i className="fa-solid fa-circle-exclamation mr-1"></i> {ov}
                              </span>
                           ))}
-                          {site.overlays.length === 0 && <span className="text-xs text-slate-400 italic">No overlays detected</span>}
+                          {siteLead.identity.overlays.length === 0 && <span className="text-xs text-slate-400 italic">No overlays detected</span>}
                        </div>
                     </div>
                  </div>
@@ -246,14 +249,14 @@ export const SiteSetup: React.FC<Props> = ({ settings, siteLead, onUpdateSetting
                   <div className="space-y-3">
                      <input 
                         type="text" placeholder="Agent Name"
-                        value={site.agent.name}
-                        onChange={(e) => updateNestedField('agent', 'name', e.target.value)}
+                        value={siteLead.acquisition.agent?.name || ''}
+                        onChange={(e) => updateAcquisitionNested('agent', 'name', e.target.value)}
                         className="w-full text-sm border-slate-200 rounded-lg focus:ring-blue-500"
                      />
                      <input 
                         type="text" placeholder="Agency / Company"
-                        value={site.agent.company}
-                        onChange={(e) => updateNestedField('agent', 'company', e.target.value)}
+                        value={siteLead.acquisition.agent?.company || ''}
+                        onChange={(e) => updateAcquisitionNested('agent', 'company', e.target.value)}
                         className="w-full text-sm border-slate-200 rounded-lg focus:ring-blue-500"
                      />
                      <div className="flex items-center space-x-2 pt-1">
@@ -272,14 +275,14 @@ export const SiteSetup: React.FC<Props> = ({ settings, siteLead, onUpdateSetting
                   <div className="space-y-3">
                      <input 
                         type="text" placeholder="Vendor Name / Entity"
-                        value={site.vendor.name}
-                        onChange={(e) => updateNestedField('vendor', 'name', e.target.value)}
+                        value={siteLead.acquisition.vendor.name}
+                        onChange={(e) => updateAcquisitionNested('vendor', 'name', e.target.value)}
                         className="w-full text-sm border-slate-200 rounded-lg focus:ring-indigo-500"
                      />
                      <input 
                         type="text" placeholder="Vendor Solicitor (Optional)"
-                        value={site.vendor.company}
-                        onChange={(e) => updateNestedField('vendor', 'company', e.target.value)}
+                        value={siteLead.acquisition.vendor.company}
+                        onChange={(e) => updateAcquisitionNested('vendor', 'company', e.target.value)}
                         className="w-full text-sm border-slate-200 rounded-lg focus:ring-indigo-500"
                      />
                   </div>

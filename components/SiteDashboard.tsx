@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Site } from '../types';
+import { Site } from '../types-v2';
 
 interface Props {
   site: Site;
@@ -25,11 +25,11 @@ export const SiteDashboard: React.FC<Props> = ({ site, onOpenScenario, onCreateS
            </div>
            <h1 className="text-3xl font-black text-slate-900 tracking-tight mb-2">{site.name}</h1>
            <div className="flex items-center text-slate-500 text-sm">
-              <i className="fa-solid fa-location-dot mr-2"></i> {site.dna.address}
+              <i className="fa-solid fa-location-dot mr-2"></i> {site.identity.address}
               <span className="mx-3">•</span>
-              <i className="fa-solid fa-ruler-combined mr-2"></i> {site.dna.landArea.toLocaleString()} sqm
+              <i className="fa-solid fa-ruler-combined mr-2"></i> {site.identity.landArea.toLocaleString()} sqm
               <span className="mx-3">•</span>
-              <i className="fa-solid fa-building mr-2"></i> {site.dna.zoning}
+              <i className="fa-solid fa-building mr-2"></i> {site.identity.zoning}
            </div>
         </div>
         

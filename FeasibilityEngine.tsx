@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { FeasibilitySettings, LineItem, RevenueItem, CostCategory, DistributionMethod, InputType, ScenarioStatus, GstTreatment, Site, SmartRates, FeasibilityScenario, TaxConfiguration } from './types';
+import { LineItem, RevenueItem, CostCategory, DistributionMethod, InputType, ScenarioStatus, GstTreatment, SmartRates, TaxConfiguration } from './types';
+import { Site, FeasibilityScenario, FeasibilitySettings } from './types-v2';
 import { ReportService } from './services/reportModel';
 import { SolverService } from './services/solverService';
 import { SensitivityMatrix } from './SensitivityMatrix';
@@ -19,6 +20,7 @@ import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, A
 import { DEFAULT_TAX_SCALES } from './constants';
 import { PdfService } from './services/pdfService';
 import { SensitivityService } from './services/sensitivityService';
+import { useProject } from './contexts/SiteContext';
 
 interface Props {
   site: Site; 
@@ -108,6 +110,7 @@ export const FeasibilityEngine: React.FC<Props> = ({
   libraryData,
   taxScales = DEFAULT_TAX_SCALES
 }) => {
+  const { updateSite } = useProject();
   const isHoldStrategy = activeScenario.strategy === 'HOLD';
   const defaultTab = site.status === 'Acquired' ? 'summary' : (isHoldStrategy ? 'strategy' : 'deal');
   
@@ -163,8 +166,8 @@ export const FeasibilityEngine: React.FC<Props> = ({
 
   // --- CANONICAL CALCULATION ---
   const report = useMemo(() => 
-    ReportService.runFeasibility(currentScenarioState, site.dna, linkedScenario, taxScales),
-    [currentScenarioState, site.dna, linkedScenario, taxScales]
+    ReportService.runFeasibility(currentScenarioState, site, linkedScenario, taxScales),
+    [currentScenarioState, site, linkedScenario, taxScales]
   );
 
   const cashflow = report.cashflow.monthly;
@@ -236,6 +239,10 @@ export const FeasibilityEngine: React.FC<Props> = ({
       setActiveTab(targetTab);
   };
 
+  const handleUpdateSite = (updatedSite: Site) => {
+      updateSite(updatedSite.id, updatedSite);
+  }
+
   const handleExportPdf = async () => {
       setIsGeneratingPdf(true);
       
@@ -252,17 +259,17 @@ export const FeasibilityEngine: React.FC<Props> = ({
                 'cost',    // Default Y
                 steps,
                 steps,
-                site.dna,
+                site, // Update to pass full site
                 { runInWorker: true }
             );
 
             // 2. Generate detailed 1D Risk Tables (Sync for now as they are fast individual runs)
             const riskTables = {
-                land: SensitivityService.generateSensitivityTable('land', settings, costs, revenues, site.dna),
-                cost: SensitivityService.generateSensitivityTable('cost', settings, costs, revenues, site.dna),
-                revenue: SensitivityService.generateSensitivityTable('revenue', settings, costs, revenues, site.dna),
-                duration: SensitivityService.generateSensitivityTable('duration', settings, costs, revenues, site.dna),
-                interest: SensitivityService.generateSensitivityTable('interest', settings, costs, revenues, site.dna)
+                land: SensitivityService.generateSensitivityTable('land', settings, costs, revenues, site),
+                cost: SensitivityService.generateSensitivityTable('cost', settings, costs, revenues, site),
+                revenue: SensitivityService.generateSensitivityTable('revenue', settings, costs, revenues, site),
+                duration: SensitivityService.generateSensitivityTable('duration', settings, costs, revenues, site),
+                interest: SensitivityService.generateSensitivityTable('interest', settings, costs, revenues, site)
             };
 
             // 3. Generate PDF
@@ -270,7 +277,7 @@ export const FeasibilityEngine: React.FC<Props> = ({
                 site,
                 currentScenarioState,
                 report,
-                site.dna,
+                site.identity,
                 sensitivityMatrix,
                 riskTables
             );
@@ -344,11 +351,11 @@ export const FeasibilityEngine: React.FC<Props> = ({
            <div className="space-y-3">
               <div className="flex justify-between items-center text-xs">
                  <span className="text-slate-500">Land Area</span>
-                 <span className="font-bold text-slate-700">{site.dna.landArea.toLocaleString()} m²</span>
+                 <span className="font-bold text-slate-700">{site.identity.landArea.toLocaleString()} m²</span>
               </div>
               <div className="flex justify-between items-center text-xs">
                  <span className="text-slate-500">Zoning</span>
-                 <span className="font-bold text-slate-700">{site.dna.zoning || 'Pending'}</span>
+                 <span className="font-bold text-slate-700">{site.identity.zoning || 'Pending'}</span>
               </div>
               <div className="flex justify-between items-center text-xs">
                  <span className="text-slate-500">Yield</span>
@@ -400,11 +407,14 @@ export const FeasibilityEngine: React.FC<Props> = ({
                         </button>
                     )}
                 </div>
-                <SiteDNAHub 
-                  site={site} 
-                  onUpdate={() => {}} // No-op in read-only mode
-                  readOnly={true}
-                />
+                {/* V2 Site Asset Register */}
+                <div className="p-4">
+                    <SiteDNAHub 
+                        site={site} 
+                        onUpdate={() => {}} // No-op in read-only mode
+                        readOnly={true}
+                    />
+                </div>
               </div>
             )}
 
@@ -412,11 +422,12 @@ export const FeasibilityEngine: React.FC<Props> = ({
             {activeTab === 'deal' && !isHoldStrategy && (
               <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
                 <AcquisitionManager 
-                  settings={settings} 
-                  onUpdate={setSettings} 
+                  settings={settings as any} // Cast for compatibility if strict types mismatch temporarily, or ensure settings type alignment
+                  onUpdate={setSettings as any} 
                   costs={costs}
                   revenues={revenues}
-                  siteDNA={site.dna}
+                  site={site} // Pass V2 Site
+                  onUpdateSite={handleUpdateSite} // Allow updating site acquisition details
                   taxScales={taxScales}
                 />
               </div>
@@ -442,17 +453,17 @@ export const FeasibilityEngine: React.FC<Props> = ({
                   )}
 
                   <HoldStrategySettings 
-                    settings={settings} 
+                    settings={settings as any} 
                     revenues={revenues} 
                     cashflow={cashflow}
-                    onUpdate={setSettings} 
+                    onUpdate={setSettings as any} 
                   />
                   
                   <InvestmentSettings 
-                    settings={settings} 
+                    settings={settings as any} 
                     revenues={revenues} 
                     constructionTotal={stats.constructionTotal}
-                    onUpdate={setSettings} 
+                    onUpdate={setSettings as any} 
                   />
               </div>
             )}
@@ -507,7 +518,7 @@ export const FeasibilityEngine: React.FC<Props> = ({
                           </div>
                       </div>
                     </div>
-                    <SensitivityMatrix settings={settings} costs={costs} revenues={revenues} siteDNA={site.dna} />
+                    <SensitivityMatrix settings={settings as any} costs={costs} revenues={revenues} site={site} />
                 </div>
                 
               </div>
@@ -538,7 +549,7 @@ export const FeasibilityEngine: React.FC<Props> = ({
                             </div>
                             <div>
                                 <p className="text-slate-500 text-xs uppercase font-bold tracking-wider mb-1">Land Basis</p>
-                                <p className="font-mono font-bold text-slate-800">${(linkedScenario.settings.acquisition.purchasePrice/1e6).toFixed(2)}m</p>
+                                <p className="font-mono font-bold text-slate-800">${(site.acquisition.purchasePrice/1e6).toFixed(2)}m</p>
                             </div>
                         </div>
                     </div>
@@ -546,7 +557,7 @@ export const FeasibilityEngine: React.FC<Props> = ({
 
                 <FeasibilityInputGrid 
                   costs={costs} 
-                  settings={settings} 
+                  settings={settings as any} 
                   constructionTotal={stats.constructionTotal}
                   estimatedRevenue={stats.totalIn}
                   onUpdate={handleUpdateCost} 
@@ -555,8 +566,10 @@ export const FeasibilityEngine: React.FC<Props> = ({
                   onRemove={handleRemoveCost} 
                   smartRates={smartRates}
                   libraryData={libraryData}
-                  landArea={site.dna.landArea} 
+                  landArea={site.identity.landArea} 
                   strategy={isHoldStrategy ? 'HOLD' : 'SELL'}
+                  siteDNA={site.identity as any} // Cast for compatibility
+                  site={site} // V2
                 />
               </div>
             )}
@@ -565,10 +578,11 @@ export const FeasibilityEngine: React.FC<Props> = ({
             {activeTab === 'funding' && !isHoldStrategy && (
                 <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
                     <FinanceSettings 
-                        settings={settings} 
-                        onUpdate={setSettings} 
+                        settings={settings as any} 
+                        site={site} // V2
+                        onUpdate={setSettings as any} 
                         peakEquityRequired={stats.peakEquity}
-                        projectLocation={site.dna.address} 
+                        projectLocation={site.identity.address} 
                     />
                 </div>
             )}
@@ -613,13 +627,12 @@ export const FeasibilityEngine: React.FC<Props> = ({
                     {reportSubTab === 'pnl' && (
                       <FeasibilityReport 
                           scenario={currentScenarioState} 
-                          siteDNA={site.dna}
                           site={site}
                           stats={stats} 
                           onNavigate={handleReportNavigation}
                       />
                     )}
-                    {reportSubTab === 'cashflow' && <ConsolidatedCashflowReport cashflow={cashflow} settings={settings} />}
+                    {reportSubTab === 'cashflow' && <ConsolidatedCashflowReport cashflow={cashflow} settings={settings as any} />}
                 </div>
               </div>
             )}

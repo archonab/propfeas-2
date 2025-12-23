@@ -1,5 +1,6 @@
 
-import { FeasibilityScenario, SiteDNA, ReportModel, TaxConfiguration } from '../types';
+import { ReportModel, TaxConfiguration } from '../types';
+import { Site, FeasibilityScenario } from '../types-v2';
 import { FinanceEngine } from './financeEngine';
 import { DEFAULT_TAX_SCALES } from '../constants';
 
@@ -10,7 +11,7 @@ export const ReportService = {
    */
   runFeasibility(
     scenario: FeasibilityScenario, 
-    siteDNA: SiteDNA, 
+    site: Site, 
     linkedScenario?: FeasibilityScenario,
     taxScales: TaxConfiguration = DEFAULT_TAX_SCALES
   ): ReportModel {
@@ -18,7 +19,7 @@ export const ReportService = {
     // 1. Calculate Monthly Flows (The Engine)
     const monthlyFlows = FinanceEngine.calculateMonthlyCashflow(
         scenario, 
-        siteDNA, 
+        site, 
         linkedScenario, 
         taxScales
     );
@@ -27,7 +28,7 @@ export const ReportService = {
     // Note: generateItemisedCashflowData has been updated to include implicit land costs
     const itemisedCashflow = FinanceEngine.generateItemisedCashflowData(
         scenario, 
-        siteDNA,
+        site,
         monthlyFlows,
         taxScales
     );
@@ -35,7 +36,7 @@ export const ReportService = {
     // 3. Calculate Item Summaries (For P&L) - Precise Net/GST Calculation per Item
     const itemSummaries = FinanceEngine.calculateLineItemSummaries(
         scenario,
-        siteDNA,
+        site,
         taxScales
     );
 

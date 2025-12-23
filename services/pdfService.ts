@@ -1,7 +1,8 @@
 
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import { Site, FeasibilityScenario, CostCategory, SiteDNA, MonthlyFlow, ItemisedCashflow, SensitivityRow, ReportModel, LineItem, GstTreatment, MilestoneLink, TaxConfiguration } from "../types";
+import { CostCategory, MonthlyFlow, ItemisedCashflow, SensitivityRow, ReportModel, LineItem, GstTreatment, MilestoneLink, TaxConfiguration, SiteDNA } from "../types";
+import { Site, FeasibilityScenario } from "../types-v2";
 import { SensitivityCell } from "./sensitivityService";
 import { FinanceEngine } from "./financeEngine";
 import { DEFAULT_TAX_SCALES } from '../constants';
@@ -62,7 +63,7 @@ export class PdfService {
     site: Site,
     scenario: FeasibilityScenario,
     report: ReportModel,
-    siteDNA: SiteDNA,
+    siteDNA: SiteDNA, // Kept for interface compatibility but we rely on Site object mainly
     sensitivityMatrix: SensitivityCell[][],
     riskTables?: Record<string, SensitivityRow[]>
   ) {
@@ -83,7 +84,7 @@ export class PdfService {
 
     // 4. Valuer's P&L (Portrait)
     builder.addNewPage("portrait");
-    builder.addValuersPnL(scenario, report, siteDNA); 
+    builder.addValuersPnL(scenario, report, site); 
     builder.addPageFooter(4, site.name);
 
     // 5. Sensitivity Analysis (Portrait)
@@ -278,14 +279,14 @@ export class PdfService {
       }
 
       // 2. Site Particulars Table (Top Right)
-      const dna = site.dna;
+      const dna = site.identity;
       const partRows = [
           ["Address", dna.address],
           ["Land Area", `${dna.landArea.toLocaleString()} sqm`],
           ["Local Council", dna.lga],
           ["Zoning", `${dna.zoning} ${dna.zoningCode ? `(${dna.zoningCode})` : ''}`],
           ["Title / Folio", dna.titleReference || "TBC"],
-          ["Permit Status", dna.permitStatus || "Not Started"],
+          ["Permit Status", site.planning.permitStatus || "Not Started"],
           ["Jurisdiction", dna.state]
       ];
 
@@ -313,8 +314,8 @@ export class PdfService {
       const stakeholders = site.stakeholders && site.stakeholders.length > 0 
           ? site.stakeholders 
           : [ // Default rows if empty for layout
-              { role: 'Agent', name: site.dna.agent.name || '-', company: site.dna.agent.company || '-', email: '' },
-              { role: 'Vendor', name: site.dna.vendor.name || '-', company: site.dna.vendor.company || '-', email: '' }
+              { role: 'Agent', name: site.acquisition.agent?.name || '-', company: site.acquisition.agent?.company || '-', email: '' },
+              { role: 'Vendor', name: site.acquisition.vendor.name || '-', company: site.acquisition.vendor.company || '-', email: '' }
           ];
 
       autoTable(this.doc, {
@@ -363,7 +364,7 @@ export class PdfService {
     this.doc.setFont(FONTS.header, "normal");
     this.doc.setFontSize(14);
     this.doc.setTextColor(COLORS.secondary);
-    this.doc.text(site.dna.address, 20, this.currentY);
+    this.doc.text(site.identity.address, 20, this.currentY);
 
     this.currentY += 15;
     
@@ -392,7 +393,7 @@ export class PdfService {
   }
 
   // --- COMPONENT: VALUER'S P&L ---
-  private addValuersPnL(scenario: FeasibilityScenario, report: ReportModel, siteDNA: SiteDNA) {
+  private addValuersPnL(scenario: FeasibilityScenario, report: ReportModel, site: Site) {
     this.addPageHeader("Financial Analysis", "Profit & Loss Statement", false);
 
     const metrics = report.metrics;

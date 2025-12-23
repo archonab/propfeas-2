@@ -1,5 +1,6 @@
 
-import { FeasibilitySettings, LineItem, RevenueItem, CostCategory, SensitivityVariable, SiteDNA, FeasibilityScenario, ScenarioStatus, SensitivityRow } from '../types';
+import { LineItem, RevenueItem, CostCategory, SensitivityVariable, ScenarioStatus, SensitivityRow } from '../types';
+import { Site, FeasibilitySettings, FeasibilityScenario } from '../types-v2';
 import { ReportService } from './reportModel';
 
 export interface SensitivityCell {
@@ -20,10 +21,12 @@ export const applyVariance = (
   varianceValue: number, 
   settings: FeasibilitySettings,
   costs: LineItem[],
-  revenues: RevenueItem[]
-): { settings: FeasibilitySettings; costs: LineItem[]; revenues: RevenueItem[] } => {
+  revenues: RevenueItem[],
+  site: Site
+): { settings: FeasibilitySettings; costs: LineItem[]; revenues: RevenueItem[]; site: Site } => {
   
   let newSettings = JSON.parse(JSON.stringify(settings));
+  let newSite = JSON.parse(JSON.stringify(site)); // Clone site for land variance
   let newCosts = costs.map(c => ({...c}));
   let newRevenues = revenues.map(r => ({...r}));
 
@@ -68,12 +71,12 @@ export const applyVariance = (
     }
     case 'land': {
       const multiplier = 1 + (varianceValue / 100);
-      newSettings.acquisition.purchasePrice = settings.acquisition.purchasePrice * multiplier;
+      newSite.acquisition.purchasePrice = site.acquisition.purchasePrice * multiplier;
       break;
     }
   }
 
-  return { settings: newSettings, costs: newCosts, revenues: newRevenues };
+  return { settings: newSettings, costs: newCosts, revenues: newRevenues, site: newSite };
 };
 
 // Pure Synchronous Matrix Calculation
@@ -85,13 +88,13 @@ export const calculateMatrixSync = (
     yAxis: SensitivityVariable,
     stepsX: number[],
     stepsY: number[],
-    siteDNA: SiteDNA
+    site: Site
 ): SensitivityCell[][] => {
     const matrix: SensitivityCell[][] = [];
 
     for (const yVal of stepsY) {
       const row: SensitivityCell[] = [];
-      const yScenario = applyVariance(yAxis, yVal, settings, baseCosts, baseRevenues);
+      const yScenario = applyVariance(yAxis, yVal, settings, baseCosts, baseRevenues, site);
 
       for (const xVal of stepsX) {
         const finalScenarioParts = applyVariance(
@@ -99,7 +102,8 @@ export const calculateMatrixSync = (
             xVal, 
             yScenario.settings, 
             yScenario.costs, 
-            yScenario.revenues
+            yScenario.revenues,
+            yScenario.site
         );
 
         const tempScenario: FeasibilityScenario = {
@@ -115,8 +119,8 @@ export const calculateMatrixSync = (
           revenues: finalScenarioParts.revenues
         };
 
-        // Use Canonical Calculator
-        const report = ReportService.runFeasibility(tempScenario, siteDNA);
+        // Use Canonical Calculator with modified site if needed
+        const report = ReportService.runFeasibility(tempScenario, finalScenarioParts.site);
 
         row.push({
           xVar: xVal,
@@ -143,12 +147,12 @@ export const SensitivityService = {
     yAxis: SensitivityVariable,
     stepsX: number[],
     stepsY: number[],
-    siteDNA: SiteDNA,
+    site: Site,
     options: { runInWorker?: boolean } = {}
   ): Promise<SensitivityCell[][]> => {
     
     // 1. Check Cache
-    const cacheKey = JSON.stringify({ settings, costs: baseCosts, revenues: baseRevenues, xAxis, yAxis, stepsX, stepsY, siteDNA });
+    const cacheKey = JSON.stringify({ settings, costs: baseCosts, revenues: baseRevenues, xAxis, yAxis, stepsX, stepsY, siteAcquisition: site.acquisition });
     if (MATRIX_CACHE.has(cacheKey)) {
         return MATRIX_CACHE.get(cacheKey)!;
     }
@@ -168,18 +172,18 @@ export const SensitivityService = {
                 worker.onerror = (e) => {
                     console.warn("Worker error, falling back to sync", e);
                     worker.terminate();
-                    resolve(calculateMatrixSync(settings, baseCosts, baseRevenues, xAxis, yAxis, stepsX, stepsY, siteDNA));
+                    resolve(calculateMatrixSync(settings, baseCosts, baseRevenues, xAxis, yAxis, stepsX, stepsY, site));
                 };
-                worker.postMessage({ settings, costs: baseCosts, revenues: baseRevenues, xAxis, yAxis, stepsX, stepsY, siteDNA });
+                worker.postMessage({ settings, costs: baseCosts, revenues: baseRevenues, xAxis, yAxis, stepsX, stepsY, site });
             });
         } catch (e) {
             console.warn("Worker instantiation failed, running sync", e);
-            result = calculateMatrixSync(settings, baseCosts, baseRevenues, xAxis, yAxis, stepsX, stepsY, siteDNA);
+            result = calculateMatrixSync(settings, baseCosts, baseRevenues, xAxis, yAxis, stepsX, stepsY, site);
         }
     } else {
         // 3. Sync Execution
         await new Promise(r => setTimeout(r, 0)); 
-        result = calculateMatrixSync(settings, baseCosts, baseRevenues, xAxis, yAxis, stepsX, stepsY, siteDNA);
+        result = calculateMatrixSync(settings, baseCosts, baseRevenues, xAxis, yAxis, stepsX, stepsY, site);
     }
 
     // 4. Update Cache
@@ -195,7 +199,7 @@ export const SensitivityService = {
     settings: FeasibilitySettings,
     costs: LineItem[],
     revenues: RevenueItem[],
-    siteDNA: SiteDNA
+    site: Site
   ): SensitivityRow[] {
     
     let steps: number[] = [];
@@ -206,14 +210,14 @@ export const SensitivityService = {
     const rows: SensitivityRow[] = [];
 
     for (const step of steps) {
-        const variant = applyVariance(variable, step, settings, costs, revenues);
+        const variant = applyVariance(variable, step, settings, costs, revenues, site);
         
         let variableValue = 0;
         let varianceLabel = '';
 
         switch (variable) {
             case 'land':
-                variableValue = variant.settings.acquisition.purchasePrice;
+                variableValue = variant.site.acquisition.purchasePrice;
                 varianceLabel = step === 0 ? 'Base Case' : (step > 0 ? `+${step}%` : `${step}%`);
                 break;
             case 'cost':
@@ -247,7 +251,7 @@ export const SensitivityService = {
             revenues: variant.revenues
         };
 
-        const report = ReportService.runFeasibility(tempScenario, siteDNA);
+        const report = ReportService.runFeasibility(tempScenario, variant.site);
 
         rows.push({
             varianceLabel,

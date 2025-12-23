@@ -1,6 +1,7 @@
 
 import React, { useMemo, useState } from 'react';
-import { Site, FeasibilityScenario, ScenarioStatus, LeadStatus } from '../types';
+import { ScenarioStatus, LeadStatus } from '../types';
+import { Site, FeasibilityScenario } from '../types-v2';
 import { FinanceEngine } from '../services/financeEngine';
 import { ScenarioComparison } from '../ScenarioComparison';
 import { ScenarioWizard } from './ScenarioWizard';
@@ -35,7 +36,8 @@ const ScenarioCard: React.FC<ScenarioCardProps> = ({
   
   // Calculate "Quick Look" Metrics on the fly
   const metrics = useMemo(() => {
-    const cashflow = FinanceEngine.calculateMonthlyCashflow(scenario, site.dna);
+    // Uses V2 finance engine signature (scenario, site)
+    const cashflow = FinanceEngine.calculateMonthlyCashflow(scenario, site);
     
     const totalOut = cashflow.reduce((acc, curr) => acc + curr.developmentCosts + curr.interestSenior + curr.interestMezz, 0);
     const totalIn = cashflow.reduce((acc, curr) => acc + curr.netRevenue, 0);
@@ -54,7 +56,7 @@ const ScenarioCard: React.FC<ScenarioCardProps> = ({
     }
 
     return { profit, margin, irr, strategyLabel, strategyColor };
-  }, [scenario, site.dna]);
+  }, [scenario, site]);
 
   return (
     <div 
@@ -102,7 +104,7 @@ const ScenarioCard: React.FC<ScenarioCardProps> = ({
          </div>
          <div className="p-4 text-center">
             <p className="text-[10px] text-slate-400 font-bold uppercase">IRR</p>
-            <p className="text-sm font-black text-indigo-600 mt-1">{metrics.irr.toFixed(1)}%</p>
+            <p className="text-sm font-black text-indigo-600 mt-1">{metrics.irr && metrics.irr !== -100 ? FinanceEngine.annualiseMonthlyRate(metrics.irr).toFixed(1) + '%' : '-'}</p>
          </div>
       </div>
 
@@ -238,11 +240,6 @@ export const ScenarioManager: React.FC<Props> = ({ site, onBack, onRequestEdit }
   };
 
   const cancelLockBaseline = () => {
-      // Just update the status without locking (manual override would be needed in context if we want this, 
-      // but strictly 'Acquired' implies locked in our rule. For now, assume user cancelled the status change entirely or we proceed without locking?
-      // Re-reading prompt: "If status becomes 'Acquired', automatically find... and set to 'LOCKED'".
-      // So if they click "No", we probably shouldn't change status to Acquired, or we change it but manually unlock?
-      // Let's assume cancel means abort status change to keep it simple and safe.
       setShowLockPrompt(false);
       setPendingStatus(null);
   };
@@ -266,7 +263,8 @@ export const ScenarioManager: React.FC<Props> = ({ site, onBack, onRequestEdit }
                     <h2 className="text-xl font-black text-slate-800">Scenario Comparison</h2>
                 </div>
                 <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                    <ScenarioComparison scenarios={scenariosToCompare} siteDNA={site.dna} />
+                    {/* Pass site (V2) instead of site.dna */}
+                    <ScenarioComparison scenarios={scenariosToCompare} site={site} />
                 </div>
             </div>
         </div>
@@ -380,9 +378,9 @@ export const ScenarioManager: React.FC<Props> = ({ site, onBack, onRequestEdit }
             </div>
             <h1 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight leading-tight">{site.name}</h1>
             <div className="flex items-center text-xs text-slate-500 mt-1 space-x-4">
-                <span className="flex items-center"><i className="fa-solid fa-location-dot mr-1.5 opacity-70"></i> {site.dna.address}</span>
-                <span className="flex items-center"><i className="fa-solid fa-ruler-combined mr-1.5 opacity-70"></i> {site.dna.landArea.toLocaleString()} sqm</span>
-                <span className="flex items-center"><i className="fa-solid fa-building mr-1.5 opacity-70"></i> {site.dna.zoning}</span>
+                <span className="flex items-center"><i className="fa-solid fa-location-dot mr-1.5 opacity-70"></i> {site.identity.address}</span>
+                <span className="flex items-center"><i className="fa-solid fa-ruler-combined mr-1.5 opacity-70"></i> {site.identity.landArea.toLocaleString()} sqm</span>
+                <span className="flex items-center"><i className="fa-solid fa-building mr-1.5 opacity-70"></i> {site.identity.zoning}</span>
             </div>
          </div>
 

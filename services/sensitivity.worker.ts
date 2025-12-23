@@ -2,7 +2,7 @@
 import { calculateMatrixSync } from './sensitivityService';
 
 self.onmessage = (e) => {
-  const { settings, costs, revenues, xAxis, yAxis, stepsX, stepsY, siteDNA } = e.data;
+  const { settings, costs, revenues, xAxis, yAxis, stepsX, stepsY, site } = e.data;
   
   try {
       const result = calculateMatrixSync(
@@ -13,7 +13,7 @@ self.onmessage = (e) => {
           yAxis, 
           stepsX, 
           stepsY, 
-          siteDNA
+          site
       );
       self.postMessage(result);
   } catch (err) {

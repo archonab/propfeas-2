@@ -1,10 +1,11 @@
 
 import Decimal from 'decimal.js';
 import { 
-  LineItem, RevenueItem, FeasibilitySettings, MonthlyFlow, DistributionMethod, 
-  InputType, CostCategory, DebtLimitMethod, EquityMode, InterestRateMode, FeeBase, CapitalTier, GstTreatment, SiteDNA, FeasibilityScenario, MilestoneLink, TaxConfiguration, TaxState,
+  LineItem, RevenueItem, MonthlyFlow, DistributionMethod, 
+  InputType, CostCategory, DebtLimitMethod, EquityMode, InterestRateMode, FeeBase, CapitalTier, GstTreatment, MilestoneLink, TaxConfiguration, TaxState,
   ItemisedRow, ItemisedCategory, ItemisedCashflow, ProjectMetrics, LineItemSummary
 } from '../types';
+import { Site, FeasibilityScenario, FeasibilitySettings } from '../types-v2';
 import { TaxLibrary } from './TaxLibrary';
 import { DEFAULT_TAX_SCALES } from '../constants';
 
@@ -91,8 +92,8 @@ const calculateStampDuty = (
 
 // --- HELPER: GENERATE IMPLICIT LAND ITEMS ---
 // This ensures Land costs appear in itemised reports exactly as they do in the cashflow
-const getImplicitAcquisitionCosts = (settings: FeasibilitySettings, taxScales: TaxConfiguration): LineItem[] => {
-    const { acquisition } = settings;
+const getImplicitAcquisitionCosts = (settings: FeasibilitySettings, site: Site, taxScales: TaxConfiguration): LineItem[] => {
+    const { acquisition } = site;
     const items: LineItem[] = [];
     const price = acquisition.purchasePrice;
     
@@ -124,7 +125,7 @@ const getImplicitAcquisitionCosts = (settings: FeasibilitySettings, taxScales: T
             description: 'Land Settlement',
             inputType: InputType.FIXED,
             amount: settlementAmt,
-            startDate: acquisition.settlementPeriod, // Absolute month relative to start
+            startDate: acquisition.settlementPeriod || 0, // Absolute month relative to start
             span: 1,
             method: DistributionMethod.UPFRONT,
             escalationRate: 0,
@@ -142,7 +143,7 @@ const getImplicitAcquisitionCosts = (settings: FeasibilitySettings, taxScales: T
             description: `Stamp Duty (${acquisition.stampDutyState})`,
             inputType: InputType.FIXED,
             amount: dutyAmt,
-            startDate: acquisition.stampDutyTiming === 'EXCHANGE' ? 0 : acquisition.settlementPeriod,
+            startDate: acquisition.stampDutyTiming === 'EXCHANGE' ? 0 : (acquisition.settlementPeriod || 0),
             span: 1,
             method: DistributionMethod.UPFRONT,
             escalationRate: 0,
@@ -151,7 +152,7 @@ const getImplicitAcquisitionCosts = (settings: FeasibilitySettings, taxScales: T
     }
 
     // 4. Legal Fees
-    if (acquisition.legalFeeEstimate > 0) {
+    if (acquisition.legalFeeEstimate && acquisition.legalFeeEstimate > 0) {
         items.push({
             id: 'IMP-LEGAL',
             code: 'LND-LEG',
@@ -168,7 +169,7 @@ const getImplicitAcquisitionCosts = (settings: FeasibilitySettings, taxScales: T
     }
 
     // 5. Agent Fees
-    const agentAmt = price * (acquisition.buyersAgentFee / 100);
+    const agentAmt = price * ((acquisition.buyersAgentFee || 0) / 100);
     if (agentAmt > 0) {
         items.push({
             id: 'IMP-AGENT',
@@ -177,7 +178,7 @@ const getImplicitAcquisitionCosts = (settings: FeasibilitySettings, taxScales: T
             description: "Buyer's Agent Fee",
             inputType: InputType.FIXED,
             amount: agentAmt,
-            startDate: acquisition.settlementPeriod,
+            startDate: acquisition.settlementPeriod || 0,
             span: 1,
             method: DistributionMethod.UPFRONT,
             escalationRate: 0,
@@ -192,36 +193,36 @@ const getImplicitAcquisitionCosts = (settings: FeasibilitySettings, taxScales: T
 export const calculateLineItemTotal = (
   item: LineItem, 
   settings: FeasibilitySettings, 
-  siteDNA: SiteDNA,
+  site: Site,
   constructionSum: number, 
   totalRevenue: number,
   scales: TaxConfiguration = DEFAULT_TAX_SCALES
 ): number => {
   // Automated Statutory Links
   if (item.calculationLink && item.calculationLink !== 'NONE') {
-      const state = settings.acquisition.stampDutyState as TaxState;
+      const state = site.acquisition.stampDutyState as TaxState;
       switch (item.calculationLink) {
           case 'AUTO_STAMP_DUTY':
               return calculateStampDuty(
-                  settings.acquisition.purchasePrice,
+                  site.acquisition.purchasePrice,
                   state,
-                  settings.acquisition.isForeignBuyer,
+                  site.acquisition.isForeignBuyer,
                   scales,
-                  settings.acquisition.stampDutyOverride
+                  site.acquisition.stampDutyOverride
               );
           case 'AUTO_LAND_TAX':
-              return TaxLibrary.calculateTax(siteDNA.auv || 0, scales, state, 'LAND_TAX_GENERAL');
+              return TaxLibrary.calculateTax(site.identity.auv || 0, scales, state, 'LAND_TAX_GENERAL');
           case 'AUTO_COUNCIL_RATES':
-              const rateBase = siteDNA.acv || siteDNA.auv || 0;
+              const rateBase = site.identity.acv || site.identity.auv || 0;
               return item.amount < 1 ? rateBase * item.amount : item.amount;
       }
   }
 
   // Legacy Tags
   if (item.specialTag === 'COUNCIL_RATES' || item.specialTag === 'LAND_TAX') {
-      const baseValue = siteDNA.auv || 0;
+      const baseValue = site.identity.auv || 0;
       if (item.specialTag === 'LAND_TAX' && item.amount === 0) {
-          const state = settings.acquisition.stampDutyState as TaxState;
+          const state = site.acquisition.stampDutyState as TaxState;
           return TaxLibrary.calculateTax(baseValue, scales, state, 'LAND_TAX_GENERAL');
       }
       if (item.amount < 1 && item.amount > 0) return baseValue * item.amount;
@@ -233,7 +234,7 @@ export const calculateLineItemTotal = (
     case InputType.PCT_REVENUE: return val.div(100).times(totalRevenue).toNumber();
     case InputType.PCT_CONSTRUCTION: return val.div(100).times(constructionSum).toNumber();
     case InputType.RATE_PER_UNIT: return val.times(settings.totalUnits).toNumber();
-    case InputType.RATE_PER_SQM: return val.times(siteDNA.landArea || 0).toNumber();
+    case InputType.RATE_PER_SQM: return val.times(site.identity.landArea || 0).toNumber();
     case InputType.FIXED: default: return item.amount;
   }
 };
@@ -241,13 +242,16 @@ export const calculateLineItemTotal = (
 // --- PURE MODULE 1: TIMELINE ---
 const buildTimeline = (
   scenario: FeasibilityScenario, 
+  site: Site,
   linkedScenario?: FeasibilityScenario
 ): TimelineContext => {
   const isHold = scenario.strategy === 'HOLD';
   const baseSettings = isHold && linkedScenario ? linkedScenario.settings : scenario.settings;
   const baseCosts = isHold && linkedScenario ? linkedScenario.costs : scenario.costs;
 
-  const { settlementPeriod } = baseSettings.acquisition;
+  // SOURCE ACQUISITION FROM SITE
+  const settlementPeriod = site.acquisition.settlementPeriod || 0;
+  
   const constructionDelay = baseSettings.constructionDelay || 0;
   
   // Calculate Construction End based on Max Span of construction items
@@ -267,7 +271,7 @@ const buildTimeline = (
   let refiMonthOffset = 0;
   if (isHold && linkedScenario) {
       // Logic duplicated to ensure we know exactly when the "Build" phase ends
-      const linkedMilestones = buildTimeline(linkedScenario);
+      const linkedMilestones = buildTimeline(linkedScenario, site);
       refiMonthOffset = linkedMilestones.constEndMonth;
   }
 
@@ -369,7 +373,7 @@ const getEscalationRate = (category: CostCategory, settings: FeasibilitySettings
 // --- PURE MODULE 2: COSTS ---
 const calcCostSchedule = (
   scenario: FeasibilityScenario,
-  siteDNA: SiteDNA,
+  site: Site,
   timeline: TimelineContext,
   linkedScenario: FeasibilityScenario | undefined,
   taxScales: TaxConfiguration
@@ -377,7 +381,9 @@ const calcCostSchedule = (
   const isHold = scenario.strategy === 'HOLD';
   const baseSettings = isHold && linkedScenario ? linkedScenario.settings : scenario.settings;
   const baseCosts = isHold && linkedScenario ? linkedScenario.costs : scenario.costs;
-  const { purchasePrice, depositPercent, legalFeeEstimate, stampDutyTiming, isForeignBuyer, stampDutyState, stampDutyOverride } = baseSettings.acquisition;
+  
+  // SOURCE ACQUISITION FROM SITE
+  const { purchasePrice, depositPercent, legalFeeEstimate, stampDutyTiming, isForeignBuyer, stampDutyState, stampDutyOverride, buyersAgentFee } = site.acquisition;
 
   // 1. Calculate Totals for % based items
   const constructionSum = baseCosts
@@ -406,7 +412,7 @@ const calcCostSchedule = (
   // A. Acquisition Costs (Hardcoded Timeline)
   if (!isHold) {
       // Month 0: Deposit + Legal
-      schedule[0].totalNet = schedule[0].totalNet.plus(depositAmount).plus(legalFeeEstimate);
+      schedule[0].totalNet = schedule[0].totalNet.plus(depositAmount).plus(legalFeeEstimate || 0);
       schedule[0].breakdown[CostCategory.LAND] += depositAmount.toNumber();
       
       // Stamp Duty Exchange vs Settlement
@@ -427,8 +433,8 @@ const calcCostSchedule = (
           schedule[sm].totalNet = schedule[sm].totalNet.plus(settlementAmount);
           schedule[sm].breakdown[CostCategory.LAND] += settlementAmount.toNumber();
           
-          // Buyer's Agent Fee (added in Canonical Refactor)
-          const agentFee = new Decimal(purchasePrice).times(baseSettings.acquisition.buyersAgentFee).div(100);
+          // Buyer's Agent Fee
+          const agentFee = new Decimal(purchasePrice).times(buyersAgentFee || 0).div(100);
           if (agentFee.gt(0)) {
               schedule[sm].totalNet = schedule[sm].totalNet.plus(agentFee);
               schedule[sm].breakdown[CostCategory.CONSULTANTS] += agentFee.toNumber();
@@ -439,9 +445,9 @@ const calcCostSchedule = (
   // B. Development Costs (Line Items)
   if (!isHold) {
       baseCosts.forEach(cost => {
-          if (cost.category === CostCategory.LAND) return; // Handled above (mostly, though we might want to check for user added land items)
+          if (cost.category === CostCategory.LAND) return; // Handled above
           const effectiveStart = getEffectiveStartMonth(cost, timeline);
-          const totalAmt = calculateLineItemTotal(cost, baseSettings, siteDNA, constructionSum, estTotalRevenue, taxScales);
+          const totalAmt = calculateLineItemTotal(cost, baseSettings, site, constructionSum, estTotalRevenue, taxScales);
           const escRate = cost.escalationRate || getEscalationRate(cost.category, baseSettings);
 
           for (let m = effectiveStart; m < effectiveStart + cost.span; m++) {
@@ -468,7 +474,7 @@ const calcCostSchedule = (
   // C. Operating Costs (Hold Phase)
   if (isHold) {
       // Dynamic Land Tax & Statutory Appreciation
-      let currentStatutoryValue = new Decimal(siteDNA.auv || purchasePrice || 0);
+      let currentStatutoryValue = new Decimal(site.identity.auv || purchasePrice || 0);
       const landAppreciationRate = baseSettings.growth?.landAppreciation || 3.0;
       const monthlyGrowthFactor = new Decimal(Math.pow(1 + (landAppreciationRate / 100), 1/12));
 
@@ -480,7 +486,7 @@ const calcCostSchedule = (
                   const annualTax = TaxLibrary.calculateTax(
                       currentStatutoryValue.toNumber(),
                       taxScales,
-                      baseSettings.acquisition.stampDutyState as TaxState,
+                      site.acquisition.stampDutyState as TaxState,
                       'LAND_TAX_GENERAL'
                   );
                   schedule[m].totalNet = schedule[m].totalNet.plus(annualTax);
@@ -648,6 +654,7 @@ const calcFundingSchedule = (
   revenueSchedule: RevenueFlow[],
   taxSchedule: TaxFlow[],
   settings: FeasibilitySettings,
+  site: Site,
   taxScales: TaxConfiguration // Added for Duty Calc
 ) => {
   const { capitalStack } = settings;
@@ -660,7 +667,7 @@ const calcFundingSchedule = (
   let surplusCash = new Decimal(0);
   
   // Asset Tracking
-  let currentAssetValue = new Decimal(settings.acquisition.purchasePrice);
+  let currentAssetValue = new Decimal(site.acquisition.purchasePrice);
   let currentStatutoryValue = new Decimal(currentAssetValue);
   let depreciableCapitalWorks = new Decimal(0); 
   let depreciablePlant = new Decimal(0);
@@ -679,19 +686,19 @@ const calcFundingSchedule = (
 
   if (capitalStack.equity.mode === EquityMode.PCT_LAND) {
       // Logic: X% of Land Purchase Price
-      let basis = new Decimal(settings.acquisition.purchasePrice);
+      let basis = new Decimal(site.acquisition.purchasePrice);
       
       // If includeAcquisitionCosts is TRUE, add Duty, Legal, Agent
       if (capitalStack.equity.includeAcquisitionCosts) {
           const duty = calculateStampDuty(
-              settings.acquisition.purchasePrice, 
-              settings.acquisition.stampDutyState, 
-              settings.acquisition.isForeignBuyer,
+              site.acquisition.purchasePrice, 
+              site.acquisition.stampDutyState, 
+              site.acquisition.isForeignBuyer,
               taxScales,
-              settings.acquisition.stampDutyOverride
+              site.acquisition.stampDutyOverride
           );
-          const agentFee = settings.acquisition.purchasePrice * (settings.acquisition.buyersAgentFee / 100);
-          const legal = settings.acquisition.legalFeeEstimate;
+          const agentFee = site.acquisition.purchasePrice * ((site.acquisition.buyersAgentFee || 0) / 100);
+          const legal = site.acquisition.legalFeeEstimate || 0;
           basis = basis.plus(duty).plus(agentFee).plus(legal);
       }
 
@@ -910,14 +917,14 @@ const calcFundingSchedule = (
 // --- HELPER: ITEM SUMMARY CALCULATOR ---
 const calculateLineItemSummaries = (
   scenario: FeasibilityScenario, 
-  siteDNA: SiteDNA,
+  site: Site,
   taxScales: TaxConfiguration
 ): LineItemSummary[] => {
   const { settings } = scenario;
-  const timeline = buildTimeline(scenario);
+  const timeline = buildTimeline(scenario, site);
   
   // Implicit Items
-  const implicitCosts = getImplicitAcquisitionCosts(settings, taxScales).map(i => ({...i, isImplicit: true}));
+  const implicitCosts = getImplicitAcquisitionCosts(settings, site, taxScales).map(i => ({...i, isImplicit: true}));
   
   // Combined Costs
   const allCosts = [...implicitCosts, ...scenario.costs.map(c => ({...c, isImplicit: false}))];
@@ -935,7 +942,7 @@ const calculateLineItemSummaries = (
   // Process Each Item
   return allCosts.map(item => {
       const effectiveStart = getEffectiveStartMonth(item, timeline);
-      const totalAmt = calculateLineItemTotal(item, settings, siteDNA, constructionSum, estTotalRevenue, taxScales);
+      const totalAmt = calculateLineItemTotal(item, settings, site, constructionSum, estTotalRevenue, taxScales);
       const escRate = item.escalationRate || getEscalationRate(item.category, settings);
 
       let totalNetEscalated = new Decimal(0);
@@ -976,20 +983,20 @@ const calculateLineItemSummaries = (
 // --- ORCHESTRATOR ---
 const calculateMonthlyCashflow = (
   scenario: FeasibilityScenario,
-  siteDNA: SiteDNA,
+  site: Site,
   linkedScenario?: FeasibilityScenario, 
   taxScales: TaxConfiguration = DEFAULT_TAX_SCALES
 ): MonthlyFlow[] => {
   // 1. Build Context
-  const timeline = buildTimeline(scenario, linkedScenario);
+  const timeline = buildTimeline(scenario, site, linkedScenario);
 
   // 2. Generate Independent Schedules
-  const costs = calcCostSchedule(scenario, siteDNA, timeline, linkedScenario, taxScales);
+  const costs = calcCostSchedule(scenario, site, timeline, linkedScenario, taxScales);
   const revenues = calcRevenueSchedule(scenario, timeline);
   const taxes = calcTaxSchedule(costs, revenues, timeline);
 
   // 3. Run Dependent Waterfall
-  return calcFundingSchedule(timeline, costs, revenues, taxes, scenario.settings, taxScales);
+  return calcFundingSchedule(timeline, costs, revenues, taxes, scenario.settings, site, taxScales);
 };
 
 // --- HELPER: NPV (Exported for testing or internal use) ---
@@ -1065,35 +1072,10 @@ const calculateIRR = (flows: number[]): number | null => {
   return (low + high) / 2;
 };
 
-// --- DEPRECATED: Legacy metric calculators ---
-// These are marked deprecated. Consumers should use ReportModel logic instead.
-// We keep them minimally operational for components not yet fully migrated if any.
-const calculateReportStats = (scenario: FeasibilityScenario, siteDNA: SiteDNA, taxScales: TaxConfiguration = DEFAULT_TAX_SCALES) => {
-  const revenues = scenario.revenues;
-  const totalRevenueGross = revenues.reduce((acc, rev) => {
-      if (rev.strategy === 'Hold') return acc; 
-      return acc + (rev.units * rev.pricePerUnit);
-  }, 0);
-
-  let gstCollected = 0;
-  if (scenario.strategy === 'SELL') gstCollected = totalRevenueGross / 11; 
-  const netRealisation = totalRevenueGross - gstCollected;
-  
-  const totalItc = scenario.costs.reduce((acc, item) => {
-      if (item.gstTreatment === GstTreatment.TAXABLE) {
-          const total = calculateLineItemTotal(item, scenario.settings, siteDNA, 0, 0, taxScales); 
-          return acc + (total * 0.1); 
-      }
-      return acc;
-  }, 0);
-
-  return { totalRevenueGross, gstCollected, netRealisation, totalItc };
-};
-
 // --- LEGACY EXPORTS (METRICS & ITEMISED) - Updated to handle implicit land items ---
 const generateItemisedCashflowData = (
   scenario: FeasibilityScenario, 
-  siteDNA: SiteDNA,
+  site: Site,
   mainFlows: MonthlyFlow[],
   taxScales: TaxConfiguration = DEFAULT_TAX_SCALES
 ): ItemisedCashflow => {
@@ -1130,11 +1112,11 @@ const generateItemisedCashflowData = (
   incomeCat.rows.push(salesRow, otherRow);
 
   // Combine Manual Costs + Implicit Land Costs
-  const virtualLandItems = getImplicitAcquisitionCosts(scenario.settings, taxScales);
+  const virtualLandItems = getImplicitAcquisitionCosts(scenario.settings, site, taxScales);
   const allCosts = [...scenario.costs, ...virtualLandItems];
 
   // Re-run cost distribution logic individually for reporting granularity
-  const timeline = buildTimeline(scenario);
+  const timeline = buildTimeline(scenario, site);
   const constructionSum = scenario.costs.filter(c => c.category === CostCategory.CONSTRUCTION).reduce((a,b) => a+b.amount, 0);
   const revenueSum = incomeCat.total;
 
@@ -1148,7 +1130,7 @@ const generateItemisedCashflowData = (
       
       if (!targetCat) return;
 
-      const totalAmount = calculateLineItemTotal(item, scenario.settings, siteDNA, constructionSum, revenueSum, taxScales);
+      const totalAmount = calculateLineItemTotal(item, scenario.settings, site, constructionSum, revenueSum, taxScales);
       const row: ItemisedRow = { label: item.description, total: totalAmount, values: new Array(duration).fill(0) };
       
       let startIdx = item.startDate;
@@ -1277,7 +1259,6 @@ const calculateProjectMetrics = (cashflow: MonthlyFlow[], settings: FeasibilityS
 export const FinanceEngine = {
   calculateLineItemTotal,
   calculateMonthlyCashflow,
-  calculateReportStats,
   generateItemisedCashflowData,
   calculateProjectMetrics,
   calculateLineItemSummaries, // Exported for ReportModel
@@ -1287,7 +1268,7 @@ export const FinanceEngine = {
   calculateStampDuty,
   getImplicitAcquisitionCosts,
   annualiseMonthlyRate,
-  distributeValue, // Added distributeValue here
+  distributeValue,
   _internal: {
     buildTimeline,
     calcCostSchedule,

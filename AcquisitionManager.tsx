@@ -1,6 +1,7 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { FeasibilitySettings, AcquisitionSettings, LineItem, RevenueItem, SiteDNA, TaxConfiguration } from './types';
+import { FeasibilitySettings, LineItem, RevenueItem, TaxConfiguration } from './types';
+import { Site, SiteAcquisition } from './types-v2';
 import { FinanceEngine } from './services/financeEngine';
 import { SolverService } from './services/solverService';
 import { DEFAULT_TAX_SCALES } from './constants';
@@ -11,12 +12,15 @@ interface Props {
   // New props required for Solver
   costs?: LineItem[];
   revenues?: RevenueItem[];
-  siteDNA?: SiteDNA;
+  siteDNA?: any; // Kept for compatibility but we prefer `site`
+  site?: Site; // Use V2 Site
+  onUpdateSite?: (site: Site) => void;
   taxScales?: TaxConfiguration;
 }
 
-export const AcquisitionManager: React.FC<Props> = ({ settings, onUpdate, costs = [], revenues = [], siteDNA, taxScales = DEFAULT_TAX_SCALES }) => {
-  const { acquisition } = settings;
+export const AcquisitionManager: React.FC<Props> = ({ settings, onUpdate, costs = [], revenues = [], siteDNA, site, onUpdateSite, taxScales = DEFAULT_TAX_SCALES }) => {
+  // If we have a V2 site passed, use it. Otherwise fallback to settings (legacy support or broken)
+  const acquisition = site ? site.acquisition : (settings as any).acquisition;
   
   // Solver State
   const [solveMode, setSolveMode] = useState(false);
@@ -24,14 +28,25 @@ export const AcquisitionManager: React.FC<Props> = ({ settings, onUpdate, costs 
   const [solverMetric, setSolverMetric] = useState<'margin' | 'irr'>('margin');
   const [isSolving, setIsSolving] = useState(false);
 
-  const updateField = (field: keyof AcquisitionSettings, value: any) => {
-    onUpdate({
-      ...settings,
-      acquisition: {
-        ...acquisition,
-        [field]: value
-      }
-    });
+  const updateField = (field: keyof SiteAcquisition, value: any) => {
+    if (site && onUpdateSite) {
+        onUpdateSite({
+            ...site,
+            acquisition: {
+                ...site.acquisition,
+                [field]: value
+            }
+        });
+    } else {
+        // Fallback for old calls
+        onUpdate({
+            ...settings,
+            acquisition: {
+                ...acquisition,
+                [field]: value
+            }
+        } as any);
+    }
   };
 
   // Derived Calculations for Preview
@@ -48,8 +63,8 @@ export const AcquisitionManager: React.FC<Props> = ({ settings, onUpdate, costs 
         acquisition.stampDutyOverride
     );
     
-    const agentFee = acquisition.purchasePrice * (acquisition.buyersAgentFee / 100);
-    const totalAcqCosts = acquisition.purchasePrice + duty + agentFee + acquisition.legalFeeEstimate;
+    const agentFee = acquisition.purchasePrice * ((acquisition.buyersAgentFee || 0) / 100);
+    const totalAcqCosts = acquisition.purchasePrice + duty + agentFee + (acquisition.legalFeeEstimate || 0);
     
     // Calculate the "Standard" duty without override for comparison
     const standardDuty = FinanceEngine.calculateStampDuty(
@@ -65,7 +80,7 @@ export const AcquisitionManager: React.FC<Props> = ({ settings, onUpdate, costs 
 
   // Solver Effect
   useEffect(() => {
-      if (solveMode && siteDNA) {
+      if (solveMode && site) {
           setIsSolving(true);
           const timer = setTimeout(() => {
               try {
@@ -75,7 +90,7 @@ export const AcquisitionManager: React.FC<Props> = ({ settings, onUpdate, costs 
                       settings,
                       costs,
                       revenues,
-                      siteDNA
+                      site.identity // Passing site DNA logic (identity)
                   );
                   
                   if (result.success && result.landValue !== acquisition.purchasePrice) {
@@ -89,7 +104,7 @@ export const AcquisitionManager: React.FC<Props> = ({ settings, onUpdate, costs 
           }, 300); // Debounce
           return () => clearTimeout(timer);
       }
-  }, [solveMode, solverTarget, solverMetric, costs, revenues]); // Note: excluding settings to avoid loop, we assume user changes target or costs to trigger
+  }, [solveMode, solverTarget, solverMetric, costs, revenues]); // Note: excluding settings to avoid loop
 
   const isManualDuty = acquisition.stampDutyOverride !== undefined && acquisition.stampDutyOverride !== null;
 
@@ -179,6 +194,9 @@ export const AcquisitionManager: React.FC<Props> = ({ settings, onUpdate, costs 
                         </div>
                     )}
                  </div>
+                 <p className="text-[10px] text-orange-600 mt-1 font-medium">
+                    <i className="fa-solid fa-link mr-1"></i> Global Variable: Applied to all scenarios for this site.
+                 </p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -330,7 +348,7 @@ export const AcquisitionManager: React.FC<Props> = ({ settings, onUpdate, costs 
                                 <p className="text-[10px] text-slate-500 uppercase">Stamp Duty (Early)</p>
                             </div>
                         )}
-                        <div className="text-sm font-bold text-slate-300 mb-1">+ ${(acquisition.legalFeeEstimate/1000).toFixed(1)}k</div>
+                        <div className="text-sm font-bold text-slate-300 mb-1">+ ${(acquisition.legalFeeEstimate ? acquisition.legalFeeEstimate/1000 : 0).toFixed(1)}k</div>
                         <p className="text-[10px] text-slate-500 uppercase">Legal Fees</p>
                      </div>
                   </div>

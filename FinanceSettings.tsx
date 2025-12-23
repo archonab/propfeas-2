@@ -4,10 +4,12 @@ import {
   FeasibilitySettings, DebtLimitMethod, InterestRateMode, FeeBase, EquityMode, 
   CapitalTier, DatedRate, DatedAmount
 } from './types';
+import { Site } from './types-v2';
 import { FinanceEngine } from './services/financeEngine';
 
 interface Props {
   settings: FeasibilitySettings;
+  site: Site;
   onUpdate: (newSettings: FeasibilitySettings) => void;
   peakEquityRequired?: number;
   projectLocation?: string; 
@@ -270,7 +272,7 @@ const DebtTab = ({
 
 // --- Main Component ---
 
-export const FinanceSettings: React.FC<Props> = ({ settings, onUpdate, peakEquityRequired = 0, projectLocation }) => {
+export const FinanceSettings: React.FC<Props> = ({ settings, site, onUpdate, peakEquityRequired = 0, projectLocation }) => {
   const [activeTab, setActiveTab] = useState<'senior' | 'mezz' | 'equity'>('senior');
   const { capitalStack } = settings;
 
@@ -303,20 +305,20 @@ export const FinanceSettings: React.FC<Props> = ({ settings, onUpdate, peakEquit
 
   // Helper to calculate preview amount for percentage modes
   const getCalculatedEquity = () => {
-      let basis = settings.acquisition.purchasePrice;
+      let basis = site.acquisition.purchasePrice;
       let label = "Land Only";
 
       if (capitalStack.equity.mode === EquityMode.PCT_LAND) {
           if (capitalStack.equity.includeAcquisitionCosts) {
               const duty = FinanceEngine.calculateStampDuty(
                   basis,
-                  settings.acquisition.stampDutyState,
-                  settings.acquisition.isForeignBuyer,
+                  site.acquisition.stampDutyState,
+                  site.acquisition.isForeignBuyer,
                   undefined,
-                  settings.acquisition.stampDutyOverride
+                  site.acquisition.stampDutyOverride
               );
-              const agentFee = basis * (settings.acquisition.buyersAgentFee / 100);
-              const legal = settings.acquisition.legalFeeEstimate;
+              const agentFee = basis * (site.acquisition.buyersAgentFee / 100);
+              const legal = site.acquisition.legalFeeEstimate || 0;
               basis = basis + duty + agentFee + legal;
               label = "Land + Acq. Costs";
           }

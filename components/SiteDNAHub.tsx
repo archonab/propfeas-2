@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Site } from '../types';
+import { Site } from '../types-v2';
 import { SiteAssetRegister } from './SiteAssetRegister';
 
 interface Props {

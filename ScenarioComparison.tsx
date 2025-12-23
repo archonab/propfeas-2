@@ -1,11 +1,12 @@
 
 import React, { useMemo } from 'react';
-import { FeasibilityScenario, CostCategory, SiteDNA } from './types';
+import { CostCategory } from './types';
+import { Site, FeasibilityScenario } from './types-v2';
 import { FinanceEngine } from './services/financeEngine';
 
 interface Props {
   scenarios: FeasibilityScenario[];
-  siteDNA: SiteDNA;
+  site: Site; // Updated to Site V2
 }
 
 interface ScenarioMetrics {
@@ -17,21 +18,24 @@ interface ScenarioMetrics {
   equityMultiple: number;
 }
 
-export const ScenarioComparison: React.FC<Props> = ({ scenarios, siteDNA }) => {
+export const ScenarioComparison: React.FC<Props> = ({ scenarios, site }) => {
   
   // Calculate metrics for all scenarios
   const results = useMemo(() => {
     return scenarios.map(scenario => {
       // 1. Run Engine to get Monthly Flows
-      const cashflow = FinanceEngine.calculateMonthlyCashflow(scenario, siteDNA);
+      const cashflow = FinanceEngine.calculateMonthlyCashflow(scenario, site);
       
       // 2. Use Canonical Metrics Calculator to avoid logic duplication
       const metrics = FinanceEngine.calculateProjectMetrics(cashflow, scenario.settings);
       
       // 3. Extract Land Value (Input) for reference
-      const landValue = scenario.costs
-        .filter(c => c.category === CostCategory.LAND)
-        .reduce((acc, c) => acc + c.amount, 0);
+      // Note: Use site acquisition for Land Cost if not explicit in Line Items, or check explicit items
+      // However, usually we compare total cost.
+      // If we want land value specifically, it's site.acquisition.purchasePrice usually
+      // but scenarios might override it via implicit calc or solver? 
+      // The Engine uses site.acquisition.purchasePrice.
+      const landValue = site.acquisition.purchasePrice;
 
       // 4. Calculate Equity Multiple (not in standard metrics object yet)
       const totalEquityIn = cashflow.reduce((acc, c) => acc + c.drawDownEquity, 0);
@@ -50,7 +54,7 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios, siteDNA }) => {
         }
       };
     });
-  }, [scenarios, siteDNA]);
+  }, [scenarios, site]);
 
   const baselineResult = results.find(r => scenarios.find(s => s.id === r.id)?.isBaseline) || results[0];
 

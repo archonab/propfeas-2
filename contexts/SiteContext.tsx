@@ -110,20 +110,9 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   const selectSite = useCallback((id: string | null) => {
     setSelectedSiteId(id);
-    // Auto-select first scenario if site selected
-    if (id) {
-        const site = sites.find(s => s.id === id);
-        if (site && site.scenarios.length > 0) {
-            // Prefer baseline, else first
-            const baseline = site.scenarios.find(s => s.isBaseline);
-            setSelectedScenarioId(baseline ? baseline.id : site.scenarios[0].id);
-        } else {
-            setSelectedScenarioId(null);
-        }
-    } else {
-        setSelectedScenarioId(null);
-    }
-  }, [sites]);
+    // Always reset scenario when changing site to land on Dashboard
+    setSelectedScenarioId(null);
+  }, []);
 
   const selectScenario = useCallback((id: string | null) => {
     setSelectedScenarioId(id);

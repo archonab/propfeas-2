@@ -14,6 +14,7 @@ interface Props {
 
 export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, projectDuration, strategy, inputScale = InputScale.ONES }) => {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
+  const [isSheetOpen, setIsSheetOpen] = useState(false);
 
   const toggleExpanded = (id: string) => {
     setExpandedRow(expandedRow === id ? null : id);
@@ -97,20 +98,21 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
   return (
     <div className="bg-white md:rounded-xl md:shadow-sm md:border border-slate-200 overflow-hidden mb-8 relative flex flex-col h-full">
       
-      {/* HEADER */}
-      <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center shrink-0 sticky top-14 md:static z-20">
+      {/* HEADER - Green Tint for "Money In" */}
+      <div className="bg-emerald-50/50 px-6 py-4 border-b border-emerald-100 flex justify-between items-center shrink-0 sticky top-14 md:static z-20">
         <div>
-          <h3 className="font-bold text-slate-800 text-sm md:text-base flex items-center">
+          <h3 className="font-bold text-emerald-900 text-sm md:text-base flex items-center">
+              <i className="fa-solid fa-money-bill-wave mr-2 text-emerald-500"></i>
               {isHold ? 'Rental Mix & Valuation' : 'Sales Mix & Absorption'}
               {scaleLabel && (
-                  <span className="ml-3 text-[9px] font-bold uppercase bg-blue-100 text-blue-700 px-2 py-0.5 rounded border border-blue-200">
+                  <span className="ml-3 text-[9px] font-bold uppercase bg-white text-emerald-700 px-2 py-0.5 rounded border border-emerald-200">
                       Figures in {scaleLabel}
                   </span>
               )}
           </h3>
-          <p className="text-[10px] md:text-xs text-slate-500 mt-0.5">{isHold ? 'Define rent roll, lease-up and capitalisation parameters' : 'Define unit pricing, quantity and sales rate'}</p>
+          <p className="text-[10px] md:text-xs text-emerald-700/60 mt-0.5 ml-6">{isHold ? 'Define rent roll, lease-up and capitalisation parameters' : 'Define unit pricing, quantity and sales rate'}</p>
         </div>
-        <button onClick={addRevenue} className="flex items-center text-xs font-bold bg-indigo-600 text-white px-3 py-1.5 rounded hover:bg-indigo-700 transition-colors shadow-sm">
+        <button onClick={addRevenue} className="flex items-center text-xs font-bold bg-white text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-lg hover:bg-emerald-50 transition-colors shadow-sm">
             <i className="fa-solid fa-plus mr-1.5"></i> Add Row
         </button>
       </div>
@@ -316,14 +318,14 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
       </div>
 
       {/* MOBILE: CARD STACK (Vertical) - Same logic, refined for touch */}
-      <div className="md:hidden p-4 space-y-4 pb-24">
+      <div className="md:hidden p-4 space-y-4 pb-32">
          {revenues.filter(r => r.strategy === strategy).map(item => {
              const isQtyMode = item.calcMode === 'QUANTITY_RATE';
              const grossTotal = isQtyMode ? item.units * item.pricePerUnit : item.pricePerUnit;
              const isExpanded = expandedRow === item.id;
 
              return (
-             <div key={item.id} className={`bg-white border transition-all rounded-xl p-4 shadow-sm relative overflow-hidden ${isExpanded ? 'border-indigo-200 ring-1 ring-indigo-50' : 'border-slate-200'}`}>
+             <div key={item.id} className={`bg-white border transition-all rounded-xl p-4 shadow-sm relative overflow-hidden ${isExpanded ? 'border-emerald-200 ring-1 ring-emerald-50' : 'border-slate-200'}`}>
                  <div className="flex justify-between items-start mb-3" onClick={() => toggleExpanded(item.id)}>
                      <div className="flex-1">
                         <div className="font-bold text-slate-800 text-sm mb-1">{item.description}</div>
@@ -363,8 +365,8 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
                         <div className="col-span-2">
                            <label className="text-[10px] font-bold text-slate-400 uppercase">Calculation Mode</label>
                            <div className="flex bg-slate-100 p-1 rounded mt-1">
-                              <button onClick={() => updateRevenue(item.id, 'calcMode', 'QUANTITY_RATE')} className={`flex-1 py-1 rounded text-[10px] font-bold ${item.calcMode === 'QUANTITY_RATE' ? 'bg-white shadow text-indigo-600' : 'text-slate-500'}`}>Rate x Qty</button>
-                              <button onClick={() => updateRevenue(item.id, 'calcMode', 'LUMP_SUM')} className={`flex-1 py-1 rounded text-[10px] font-bold ${item.calcMode === 'LUMP_SUM' ? 'bg-white shadow text-indigo-600' : 'text-slate-500'}`}>Fixed Sum</button>
+                              <button onClick={() => updateRevenue(item.id, 'calcMode', 'QUANTITY_RATE')} className={`flex-1 py-1 rounded text-[10px] font-bold ${item.calcMode === 'QUANTITY_RATE' ? 'bg-white shadow text-emerald-600' : 'text-slate-500'}`}>Rate x Qty</button>
+                              <button onClick={() => updateRevenue(item.id, 'calcMode', 'LUMP_SUM')} className={`flex-1 py-1 rounded text-[10px] font-bold ${item.calcMode === 'LUMP_SUM' ? 'bg-white shadow text-emerald-600' : 'text-slate-500'}`}>Fixed Sum</button>
                            </div>
                         </div>
                         
@@ -420,32 +422,38 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
          )})}
       </div>
 
-      {/* FOOTER: LIVE VALUATION */}
-      <div className="bg-slate-900 text-white p-4 shrink-0 fixed bottom-14 md:bottom-0 left-0 w-full md:relative z-20 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] md:shadow-none">
-         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-            <div className="flex items-center space-x-3 w-full md:w-auto">
-                <div className={`w-8 h-8 rounded flex items-center justify-center shrink-0 ${isHold ? 'bg-indigo-500' : 'bg-blue-500'}`}>
+      {/* MOBILE BOTTOM SHEET (Drawer) */}
+      <div 
+        onClick={() => setIsSheetOpen(!isSheetOpen)}
+        className={`bg-slate-900 text-white shrink-0 fixed bottom-0 left-0 w-full z-[100] transition-all duration-300 shadow-[0_-4px_20px_rgba(0,0,0,0.3)] ${isSheetOpen ? 'h-[80vh] rounded-t-2xl' : 'h-16 md:relative md:h-auto md:rounded-none'}`}
+      >
+         {/* Handle / Header */}
+         <div className="p-4 flex items-center justify-between cursor-pointer md:cursor-default">
+            <div className="flex items-center space-x-3 w-full">
+                <div className={`w-8 h-8 rounded flex items-center justify-center shrink-0 ${isHold ? 'bg-indigo-500' : 'bg-emerald-500'}`}>
                     <i className={`fa-solid ${isHold ? 'fa-building' : 'fa-tags'}`}></i>
                 </div>
-                <div className="flex justify-between w-full md:block">
+                <div className="flex justify-between w-full md:w-auto items-center">
                     <div>
                         <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{isHold ? 'Investment Value' : 'Gross Realisation'}</h4>
                         <p className="text-lg font-black font-mono leading-none">
                             ${isHold ? (totals.valuation/1000000).toFixed(2) : (totals.gross/1000000).toFixed(2)}m
                         </p>
                     </div>
-                    {/* Mobile Summary Metric */}
-                    <div className="md:hidden text-right">
-                        <div className="text-[9px] font-bold text-slate-400 uppercase">{isHold ? 'NOI' : 'Avg Price'}</div>
-                        <div className="text-sm font-mono font-bold">
-                            {isHold ? `$${(totals.effectiveNet/1000).toFixed(0)}k` : `$${Math.round(totals.avg/1000)}k`}
+                    {/* Mobile Summary Metric (When collapsed) */}
+                    {!isSheetOpen && (
+                        <div className="md:hidden text-right animate-in fade-in">
+                            <div className="text-[9px] font-bold text-slate-400 uppercase">{isHold ? 'NOI' : 'Avg Price'}</div>
+                            <div className="text-sm font-mono font-bold">
+                                {isHold ? `$${(totals.effectiveNet/1000).toFixed(0)}k` : `$${Math.round(totals.avg/1000)}k`}
+                            </div>
                         </div>
-                    </div>
+                    )}
                 </div>
             </div>
             
-            {/* Desktop Metrics */}
-            <div className="hidden md:flex space-x-8 text-xs">
+            {/* Desktop Metrics (Hidden on Mobile unless expanded) */}
+            <div className="hidden md:flex space-x-8 text-xs ml-auto">
                 {!isHold ? (
                     <>
                         <div className="text-right">
@@ -470,7 +478,61 @@ export const RevenueInputGrid: React.FC<Props> = ({ revenues, setRevenues, proje
                     </>
                 )}
             </div>
+
+            {/* Mobile Chevron */}
+            <div className="md:hidden text-slate-400">
+                <i className={`fa-solid fa-chevron-up transition-transform duration-300 ${isSheetOpen ? 'rotate-180' : ''}`}></i>
+            </div>
          </div>
+
+         {/* Expanded Content (Mobile Sheet) */}
+         {isSheetOpen && (
+             <div className="p-6 md:hidden overflow-y-auto h-[calc(100%-64px)] animate-in fade-in slide-in-from-bottom-4">
+                 <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-6 border-b border-slate-700 pb-2">Full Valuation Breakdown</h4>
+                 
+                 <div className="space-y-6">
+                     <div className="bg-slate-800 rounded-xl p-4">
+                         <div className="flex justify-between items-center mb-2">
+                             <span className="text-sm font-bold text-slate-300">Total Items</span>
+                             <span className="text-sm font-mono font-bold">{revenues.filter(r => r.strategy === strategy).length}</span>
+                         </div>
+                         <div className="w-full h-px bg-slate-700 my-2"></div>
+                         {!isHold ? (
+                             <>
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-sm text-slate-400">Total Units</span>
+                                    <span className="text-sm font-mono font-bold text-white">{totals.units}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-sm text-slate-400">Average Price</span>
+                                    <span className="text-sm font-mono font-bold text-emerald-400">${Math.round(totals.avg).toLocaleString()}</span>
+                                </div>
+                             </>
+                         ) : (
+                             <>
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-sm text-slate-400">Potential Gross Rent</span>
+                                    <span className="text-sm font-mono font-bold text-white">${totals.potentialGross.toLocaleString()}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-sm text-slate-400">Net Operating Income</span>
+                                    <span className="text-sm font-mono font-bold text-emerald-400">${totals.effectiveNet.toLocaleString()}</span>
+                                </div>
+                             </>
+                         )}
+                     </div>
+
+                     <div className="text-center">
+                         <button 
+                            onClick={(e) => { e.stopPropagation(); setIsSheetOpen(false); }}
+                            className="px-6 py-3 bg-slate-700 rounded-full text-sm font-bold text-white shadow-lg hover:bg-slate-600 transition-colors"
+                         >
+                             Close Breakdown
+                         </button>
+                     </div>
+                 </div>
+             </div>
+         )}
       </div>
 
     </div>

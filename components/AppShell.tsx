@@ -3,13 +3,13 @@ import React from 'react';
 
 interface Props {
   children: React.ReactNode;
-  activeModule?: 'portfolio' | 'settings' | 'tasks' | 'reports';
-  onNavigate?: (module: 'portfolio' | 'settings' | 'tasks' | 'reports') => void;
+  activeModule?: 'portfolio' | 'settings' | 'tasks' | 'feasibilities';
+  onNavigate?: (module: 'portfolio' | 'settings' | 'tasks' | 'feasibilities') => void;
 }
 
 export const AppShell: React.FC<Props> = ({ children, activeModule = 'portfolio', onNavigate }) => {
   
-  const NavIcon = ({ id, icon, label }: { id: 'portfolio' | 'settings' | 'tasks' | 'reports', icon: string, label: string }) => (
+  const NavIcon = ({ id, icon, label }: { id: 'portfolio' | 'settings' | 'tasks' | 'feasibilities', icon: string, label: string }) => (
     <button 
       onClick={() => onNavigate && onNavigate(id)}
       className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg transition-all duration-200 group relative ${
@@ -41,8 +41,8 @@ export const AppShell: React.FC<Props> = ({ children, activeModule = 'portfolio'
         {/* App Switcher */}
         <nav className="flex-1 flex flex-col space-y-4">
            <NavIcon id="portfolio" icon="fa-th-large" label="Portfolio" />
+           <NavIcon id="feasibilities" icon="fa-calculator" label="All Feasibilities" />
            <NavIcon id="tasks" icon="fa-list-check" label="Tasks & Gantt" />
-           <NavIcon id="reports" icon="fa-file-lines" label="Reports" />
            <div className="flex-1"></div>
            <NavIcon id="settings" icon="fa-sliders" label="System Settings" />
         </nav>

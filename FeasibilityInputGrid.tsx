@@ -269,31 +269,31 @@ const CostSection: React.FC<{
 
   return (
      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6">
-        {/* Section Header */}
+        {/* Section Header - Reddish Tint for "Money Out" */}
         <div 
-          className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex justify-between items-center cursor-pointer hover:bg-slate-100 transition-colors sticky top-0 z-10"
+          className="bg-orange-50/50 px-4 py-3 border-b border-orange-100 flex justify-between items-center cursor-pointer hover:bg-orange-100/50 transition-colors sticky top-0 z-10"
           onClick={() => setIsOpen(!isOpen)}
         >
            <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-500 shadow-sm">
+              <div className="w-8 h-8 rounded-lg bg-white border border-orange-100 flex items-center justify-center text-orange-500 shadow-sm">
                  <i className={`fa-solid ${icon}`}></i>
               </div>
               <div>
-                 <h3 className="text-sm font-bold text-slate-800 flex items-center">
+                 <h3 className="text-sm font-bold text-orange-950 flex items-center">
                     {title}
                     {tooltipTerm && <HelpTooltip text={tooltipTerm} />}
                     {scaleLabel && isOpen && (
-                        <span className="ml-3 text-[9px] font-bold uppercase bg-blue-100 text-blue-700 px-2 py-0.5 rounded border border-blue-200">
+                        <span className="ml-3 text-[9px] font-bold uppercase bg-white text-orange-700 px-2 py-0.5 rounded border border-orange-200">
                             Figures in {scaleLabel}
                         </span>
                     )}
                  </h3>
-                 <p className="text-[10px] text-slate-500 font-medium">
+                 <p className="text-[10px] text-orange-700/60 font-medium">
                    {sectionCosts.length} Items • Total: ${sectionTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                  </p>
               </div>
            </div>
-           <i className={`fa-solid fa-chevron-down text-slate-400 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`}></i>
+           <i className={`fa-solid fa-chevron-down text-orange-300 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`}></i>
         </div>
 
         {/* Section Body */}

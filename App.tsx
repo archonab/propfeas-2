@@ -56,7 +56,7 @@ export default function App() {
     setCustomLibrary
   } = useProject();
 
-  const [globalView, setGlobalView] = useState<'portfolio' | 'settings' | 'tasks' | 'reports'>('portfolio');
+  const [globalView, setGlobalView] = useState<'portfolio' | 'settings' | 'tasks' | 'feasibilities'>('portfolio');
   const [siteFilter, setSiteFilter] = useState<'ALL' | 'PIPELINE' | 'PORTFOLIO'>('ALL');
   
   // Sorting State
@@ -211,7 +211,7 @@ export default function App() {
                       onClick={handleCreateNewSite}
                       className="px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-lg shadow-sm hover:bg-indigo-700 transition-all flex items-center"
                    >
-                      <i className="fa-solid fa-plus mr-2"></i> New Project
+                      <i className="fa-solid fa-plus mr-2"></i> New Site
                    </button>
                 </header>
 
@@ -353,7 +353,7 @@ export default function App() {
             )}
 
             {/* Other Views Integration */}
-            {globalView === 'reports' && <GlobalFeasibilityList />}
+            {globalView === 'feasibilities' && <GlobalFeasibilityList />}
             {globalView === 'settings' && (
                <AdminSettings 
                   rates={smartRates} 

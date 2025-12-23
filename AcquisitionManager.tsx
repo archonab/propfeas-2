@@ -1,5 +1,5 @@
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { FeasibilitySettings, AcquisitionSettings, LineItem, RevenueItem, SiteDNA, TaxConfiguration } from './types';
 import { FinanceEngine } from './services/financeEngine';
 import { SolverService } from './services/solverService';
@@ -17,7 +17,9 @@ interface Props {
 
 export const AcquisitionManager: React.FC<Props> = ({ settings, onUpdate, costs = [], revenues = [], siteDNA, taxScales = DEFAULT_TAX_SCALES }) => {
   const { acquisition } = settings;
-  const [showSolver, setShowSolver] = useState(false);
+  
+  // Solver State
+  const [solveMode, setSolveMode] = useState(false);
   const [solverTarget, setSolverTarget] = useState(20); // Default 20%
   const [solverMetric, setSolverMetric] = useState<'margin' | 'irr'>('margin');
   const [isSolving, setIsSolving] = useState(false);
@@ -61,125 +63,121 @@ export const AcquisitionManager: React.FC<Props> = ({ settings, onUpdate, costs 
     return { depositAmount, loanBalance, duty, agentFee, totalAcqCosts, standardDuty };
   }, [acquisition, taxScales]);
 
-  const handleSolve = () => {
-    if (!siteDNA) {
-        alert("Site DNA data missing. Cannot solve.");
-        return;
-    }
-    setIsSolving(true);
-    // Allow UI to render loading state
-    setTimeout(() => {
-        try {
-            const result = SolverService.solveForResidualLandValue(
-                solverTarget,
-                solverMetric,
-                settings,
-                costs,
-                revenues,
-                siteDNA
-            );
-            
-            if (result.success) {
-                updateField('purchasePrice', result.landValue);
-                setShowSolver(false);
-            }
-        } catch (e) {
-            console.error(e);
-            alert("Solver failed. Please check inputs.");
-        } finally {
-            setIsSolving(false);
-        }
-    }, 100);
-  };
+  // Solver Effect
+  useEffect(() => {
+      if (solveMode && siteDNA) {
+          setIsSolving(true);
+          const timer = setTimeout(() => {
+              try {
+                  const result = SolverService.solveForResidualLandValue(
+                      solverTarget,
+                      solverMetric,
+                      settings,
+                      costs,
+                      revenues,
+                      siteDNA
+                  );
+                  
+                  if (result.success && result.landValue !== acquisition.purchasePrice) {
+                      updateField('purchasePrice', result.landValue);
+                  }
+              } catch (e) {
+                  console.error("Solver error", e);
+              } finally {
+                  setIsSolving(false);
+              }
+          }, 300); // Debounce
+          return () => clearTimeout(timer);
+      }
+  }, [solveMode, solverTarget, solverMetric, costs, revenues]); // Note: excluding settings to avoid loop, we assume user changes target or costs to trigger
 
   const isManualDuty = acquisition.stampDutyOverride !== undefined && acquisition.stampDutyOverride !== null;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in duration-300 relative">
       
-      {/* SOLVER MODAL OVERLAY */}
-      {showSolver && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-white/80 backdrop-blur-sm rounded-xl">
-            <div className="bg-white border border-slate-200 shadow-2xl rounded-xl p-6 w-full max-w-sm animate-in zoom-in-95 duration-200">
-                <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wide flex items-center">
-                        <i className="fa-solid fa-wand-magic-sparkles mr-2 text-indigo-500"></i>
-                        Solve for Land Price
-                    </h3>
-                    <button onClick={() => setShowSolver(false)} className="text-slate-400 hover:text-slate-600">
-                        <i className="fa-solid fa-xmark"></i>
-                    </button>
-                </div>
-                
-                <div className="space-y-4">
-                    <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Target Metric</label>
-                        <div className="flex bg-slate-100 p-1 rounded-lg">
-                            <button 
-                                onClick={() => setSolverMetric('margin')}
-                                className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${solverMetric === 'margin' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}
-                            >Margin %</button>
-                            <button 
-                                onClick={() => setSolverMetric('irr')}
-                                className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${solverMetric === 'irr' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}
-                            >IRR %</button>
-                        </div>
-                    </div>
-                    <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Target Return</label>
-                        <div className="relative">
-                            <input 
-                                type="number" 
-                                value={solverTarget}
-                                onChange={(e) => setSolverTarget(parseFloat(e.target.value))}
-                                className="w-full border-slate-200 rounded-lg py-2 px-3 text-lg font-bold text-slate-800 focus:ring-blue-500"
-                            />
-                            <span className="absolute right-3 top-3 text-xs font-bold text-slate-400">%</span>
-                        </div>
-                    </div>
-                    <button 
-                        onClick={handleSolve}
-                        disabled={isSolving}
-                        className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-sm shadow-md transition-all flex justify-center items-center"
-                    >
-                        {isSolving ? (
-                            <><i className="fa-solid fa-circle-notch fa-spin mr-2"></i> Solving...</>
-                        ) : (
-                            <><i className="fa-solid fa-calculator mr-2"></i> Calculate Max Price</>
-                        )}
-                    </button>
-                </div>
-            </div>
-        </div>
-      )}
-
       {/* Left: Deal Inputs */}
       <div className="space-y-6">
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-           <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+           
+           {/* Header - Reddish Tint for Cost/Outflow context */}
+           <div className="bg-orange-50/50 px-6 py-4 border-b border-orange-100 flex justify-between items-center">
               <div>
-                <h3 className="font-bold text-slate-800">Deal Terms</h3>
-                <p className="text-xs text-slate-500">Purchase price and settlement timeline</p>
+                <h3 className="font-bold text-orange-950">Deal Terms</h3>
+                <p className="text-xs text-orange-700/70">Purchase price and settlement timeline</p>
               </div>
-              <button 
-                onClick={() => setShowSolver(true)}
-                className="text-[10px] font-bold bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg border border-indigo-100 hover:bg-indigo-100 transition-colors flex items-center"
-              >
-                <i className="fa-solid fa-wand-magic-sparkles mr-1.5"></i> Solve Price
-              </button>
+              
+              {/* Solver Toggle */}
+              <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1">
+                  <button 
+                    onClick={() => setSolveMode(false)}
+                    className={`px-3 py-1 text-[10px] font-bold uppercase rounded-md transition-all ${!solveMode ? 'bg-slate-100 text-slate-700 shadow-sm' : 'text-slate-400'}`}
+                  >
+                    Fixed Price
+                  </button>
+                  <button 
+                    onClick={() => setSolveMode(true)}
+                    className={`px-3 py-1 text-[10px] font-bold uppercase rounded-md transition-all flex items-center ${solveMode ? 'bg-indigo-600 text-white shadow-md' : 'text-indigo-600 hover:bg-indigo-50'}`}
+                  >
+                    <i className="fa-solid fa-wand-magic-sparkles mr-1.5"></i> Solve
+                  </button>
+              </div>
            </div>
            
-           <div className="p-6 space-y-5">
+           <div className="p-6 space-y-5 relative">
+              {/* Solver Overlay / Context */}
+              {solveMode && (
+                  <div className="mb-4 bg-indigo-50 border border-indigo-100 rounded-lg p-3 animate-in slide-in-from-top-2">
+                      <div className="flex justify-between items-center mb-2">
+                          <label className="text-[10px] font-bold text-indigo-500 uppercase">Target Metric</label>
+                          {isSolving && <span className="text-[9px] font-bold text-indigo-400 animate-pulse">Calculating Max Price...</span>}
+                      </div>
+                      <div className="flex space-x-4">
+                          <div className="flex bg-white rounded p-1 border border-indigo-100">
+                              <button 
+                                onClick={() => setSolverMetric('margin')} 
+                                className={`px-3 py-1 rounded text-[10px] font-bold ${solverMetric === 'margin' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-400'}`}
+                              >Margin %</button>
+                              <button 
+                                onClick={() => setSolverMetric('irr')} 
+                                className={`px-3 py-1 rounded text-[10px] font-bold ${solverMetric === 'irr' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-400'}`}
+                              >IRR %</button>
+                          </div>
+                          <div className="relative flex-1">
+                              <input 
+                                type="number" 
+                                value={solverTarget}
+                                onChange={(e) => setSolverTarget(parseFloat(e.target.value))}
+                                className="w-full border-indigo-200 rounded px-2 py-1.5 font-bold text-indigo-900 text-sm focus:ring-indigo-500"
+                              />
+                              <span className="absolute right-2 top-1.5 text-xs font-bold text-indigo-300">%</span>
+                          </div>
+                      </div>
+                  </div>
+              )}
+
               <div>
-                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Purchase Price</label>
+                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                    {solveMode ? 'Residual Land Value (Calculated)' : 'Purchase Price'}
+                 </label>
                  <div className="relative">
-                    <span className="absolute left-3 top-2.5 text-slate-400 font-bold">$</span>
+                    <span className={`absolute left-3 top-2.5 font-bold text-lg ${solveMode ? 'text-indigo-400' : 'text-slate-400'}`}>$</span>
                     <input 
                       type="number" 
-                      value={acquisition.purchasePrice}
-                      onChange={(e) => updateField('purchasePrice', parseFloat(e.target.value))}
-                      className="w-full pl-8 pr-4 py-2 border-slate-200 rounded-lg font-mono text-lg font-bold text-slate-900 focus:ring-blue-500"
+                      value={Math.round(acquisition.purchasePrice)} // Round for cleaner display in solve mode
+                      readOnly={solveMode}
+                      onChange={(e) => !solveMode && updateField('purchasePrice', parseFloat(e.target.value))}
+                      className={`w-full pl-8 pr-4 py-2 border rounded-lg font-mono text-lg font-bold focus:ring-2 transition-colors ${
+                          solveMode 
+                          ? 'bg-indigo-50 border-indigo-200 text-indigo-700 focus:ring-indigo-500 cursor-not-allowed' 
+                          : 'bg-white border-slate-200 text-slate-900 focus:ring-blue-500'
+                      }`}
                     />
+                    {solveMode && (
+                        <div className="absolute right-3 top-3 text-[10px] font-bold text-indigo-400 uppercase tracking-wider">
+                            RLV
+                        </div>
+                    )}
                  </div>
               </div>
 
@@ -213,9 +211,9 @@ export const AcquisitionManager: React.FC<Props> = ({ settings, onUpdate, costs 
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-           <div className="bg-slate-50 px-6 py-4 border-b border-slate-200">
-              <h3 className="font-bold text-slate-800">Buyer Profile & Fees</h3>
-              <p className="text-xs text-slate-500">Stamp duty and acquisition costs</p>
+           <div className="bg-orange-50/50 px-6 py-4 border-b border-orange-100">
+              <h3 className="font-bold text-orange-950">Buyer Profile & Fees</h3>
+              <p className="text-xs text-orange-700/70">Stamp duty and acquisition costs</p>
            </div>
            
            <div className="p-6 space-y-5">

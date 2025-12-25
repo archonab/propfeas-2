@@ -172,39 +172,41 @@ export const calculateMonthlyCashflow = (
     const horizon = scenario.settings.durationMonths;
     const flows: MonthlyFlow[] = [];
     
-    // --- PRE-SIMULATION: RESOLVE HARD COST BASIS (Ex Finance) ---
+    // --- 1. RESOLVE HARD COST BASIS (Ex Finance) ---
+    // We calculate this once outside the loop to prevent the circular reference
     const constructionTotal = scenario.costs
         .filter(c => c.category === CostCategory.CONSTRUCTION)
         .reduce((a, b) => a + b.amount, 0);
     const estTotalRevenue = scenario.revenues.reduce((a, b) => a + (b.units * b.pricePerUnit), 0);
 
-    // Sum all budgeted costs except finance
     const budgetedHardCosts = scenario.costs
         .filter(c => c.category !== CostCategory.FINANCE)
         .reduce((acc, item) => {
             return acc + calculateLineItemTotal(item, scenario.settings, site, constructionTotal, estTotalRevenue, taxScales);
         }, 0);
 
-    // Calculate full acquisition costs (Price + Duty + Agent + Legal)
     const duty = calculateStampDuty(site.acquisition.purchasePrice, site.acquisition.stampDutyState, site.acquisition.isForeignBuyer, taxScales, site.acquisition.stampDutyOverride);
-    const agentFee = site.acquisition.purchasePrice * (site.acquisition.buyersAgentFee / 100);
-    const acquisitionTotal = site.acquisition.purchasePrice + duty + agentFee + site.acquisition.legalFeeEstimate;
+    const agentFee = site.acquisition.purchasePrice * ((site.acquisition.buyersAgentFee || 0) / 100);
+    const acquisitionTotal = site.acquisition.purchasePrice + duty + agentFee + (site.acquisition.legalFeeEstimate || 0);
 
+    // This is the static ceiling for LTC calculations
     const hardCostBasis = budgetedHardCosts + acquisitionTotal;
 
-    // --- RESOLVE DEBT LIMITS (Deterministic Ceiling) ---
+    // --- 2. RESOLVE DEBT LIMITS ---
     const resolveLimit = (tier: CapitalTier) => {
         if (tier.limitMethod === DebtLimitMethod.LTC) {
+            // Fix: Base the percentage strictly on Hard Costs to avoid spiral
             return new Decimal(hardCostBasis).mul((tier.limit || 0) / 100);
         }
-        return new Decimal(tier.limit || 1e12); // Default to "Unlimited" if FIXED and null
+        // Safety: If limit is not set, cap at a reasonable large number, not 1e12
+        return new Decimal(tier.limit || 500000000); 
     };
 
     const seniorCeiling = resolveLimit(scenario.settings.capitalStack.senior);
     const mezzCeiling = resolveLimit(scenario.settings.capitalStack.mezzanine);
     const equityLimit = new Decimal(scenario.settings.capitalStack.equity.initialContribution);
 
-    // Core state for funding simulation
+    // Core simulation state
     let seniorBal = new Decimal(0);
     let mezzBal = new Decimal(0);
     let equityBal = new Decimal(0);
@@ -261,13 +263,12 @@ export const calculateMonthlyCashflow = (
         intSn = seniorBal.mul(scenario.settings.capitalStack.senior.interestRate / 100 / 12).toNumber();
         intMz = mezzBal.mul(scenario.settings.capitalStack.mezzanine.interestRate / 100 / 12).toNumber();
         
-        // Line fees are generally on the ceiling, not balance
         if (m >= (scenario.settings.capitalStack.senior.activationMonth || 0)) {
             lineFee = seniorCeiling.mul((scenario.settings.capitalStack.senior.lineFeePct || 0) / 100 / 12).toNumber();
         }
 
         // --- ENFORCE LIMITS ON CAPITALISATION ---
-        // Principal + Interest cannot exceed ceiling.
+        // Principal + Interest cannot exceed deterministic ceiling.
         if (scenario.settings.capitalStack.senior.isInterestCapitalised) {
             const capRoom = Decimal.max(0, seniorCeiling.sub(seniorBal));
             const actualCap = Decimal.min(intSn, capRoom);
@@ -286,14 +287,14 @@ export const calculateMonthlyCashflow = (
         if (netCash < 0) {
             let deficit = Math.abs(netCash) + lineFee;
             
-            // Priority 1: Equity
+            // Priority 1: Equity (Initial Contributions)
             const eqAvail = Decimal.max(0, equityLimit.sub(equityBal));
             const eqDraw = Decimal.min(deficit, eqAvail);
             dEquity = eqDraw.toNumber();
             equityBal = equityBal.add(eqDraw);
             deficit -= dEquity;
 
-            // Priority 2: Senior Debt
+            // Priority 2: Senior Debt (Capped at deterministic ceiling)
             if (deficit > 0) {
                 const snAvail = Decimal.max(0, seniorCeiling.sub(seniorBal));
                 const snDraw = Decimal.min(deficit, snAvail);
@@ -302,7 +303,7 @@ export const calculateMonthlyCashflow = (
                 deficit -= dSenior;
             }
 
-            // Priority 3: Mezzanine
+            // Priority 3: Mezzanine (Capped at deterministic ceiling)
             if (deficit > 0) {
                 const mzAvail = Decimal.max(0, mezzCeiling.sub(mezzBal));
                 const mzDraw = Decimal.min(deficit, mzAvail);
@@ -311,7 +312,7 @@ export const calculateMonthlyCashflow = (
                 deficit -= dMezz;
             }
 
-            // Priority 4: Residual Equity (Gap Funding)
+            // Priority 4: Residual Equity (Gap Funding / Capital Call)
             if (deficit > 0) {
                 dEquity += deficit;
                 equityBal = equityBal.add(deficit);

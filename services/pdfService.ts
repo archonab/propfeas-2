@@ -183,10 +183,33 @@ export class PdfService {
 
   private addFeasibilitySummary(site: Site, scenario: FeasibilityScenario, report: ReportModel, sensitivityMatrix: SensitivityCell[][]) {
       this.addPageHeader("Development Summary", "Key Performance Indicators", false);
+      const metrics = report.metrics;
+      
+      // --- PROJECT EFFICIENCY BLOCK ---
+      this.doc.setFontSize(11);
+      this.doc.setFont(FONTS.header, "bold");
+      this.doc.setTextColor(COLORS.primary);
+      this.doc.text("Project Ratios & Efficiency", 20, this.currentY);
+      this.currentY += 5;
+
+      autoTable(this.doc, {
+          startY: this.currentY,
+          head: [['Benchmark', 'Value', 'Unit']],
+          body: [
+              ['Land Value', formatCurrency(metrics.benchmarks.landValuePerSqm), '/ sqm Site'],
+              ['Build Cost', formatCurrency(metrics.benchmarks.constructionEfficiency), '/ sqm GFA'],
+              ['Sales Revenue', formatCurrency(metrics.benchmarks.salesRealisation), '/ sqm NSA'],
+              ['Efficiency Ratio', metrics.benchmarks.areaEfficiency.toFixed(1), '% (NSA/GFA)']
+          ],
+          theme: 'striped',
+          styles: { fontSize: 8, font: FONTS.body },
+          headStyles: { fillColor: COLORS.secondary }
+      });
+      this.currentY = (this.doc as any).lastAutoTable.finalY + 10;
+
       const leftX = 20;
       const rightX = 110;
       let y = this.currentY;
-      const metrics = report.metrics;
 
       const drawDottedRow = (label: string, value: string, xPos: number, width: number, isBold = false) => {
           this.doc.setFont(FONTS.body, isBold ? "bold" : "normal");
@@ -262,7 +285,6 @@ export class PdfService {
       this.doc.setTextColor(COLORS.secondary);
       this.doc.text("GST Reconciliation", 25, this.currentY + 6);
       
-      let tempY = y;
       y = this.currentY + 12;
       const recX = 25;
       const recW = 75;
@@ -276,7 +298,6 @@ export class PdfService {
       drawDottedRow("Less: GST Payable", formatCurrency(report.reconciliation.gstPayable), col2X, recW);
       drawDottedRow("Net Realisation", formatCurrency(report.reconciliation.netRealisation), col2X, recW, true);
 
-      // FIX: CRITICAL Y RESET to prevent overlapping Project Context
       this.currentY = this.currentY + 50; 
       
       this.doc.setTextColor(COLORS.text);
@@ -357,63 +378,76 @@ export class PdfService {
   private addValuersPnL(scenario: FeasibilityScenario, report: ReportModel, site: Site) {
     this.addPageHeader("Financial Analysis", "Profit & Loss Statement", false);
     const metrics = report.metrics;
-    const detailedItems = report.itemSummaries || [];
     const rows: any[] = [];
+
     const addRow = (label: string, detail: string | null, subtotal: string | null, style: 'header'|'item'|'total'|'spacer' = 'item', indent = false) => {
         rows.push({ label, detail, subtotal, style, indent });
     };
 
+    // --- REVENUE ---
     addRow("GROSS REALISATION", null, null, 'header');
     addRow("Gross Sales Revenue", formatCurrency(metrics.grossRealisation), null);
-    addRow("Less: GST Liability", formatCurrency(metrics.gstOnSales * -1), null);
+    addRow("Less: GST Liability", formatCurrency(metrics.gstOnSales * -1), null, 'item', true);
     addRow("NET REALISATION", null, formatCurrency(metrics.netRealisation), 'total');
     addRow("", null, null, 'spacer');
 
-    addRow("DEVELOPMENT COSTS (NET EX GST)", null, null, 'header');
+    // --- ACQUISITION (Pull directly from Site V2) ---
+    addRow("LAND & ACQUISITION (NET)", null, null, 'header');
+    addRow("Land Purchase Price", formatCurrency(site.acquisition.purchasePrice), null, 'item', true);
+    
+    const duty = FinanceEngine.calculateStampDuty(site.acquisition.purchasePrice, site.acquisition.stampDutyState, site.acquisition.isForeignBuyer);
+    addRow(`Stamp Duty (${site.acquisition.stampDutyState})`, formatCurrency(duty), null, 'item', true);
+    
+    if (site.acquisition.buyersAgentFee > 0) {
+        const agent = site.acquisition.purchasePrice * (site.acquisition.buyersAgentFee / 100);
+        addRow("Buyer's Agent Fee", formatCurrency(agent), null, 'item', true);
+    }
+    
+    const acqTotal = site.acquisition.purchasePrice + duty + (site.acquisition.legalFeeEstimate || 0);
+    addRow("Total Acquisition", null, formatCurrency(acqTotal), 'total');
+    addRow("", null, null, 'spacer');
+
+    // --- CONSTRUCTION & OTHER (From Report Model) ---
     const processCategory = (cat: CostCategory, label: string) => {
-        const catItems = detailedItems.filter(i => i.category === cat);
-        if (catItems.length === 0) return;
+        const items = report.itemSummaries.filter(i => i.category === cat);
+        if (items.length === 0) return;
         addRow(label, null, null, 'header');
-        catItems.forEach(i => {
-            addRow(i.description, formatCurrency(i.netAmount), null, 'item', true);
-        });
-        const catSum = catItems.reduce((acc, i) => acc + i.netAmount, 0);
-        addRow(`Total ${label}`, null, formatCurrency(catSum), 'total');
+        items.forEach(i => addRow(i.description, formatCurrency(i.netAmount), null, 'item', true));
+        const sum = items.reduce((acc, i) => acc + i.netAmount, 0);
+        addRow(`Total ${label}`, null, formatCurrency(sum), 'total');
         addRow("", null, null, 'spacer');
     };
-    processCategory(CostCategory.LAND, "Land & Acquisition");
-    processCategory(CostCategory.CONSTRUCTION, "Construction");
-    processCategory(CostCategory.CONSULTANTS, "Consultants");
-    processCategory(CostCategory.STATUTORY, "Statutory & General");
-    processCategory(CostCategory.SELLING, "Selling & Marketing");
-    processCategory(CostCategory.MISCELLANEOUS, "Miscellaneous");
 
-    addRow("Finance Costs", null, null, 'header');
-    addRow("Interest & Line Fees", null, formatCurrency(metrics.totalFinanceCost), 'total');
-    addRow("", null, null, 'spacer');
-    addRow("TOTAL DEVELOPMENT COSTS", null, formatCurrency(metrics.totalCostNet), 'header'); 
-    addRow("", null, null, 'spacer');
-    addRow("NET DEVELOPMENT PROFIT", null, formatCurrency(metrics.netProfit), 'header');
-    addRow("DEVELOPMENT MARGIN", null, formatPct(metrics.devMarginPct), 'total');
+    processCategory(CostCategory.CONSTRUCTION, "Construction Costs");
+    processCategory(CostCategory.CONSULTANTS, "Professional Fees");
+    processCategory(CostCategory.STATUTORY, "Statutory & Rates");
+
+    // --- FINANCE ---
+    addRow("FINANCE & INTEREST", null, null, 'header');
+    addRow("Project Interest & Fees", null, formatCurrency(metrics.totalFinanceCost), 'total');
 
     autoTable(this.doc, {
         startY: this.currentY,
         head: [['Item', 'Amount', 'Subtotal']],
         body: rows.map(r => [r.label, r.detail, r.subtotal]),
         theme: 'plain',
-        styles: { fontSize: 8, cellPadding: 1.2, font: FONTS.body },
-        columnStyles: { 0: { cellWidth: 110 }, 1: { cellWidth: 40, halign: 'right', font: FONTS.mono }, 2: { cellWidth: 40, halign: 'right', font: FONTS.mono, fontStyle: 'bold' } },
+        styles: { font: "helvetica", fontSize: 8, cellPadding: 1.2 },
+        columnStyles: { 
+            0: { cellWidth: 110 }, 
+            1: { cellWidth: 40, halign: 'right', font: "courier" }, 
+            2: { cellWidth: 40, halign: 'right', font: "courier", fontStyle: 'bold' } 
+        },
         didParseCell: (data) => {
             const rowInfo = rows[data.row.index];
             if (data.section === 'head') { data.cell.styles.fillColor = COLORS.primary; data.cell.styles.textColor = 255; }
             if (data.section === 'body') {
-                if (rowInfo.style === 'header') { data.cell.styles.fillColor = COLORS.lightGray; data.cell.styles.fontStyle = 'bold'; }
-                else if (rowInfo.style === 'item') { if (data.column.index === 0) data.cell.styles.cellPadding = { top: 1, bottom: 1, left: rowInfo.indent ? 8 : 2, right: 1 }; }
-                else if (rowInfo.style === 'total' && data.column.index === 2) { data.cell.styles.lineWidth = { top: 0.1, bottom: 0, left: 0, right: 0 }; }
+                if (rowInfo?.style === 'header') { data.cell.styles.fillColor = COLORS.lightGray; data.cell.styles.fontStyle = 'bold'; }
+                else if (rowInfo?.style === 'item') { if (data.column.index === 0) data.cell.styles.cellPadding = { top: 1, bottom: 1, left: rowInfo.indent ? 8 : 2, right: 1 }; }
+                else if (rowInfo?.style === 'total' && data.column.index === 2) { data.cell.styles.lineWidth = { top: 0.1, bottom: 0, left: 0, right: 0 }; }
             }
         }
     });
-    this.currentY = (this.doc as any).lastAutoTable.finalY + 10;
+    this.currentY = (this.doc as any).lastAutoTable.finalY + 15;
   }
 
   private addSensitivityAnalysis(matrix: SensitivityCell[][], scenario: FeasibilityScenario) {
@@ -469,7 +503,7 @@ export class PdfService {
   }
 
   private addItemisedCashflow(data: ItemisedCashflow, projectName: string, startPageNum: number) {
-    const monthsPerPage = 8; // FIX: Reduced from 12 for better spacing
+    const monthsPerPage = 8; 
     const totalMonths = data.headers.length;
     const totalPagesHorizontal = Math.ceil(totalMonths / monthsPerPage);
     let currentPageNum = startPageNum;
@@ -489,7 +523,6 @@ export class PdfService {
             tableBody.push([{ content: cat.name.toUpperCase(), colSpan: currentHeaders.length + 2, styles: { fillColor: [241, 245, 249], fontStyle: 'bold' } }]);
             cat.rows.forEach(row => {
                 const slice = row.values.slice(startIdx, endIdx);
-                // FIX: Ensure values show as "-" if zero instead of "="
                 const formattedSlice = slice.map(v => Math.abs(v) < 1 ? "-" : Math.round(v).toLocaleString());
                 tableBody.push([row.label, ...formattedSlice, formatCurrency(row.total)]);
             });

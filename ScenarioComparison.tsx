@@ -27,7 +27,8 @@ export const ScenarioComparison: React.FC<Props> = ({ scenarios, site }) => {
       const cashflow = FinanceEngine.calculateMonthlyCashflow(scenario, site);
       
       // 2. Use Canonical Metrics Calculator to avoid logic duplication
-      const metrics = FinanceEngine.calculateProjectMetrics(cashflow, scenario.settings);
+      // Fix: Added missing 'site' argument to calculateProjectMetrics
+      const metrics = FinanceEngine.calculateProjectMetrics(cashflow, scenario.settings, site);
       
       // 3. Extract Land Value (Input) for reference
       // Note: Use site acquisition for Land Cost if not explicit in Line Items, or check explicit items

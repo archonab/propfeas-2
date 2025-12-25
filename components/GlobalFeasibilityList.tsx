@@ -1,7 +1,8 @@
 
 import React, { useMemo, useState } from 'react';
 import { useProject } from '../contexts/SiteContext';
-import { FeasibilityScenario, Site, ScenarioStatus } from '../types';
+import { FeasibilityScenario, Site } from '../types-v2';
+import { ScenarioStatus } from '../types';
 import { FinanceEngine } from '../services/financeEngine';
 
 // Enriched type for the flat list
@@ -28,7 +29,8 @@ export const GlobalFeasibilityList: React.FC = () => {
     return sites.map(site => {
       const siteScenarios: EnrichedScenario[] = site.scenarios.map(scen => {
         const cashflow = FinanceEngine.calculateMonthlyCashflow(scen, site);
-        const metrics = FinanceEngine.calculateProjectMetrics(cashflow, scen.settings);
+        // Fix: Added missing 'site' argument to calculateProjectMetrics
+        const metrics = FinanceEngine.calculateProjectMetrics(cashflow, scen.settings, site);
         return {
           uniqueKey: `${site.id}-${scen.id}`,
           siteId: site.id,

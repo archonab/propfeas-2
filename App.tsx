@@ -69,7 +69,8 @@ const SiteCard: React.FC<SiteCardProps> = ({ site, onClick, onOpen }) => {
     if (baseline) {
         // Quick calc or cached metrics would be better, but we calc on fly for now
         const cashflow = FinanceEngine.calculateMonthlyCashflow(baseline, site);
-        const metrics = FinanceEngine.calculateProjectMetrics(cashflow, baseline.settings);
+        // Fix: Added missing 'site' argument to calculateProjectMetrics
+        const metrics = FinanceEngine.calculateProjectMetrics(cashflow, baseline.settings, site);
         margin = metrics.devMarginPct;
     }
 
@@ -192,7 +193,8 @@ const InspectorPanel: React.FC<InspectorPanelProps> = ({ site, onClose, onOpenHu
     let baselineMetrics = null;
     if (baseline) {
         const cashflow = FinanceEngine.calculateMonthlyCashflow(baseline, site);
-        baselineMetrics = FinanceEngine.calculateProjectMetrics(cashflow, baseline.settings);
+        // Fix: Added missing 'site' argument to calculateProjectMetrics
+        baselineMetrics = FinanceEngine.calculateProjectMetrics(cashflow, baseline.settings, site);
     }
 
     return (
@@ -406,12 +408,15 @@ export default function App() {
         zoning: "Pending",
         overlays: [],
       },
+      // Added missing buyersAgentFee and legalFeeEstimate to satisfy SiteAcquisition type
       acquisition: {
         purchasePrice: 0,
         depositPercent: 10,
         settlementPeriod: 0,
         stampDutyState: 'VIC',
         isForeignBuyer: false,
+        buyersAgentFee: 0,
+        legalFeeEstimate: 0,
         vendor: { name: "Pending" },
         purchaser: { entity: "TBC" }
       },

@@ -24,6 +24,8 @@ const createMockSettings = (): FeasibilitySettings => ({
   gstRate: 10,
   totalUnits: 10,
   useMarginScheme: false,
+  // Added required defaultEscalationRate to satisfy the Omit<FeasibilitySettings, "acquisition"> type
+  defaultEscalationRate: 3.0,
   capitalStack: {
     surplusInterestRate: 0,
     equity: { mode: EquityMode.SUM_OF_MONEY, initialContribution: 500000, instalments: [], percentageInput: 0 },
@@ -78,6 +80,8 @@ const mockSite: Site = {
   scenarios: [],
   openTasks: 0,
   openRFIs: 0,
+  // Added required conditions property to satisfy the Site interface in tests
+  conditions: 0,
   createdAt: '',
   updatedAt: ''
 };

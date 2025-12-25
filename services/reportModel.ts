@@ -25,7 +25,6 @@ export const ReportService = {
     );
 
     // 2. Calculate Itemised Flows (For Report Tables)
-    // Note: generateItemisedCashflowData has been updated to include implicit land costs
     const itemisedCashflow = FinanceEngine.generateItemisedCashflowData(
         scenario, 
         site,
@@ -40,10 +39,17 @@ export const ReportService = {
         taxScales
     );
 
-    // 4. Calculate Metrics (Using Canonical Logic)
-    const metrics = FinanceEngine.calculateProjectMetrics(monthlyFlows, scenario.settings);
+    // 4. Generate GST Audit Trail (For Detailed Tax Reporting)
+    const gstAudit = FinanceEngine.generateGstAuditTrail(
+        scenario,
+        site,
+        taxScales
+    );
 
-    // 5. Construct Report Model
+    // 5. Calculate Metrics (Using Canonical Logic)
+    const metrics = FinanceEngine.calculateProjectMetrics(monthlyFlows, scenario.settings, site);
+
+    // 6. Construct Report Model
     return {
         timestamp: new Date().toISOString(),
         basis: {
@@ -52,6 +58,7 @@ export const ReportService = {
         },
         metrics: metrics,
         itemSummaries: itemSummaries,
+        gstAudit: gstAudit,
         reconciliation: {
             totalCostGross: metrics.totalCostGross,
             gstInputCredits: metrics.gstInputCredits,

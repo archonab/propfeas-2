@@ -350,7 +350,8 @@ export const SiteDashboard: React.FC<Props> = ({ site, onOpenScenario, onCreateS
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in zoom-in-95 duration-500">
                       {site.scenarios.map(scen => {
                           const cashflow = FinanceEngine.calculateMonthlyCashflow(scen, site);
-                          const metrics = FinanceEngine.calculateProjectMetrics(cashflow, scen.settings);
+                          // Fix: Added missing 'site' argument to calculateProjectMetrics
+                          const metrics = FinanceEngine.calculateProjectMetrics(cashflow, scen.settings, site);
                           return (
                               <div 
                                 key={scen.id} 

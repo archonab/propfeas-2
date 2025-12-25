@@ -76,8 +76,8 @@ export const calculateIRR = (flows: number[]): number | null => {
     const totalIn = flows.filter(f => f > 0).reduce((a, b) => a + b, 0);
     const totalOut = Math.abs(flows.filter(f => f < 0).reduce((a, b) => a + b, 0));
     
-    // Sanity Check: If you don't get back at least what you put in, IRR is negative/null
-    if (totalIn <= totalOut) return null;
+    // Feastudy Rule: If you don't return at least the principal, IRR is N/A
+    if (totalIn <= totalOut || totalOut === 0) return null;
 
     let guess = 0.1;
     const maxIterations = 50;
@@ -200,7 +200,8 @@ export const calculateMonthlyCashflow = (
         if (tier.limitMethod === DebtLimitMethod.LTC) {
             return new Decimal(hardCostBasis).mul((tier.limit || 0) / 100);
         }
-        return new Decimal(tier.limit || 500000000); 
+        // FIX: Default to hardCostBasis if no limit specified to prevent trillion-dollar fees
+        return new Decimal(tier.limit || hardCostBasis); 
     };
 
     const seniorCeiling = resolveLimit(scenario.settings.capitalStack.senior);
@@ -230,9 +231,14 @@ export const calculateMonthlyCashflow = (
 
         // 2. Process Costs
         scenario.costs.forEach(cost => {
-            if (m >= cost.startDate && m < cost.startDate + cost.span) {
+            let effectiveStart = cost.startDate;
+            if (cost.category === CostCategory.CONSTRUCTION) {
+                effectiveStart += (site.acquisition.settlementPeriod || 0) + (scenario.settings.constructionDelay || 0);
+            }
+
+            if (m >= effectiveStart && m < effectiveStart + cost.span) {
                 const total = calculateLineItemTotal(cost, scenario.settings, site, constructionTotal, estTotalRevenue, taxScales);
-                const monthly = distributeValue(total, m - cost.startDate, cost).toNumber();
+                const monthly = distributeValue(total, m - effectiveStart, cost).toNumber();
                 devSpend += monthly;
                 if (cost.gstTreatment === GstTreatment.TAXABLE) gstCosts += monthly * 0.1;
                 breakdown[cost.category] = (breakdown[cost.category] || 0) + monthly;
@@ -367,10 +373,13 @@ export const generateItemisedCashflowData = (
 ): ItemisedCashflow => {
     const categories: ItemisedCategory[] = [];
     
+    // Get totals for relative calcs
+    const constructionSum = scenario.costs.filter(c => c.category === CostCategory.CONSTRUCTION).reduce((a, b) => a + b.amount, 0);
+    const estTotalRev = scenario.revenues.reduce((a, b) => a + (b.units * b.pricePerUnit), 0);
+
     Object.values(CostCategory).forEach(catName => {
         const rows: ItemisedRow[] = [];
         
-        // Inject implicit land costs for the report to match engine simulation reality
         if (catName === CostCategory.LAND) {
             const depositAmount = site.acquisition.purchasePrice * (site.acquisition.depositPercent / 100);
             const depositRowValues = new Array(monthlyFlows.length).fill(0);
@@ -385,18 +394,20 @@ export const generateItemisedCashflowData = (
         }
 
         scenario.costs.filter(c => c.category === catName).forEach(cost => {
-            const rowValues = new Array(monthlyFlows.length).fill(0);
+            // FIX: Recalculate the SPECIFIC item's flow for this row to show individual fee distribution
+            const totalItemAmount = calculateLineItemTotal(cost, scenario.settings, site, constructionSum, estTotalRev, taxScales);
             
-            // Recalculate the SPECIFIC item's distribution for the report
-            const constructionTotal = scenario.costs.filter(c => c.category === CostCategory.CONSTRUCTION).reduce((a, b) => a + b.amount, 0);
-            const estTotalRev = scenario.revenues.reduce((a, b) => a + (b.units * b.pricePerUnit), 0);
-            const totalItemAmount = calculateLineItemTotal(cost, scenario.settings, site, constructionTotal, estTotalRev, taxScales);
-
-            for (let m = 0; m < monthlyFlows.length; m++) {
-                if (m >= cost.startDate && m < cost.startDate + cost.span) {
-                    rowValues[m] = distributeValue(totalItemAmount, m - cost.startDate, cost).toNumber();
+            const rowValues = monthlyFlows.map((_, m) => {
+                let effectiveStart = cost.startDate;
+                if (cost.category === CostCategory.CONSTRUCTION) {
+                    effectiveStart += (site.acquisition.settlementPeriod || 0) + (scenario.settings.constructionDelay || 0);
                 }
-            }
+
+                if (m >= effectiveStart && m < effectiveStart + cost.span) {
+                    return distributeValue(totalItemAmount, m - effectiveStart, cost).toNumber();
+                }
+                return 0;
+            });
 
             rows.push({ 
                 label: cost.description, 

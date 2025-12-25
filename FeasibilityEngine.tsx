@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { LineItem, RevenueItem, CostCategory, DistributionMethod, InputType, ScenarioStatus, GstTreatment, SmartRates, TaxConfiguration } from './types';
 import { Site, FeasibilityScenario, FeasibilitySettings } from './types-v2';
@@ -117,6 +116,14 @@ export const FeasibilityEngine: React.FC<Props> = ({
   const [activeTab, setActiveTab] = useState(defaultTab);
   const [reportSubTab, setReportSubTab] = useState<'pnl' | 'cashflow'>('pnl');
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [showReportBuilder, setShowReportBuilder] = useState(false);
+  const [reportConfig, setReportConfig] = useState({
+      includeSummary: true,
+      includeAssetFactSheet: true,
+      includePnL: true,
+      includeSensitivity: true,
+      includeCashflow: true
+  });
 
   // Initialize state from the passed scenario prop
   const [settings, setSettings] = useState<FeasibilitySettings>(activeScenario.settings);
@@ -249,21 +256,21 @@ export const FeasibilityEngine: React.FC<Props> = ({
       // Allow UI update
       setTimeout(async () => {
         try {
-            // 1. Generate Matrix (Async with Worker option if supported)
+            // 1. Generate Matrix
             const steps = [-15, -10, -5, 0, 5, 10, 15];
             const sensitivityMatrix = await SensitivityService.generateMatrix(
                 settings,
                 costs,
                 revenues,
-                'revenue', // Default X
-                'cost',    // Default Y
+                'revenue', 
+                'cost',    
                 steps,
                 steps,
-                site, // Update to pass full site
+                site, 
                 { runInWorker: true }
             );
 
-            // 2. Generate detailed 1D Risk Tables (Sync for now as they are fast individual runs)
+            // 2. Generate detailed 1D Risk Tables
             const riskTables = {
                 land: SensitivityService.generateSensitivityTable('land', settings, costs, revenues, site),
                 cost: SensitivityService.generateSensitivityTable('cost', settings, costs, revenues, site),
@@ -272,14 +279,15 @@ export const FeasibilityEngine: React.FC<Props> = ({
                 interest: SensitivityService.generateSensitivityTable('interest', settings, costs, revenues, site)
             };
 
-            // 3. Generate PDF
+            // 3. Generate PDF with current configuration
             await PdfService.generateBoardReport(
                 site,
                 currentScenarioState,
                 report,
                 site.identity,
                 sensitivityMatrix,
-                riskTables
+                riskTables,
+                reportConfig
             );
         } catch (e) {
             console.error("PDF Generation Error", e);
@@ -393,7 +401,7 @@ export const FeasibilityEngine: React.FC<Props> = ({
         <div className="flex-1 overflow-y-auto p-3 lg:p-8">
           <div className="max-w-6xl mx-auto pb-24 md:pb-20">
             
-            {/* TAB: SITE CONTEXT (Now Using DNA Hub in Read-Only Mode) */}
+            {/* TAB: SITE CONTEXT */}
             {activeTab === 'site' && (
               <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 h-full min-h-[600px] bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="bg-blue-50 border-b border-blue-100 p-3 flex justify-between items-center">
@@ -407,11 +415,10 @@ export const FeasibilityEngine: React.FC<Props> = ({
                         </button>
                     )}
                 </div>
-                {/* V2 Site Asset Register */}
                 <div className="p-4">
                     <SiteDNAHub 
                         site={site} 
-                        onUpdate={() => {}} // No-op in read-only mode
+                        onUpdate={() => {}} 
                         readOnly={true}
                     />
                 </div>
@@ -422,12 +429,12 @@ export const FeasibilityEngine: React.FC<Props> = ({
             {activeTab === 'deal' && !isHoldStrategy && (
               <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
                 <AcquisitionManager 
-                  settings={settings as any} // Cast for compatibility if strict types mismatch temporarily, or ensure settings type alignment
+                  settings={settings as any} 
                   onUpdate={setSettings as any} 
                   costs={costs}
                   revenues={revenues}
-                  site={site} // Pass V2 Site
-                  onUpdateSite={handleUpdateSite} // Allow updating site acquisition details
+                  site={site} 
+                  onUpdateSite={handleUpdateSite} 
                   taxScales={taxScales}
                 />
               </div>
@@ -524,7 +531,7 @@ export const FeasibilityEngine: React.FC<Props> = ({
               </div>
             )}
 
-            {/* TAB: INPUTS (Construction/Costs) - Cleaned of Finance */}
+            {/* TAB: INPUTS */}
             {activeTab === 'inputs' && (
               <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
                 {isHoldStrategy && linkedScenario && (
@@ -568,18 +575,18 @@ export const FeasibilityEngine: React.FC<Props> = ({
                   libraryData={libraryData}
                   landArea={site.identity.landArea} 
                   strategy={isHoldStrategy ? 'HOLD' : 'SELL'}
-                  siteDNA={site.identity as any} // Cast for compatibility
-                  site={site} // V2
+                  siteDNA={site.identity as any} 
+                  site={site} 
                 />
               </div>
             )}
 
-            {/* TAB: FUNDING (New dedicated tab) */}
+            {/* TAB: FUNDING */}
             {activeTab === 'funding' && !isHoldStrategy && (
                 <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
                     <FinanceSettings 
                         settings={settings as any} 
-                        site={site} // V2
+                        site={site} 
                         onUpdate={setSettings as any} 
                         peakEquityRequired={stats.peakEquity}
                         projectLocation={site.identity.address} 
@@ -610,7 +617,7 @@ export const FeasibilityEngine: React.FC<Props> = ({
                     </nav>
                     <div className="w-1/3 flex justify-end">
                        <button 
-                         onClick={handleExportPdf}
+                         onClick={() => setShowReportBuilder(true)}
                          disabled={isGeneratingPdf}
                          className={`flex items-center text-[10px] font-bold uppercase tracking-wider bg-slate-800 hover:bg-slate-900 text-white px-3 py-2 rounded-lg transition-all shadow-sm disabled:opacity-50 ${isGeneratingPdf ? 'w-48 justify-center' : ''}`}
                        >
@@ -639,6 +646,43 @@ export const FeasibilityEngine: React.FC<Props> = ({
           </div>
         </div>
       </div>
+
+      {/* REPORT BUILDER MODAL */}
+      {showReportBuilder && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                    <h3 className="font-black text-slate-800 uppercase tracking-tight text-sm">Configure Board Pack</h3>
+                    <button onClick={() => setShowReportBuilder(false)} className="text-slate-400 hover:text-slate-600"><i className="fa-solid fa-xmark"></i></button>
+                </div>
+                <div className="p-6 space-y-3">
+                    {Object.entries(reportConfig).map(([key, enabled]) => (
+                        <label key={key} className="flex items-center p-3 hover:bg-slate-50 rounded-xl cursor-pointer border border-slate-100 transition-all">
+                            <input 
+                                type="checkbox" 
+                                checked={enabled} 
+                                onChange={() => setReportConfig({...reportConfig, [key as keyof typeof reportConfig]: !enabled})}
+                                className="w-5 h-5 text-indigo-600 rounded border-slate-300"
+                            />
+                            <span className="ml-3 text-sm font-bold text-slate-700 capitalize">{key.replace('include', '').replace(/([A-Z])/g, ' $1')}</span>
+                        </label>
+                    ))}
+                </div>
+                <div className="px-6 py-4 bg-slate-50 flex space-x-3">
+                    <button onClick={() => setShowReportBuilder(false)} className="flex-1 py-2 text-xs font-bold text-slate-500 uppercase">Cancel</button>
+                    <button 
+                        onClick={() => {
+                            handleExportPdf(); 
+                            setShowReportBuilder(false);
+                        }}
+                        className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg text-xs uppercase tracking-widest"
+                    >
+                        Generate PDF
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
     </div>
   );
 };

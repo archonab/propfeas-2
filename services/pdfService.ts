@@ -24,8 +24,7 @@ const FONTS = {
 };
 
 const formatCurrency = (val: number) => {
-  if (val === undefined || val === null || isNaN(val)) return "-";
-  if (Math.abs(val) < 0.01) return "-";
+  if (val === undefined || val === null || isNaN(val) || Math.abs(val) < 0.1) return "-";
   const absVal = Math.abs(val).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   return val < 0 ? `(${absVal})` : `${absVal}`;
 };
@@ -65,42 +64,61 @@ export class PdfService {
     report: ReportModel,
     siteDNA: SiteDNA,
     sensitivityMatrix: SensitivityCell[][],
-    riskTables?: Record<string, SensitivityRow[]>
+    riskTables: Record<string, SensitivityRow[]>,
+    config: {
+        includeSummary: boolean;
+        includeAssetFactSheet: boolean;
+        includePnL: boolean;
+        includeSensitivity: boolean;
+        includeCashflow: boolean;
+    }
   ) {
     const builder = new PdfService();
     
     // 1. Cover Page
     await builder.addCoverPage(site, scenario);
     
+    let pageNum = 2;
+
     // 2. Executive Summary
-    builder.addNewPage("portrait");
-    builder.addFeasibilitySummary(site, scenario, report, sensitivityMatrix);
-    builder.addPageFooter(2, site.name);
+    if (config.includeSummary) {
+        builder.addNewPage("portrait");
+        builder.addFeasibilitySummary(site, scenario, report, sensitivityMatrix);
+        builder.addPageFooter(pageNum++, site.name);
+    }
 
     // 3. Asset Fact Sheet
-    builder.addNewPage("portrait");
-    await builder.addAssetFactSheet(site);
-    builder.addPageFooter(3, site.name);
+    if (config.includeAssetFactSheet) {
+        builder.addNewPage("portrait");
+        await builder.addAssetFactSheet(site);
+        builder.addPageFooter(pageNum++, site.name);
+    }
 
     // 4. Valuer's P&L
-    builder.addNewPage("portrait");
-    builder.addValuersPnL(scenario, report, site); 
-    builder.addPageFooter(4, site.name);
+    if (config.includePnL) {
+        builder.addNewPage("portrait");
+        builder.addValuersPnL(scenario, report, site); 
+        builder.addPageFooter(pageNum++, site.name);
+    }
 
     // 5. Sensitivity Analysis
-    builder.addNewPage("portrait");
-    builder.addSensitivityAnalysis(sensitivityMatrix, scenario);
-    builder.addPageFooter(5, site.name);
+    if (config.includeSensitivity) {
+        builder.addNewPage("portrait");
+        builder.addSensitivityAnalysis(sensitivityMatrix, scenario);
+        builder.addPageFooter(pageNum++, site.name);
 
-    // 6. Risk Report
-    if (riskTables) {
-      builder.addNewPage("portrait");
-      builder.addRiskReport(riskTables, site.name);
-      builder.addPageFooter(6, site.name);
+        // Risk Report (Extended Sensitivity)
+        if (riskTables) {
+          builder.addNewPage("portrait");
+          builder.addRiskReport(riskTables, site.name);
+          builder.addPageFooter(pageNum++, site.name);
+        }
     }
 
     // 7. Itemised Cashflow (Landscape)
-    builder.addItemisedCashflow(report.cashflow.itemised, site.name, 7);
+    if (config.includeCashflow) {
+        builder.addItemisedCashflow(report.cashflow.itemised, site.name, pageNum);
+    }
 
     // Save
     const filename = `Investment_Memo_${site.code}_${new Date().toISOString().split('T')[0]}.pdf`;

@@ -1,4 +1,3 @@
-
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { CostCategory, MonthlyFlow, ItemisedCashflow, SensitivityRow, ReportModel, LineItem, GstTreatment, MilestoneLink, TaxConfiguration, SiteDNA } from "../types";
@@ -184,7 +183,7 @@ export class PdfService {
   private addFeasibilitySummary(site: Site, scenario: FeasibilityScenario, report: ReportModel, sensitivityMatrix: SensitivityCell[][]) {
       this.addPageHeader("Development Summary", "Key Performance Indicators", false);
       const metrics = report.metrics;
-      
+
       // --- PROJECT EFFICIENCY BLOCK ---
       this.doc.setFontSize(11);
       this.doc.setFont(FONTS.header, "bold");
@@ -336,7 +335,7 @@ export class PdfService {
       const dna = site.identity;
       const partRows = [
           ["Address", dna.address],
-          ["Land Area", `${dna.landArea.toLocaleString()} sqm`],
+          ["Land Area", `${dna.landArea.toLocaleString()} m2`],
           ["Local Council", dna.lga],
           ["Zoning", `${dna.zoning} ${dna.zoningCode ? `(${dna.zoningCode})` : ''}`],
           ["Title / Folio", dna.titleReference || "TBC"],
@@ -384,14 +383,12 @@ export class PdfService {
         rows.push({ label, detail, subtotal, style, indent });
     };
 
-    // --- REVENUE ---
     addRow("GROSS REALISATION", null, null, 'header');
     addRow("Gross Sales Revenue", formatCurrency(metrics.grossRealisation), null);
     addRow("Less: GST Liability", formatCurrency(metrics.gstOnSales * -1), null, 'item', true);
     addRow("NET REALISATION", null, formatCurrency(metrics.netRealisation), 'total');
     addRow("", null, null, 'spacer');
 
-    // --- ACQUISITION (Pull directly from Site V2) ---
     addRow("LAND & ACQUISITION (NET)", null, null, 'header');
     addRow("Land Purchase Price", formatCurrency(site.acquisition.purchasePrice), null, 'item', true);
     
@@ -407,7 +404,6 @@ export class PdfService {
     addRow("Total Acquisition", null, formatCurrency(acqTotal), 'total');
     addRow("", null, null, 'spacer');
 
-    // --- CONSTRUCTION & OTHER (From Report Model) ---
     const processCategory = (cat: CostCategory, label: string) => {
         const items = report.itemSummaries.filter(i => i.category === cat);
         if (items.length === 0) return;
@@ -422,7 +418,6 @@ export class PdfService {
     processCategory(CostCategory.CONSULTANTS, "Professional Fees");
     processCategory(CostCategory.STATUTORY, "Statutory & Rates");
 
-    // --- FINANCE ---
     addRow("FINANCE & INTEREST", null, null, 'header');
     addRow("Project Interest & Fees", null, formatCurrency(metrics.totalFinanceCost), 'total');
 

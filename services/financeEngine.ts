@@ -1,4 +1,3 @@
-
 import Decimal from 'decimal.js';
 import { 
   LineItem, RevenueItem, MonthlyFlow, DistributionMethod, 
@@ -74,6 +73,12 @@ export const calculateStampDuty = (price: number, state: TaxState, isForeign: bo
 };
 
 export const calculateIRR = (flows: number[]): number | null => {
+    const totalIn = flows.filter(f => f > 0).reduce((a, b) => a + b, 0);
+    const totalOut = Math.abs(flows.filter(f => f < 0).reduce((a, b) => a + b, 0));
+    
+    // Sanity Check: If you don't get back at least what you put in, IRR is negative/null
+    if (totalIn <= totalOut) return null;
+
     let guess = 0.1;
     const maxIterations = 50;
     const precision = 1e-7;
@@ -173,7 +178,6 @@ export const calculateMonthlyCashflow = (
     const flows: MonthlyFlow[] = [];
     
     // --- 1. RESOLVE HARD COST BASIS (Ex Finance) ---
-    // We calculate this once outside the loop to prevent the circular reference
     const constructionTotal = scenario.costs
         .filter(c => c.category === CostCategory.CONSTRUCTION)
         .reduce((a, b) => a + b.amount, 0);
@@ -189,16 +193,13 @@ export const calculateMonthlyCashflow = (
     const agentFee = site.acquisition.purchasePrice * ((site.acquisition.buyersAgentFee || 0) / 100);
     const acquisitionTotal = site.acquisition.purchasePrice + duty + agentFee + (site.acquisition.legalFeeEstimate || 0);
 
-    // This is the static ceiling for LTC calculations
     const hardCostBasis = budgetedHardCosts + acquisitionTotal;
 
     // --- 2. RESOLVE DEBT LIMITS ---
     const resolveLimit = (tier: CapitalTier) => {
         if (tier.limitMethod === DebtLimitMethod.LTC) {
-            // Fix: Base the percentage strictly on Hard Costs to avoid spiral
             return new Decimal(hardCostBasis).mul((tier.limit || 0) / 100);
         }
-        // Safety: If limit is not set, cap at a reasonable large number, not 1e12
         return new Decimal(tier.limit || 500000000); 
     };
 
@@ -206,7 +207,6 @@ export const calculateMonthlyCashflow = (
     const mezzCeiling = resolveLimit(scenario.settings.capitalStack.mezzanine);
     const equityLimit = new Decimal(scenario.settings.capitalStack.equity.initialContribution);
 
-    // Core simulation state
     let seniorBal = new Decimal(0);
     let mezzBal = new Decimal(0);
     let equityBal = new Decimal(0);
@@ -255,11 +255,9 @@ export const calculateMonthlyCashflow = (
         const totalOutflow = devSpend + gstCosts;
         let netCash = netRev - totalOutflow;
 
-        // 4. Funding Simulation
         let dEquity = 0, rEquity = 0, dSenior = 0, rSenior = 0, dMezz = 0, rMezz = 0;
         let intSn = 0, intMz = 0, lineFee = 0;
 
-        // Interest Calculation
         intSn = seniorBal.mul(scenario.settings.capitalStack.senior.interestRate / 100 / 12).toNumber();
         intMz = mezzBal.mul(scenario.settings.capitalStack.mezzanine.interestRate / 100 / 12).toNumber();
         
@@ -267,13 +265,10 @@ export const calculateMonthlyCashflow = (
             lineFee = seniorCeiling.mul((scenario.settings.capitalStack.senior.lineFeePct || 0) / 100 / 12).toNumber();
         }
 
-        // --- ENFORCE LIMITS ON CAPITALISATION ---
-        // Principal + Interest cannot exceed deterministic ceiling.
         if (scenario.settings.capitalStack.senior.isInterestCapitalised) {
             const capRoom = Decimal.max(0, seniorCeiling.sub(seniorBal));
             const actualCap = Decimal.min(intSn, capRoom);
             seniorBal = seniorBal.add(actualCap);
-            // If interest couldn't be fully capitalised, it adds to the monthly cash deficit
             netCash -= (intSn - actualCap.toNumber());
         }
 
@@ -287,14 +282,12 @@ export const calculateMonthlyCashflow = (
         if (netCash < 0) {
             let deficit = Math.abs(netCash) + lineFee;
             
-            // Priority 1: Equity (Initial Contributions)
             const eqAvail = Decimal.max(0, equityLimit.sub(equityBal));
             const eqDraw = Decimal.min(deficit, eqAvail);
             dEquity = eqDraw.toNumber();
             equityBal = equityBal.add(eqDraw);
             deficit -= dEquity;
 
-            // Priority 2: Senior Debt (Capped at deterministic ceiling)
             if (deficit > 0) {
                 const snAvail = Decimal.max(0, seniorCeiling.sub(seniorBal));
                 const snDraw = Decimal.min(deficit, snAvail);
@@ -303,7 +296,6 @@ export const calculateMonthlyCashflow = (
                 deficit -= dSenior;
             }
 
-            // Priority 3: Mezzanine (Capped at deterministic ceiling)
             if (deficit > 0) {
                 const mzAvail = Decimal.max(0, mezzCeiling.sub(mezzBal));
                 const mzDraw = Decimal.min(deficit, mzAvail);
@@ -312,13 +304,11 @@ export const calculateMonthlyCashflow = (
                 deficit -= dMezz;
             }
 
-            // Priority 4: Residual Equity (Gap Funding / Capital Call)
             if (deficit > 0) {
                 dEquity += deficit;
                 equityBal = equityBal.add(deficit);
             }
         } else {
-            // Repayment Waterfall
             let surplus = netCash - lineFee;
             
             const snPay = Decimal.min(surplus, seniorBal);
@@ -369,22 +359,57 @@ export const calculateMonthlyCashflow = (
     return flows;
 };
 
-export const generateItemisedCashflowData = (scenario: FeasibilityScenario, site: Site, monthlyFlows: MonthlyFlow[], taxScales: TaxConfiguration = DEFAULT_TAX_SCALES): ItemisedCashflow => {
+export const generateItemisedCashflowData = (
+  scenario: FeasibilityScenario, 
+  site: Site, 
+  monthlyFlows: MonthlyFlow[],
+  taxScales: TaxConfiguration = DEFAULT_TAX_SCALES
+): ItemisedCashflow => {
     const categories: ItemisedCategory[] = [];
-    const catNames = Object.values(CostCategory);
-    catNames.forEach(name => {
+    
+    Object.values(CostCategory).forEach(catName => {
         const rows: ItemisedRow[] = [];
-        scenario.costs.filter(c => c.category === name).forEach(cost => {
-            const values = monthlyFlows.map(f => f.costBreakdown[name] || 0);
-            rows.push({ label: cost.description, values, total: values.reduce((a, b) => a + b, 0) });
+        
+        if (catName === CostCategory.LAND) {
+            const depositAmount = site.acquisition.purchasePrice * (site.acquisition.depositPercent / 100);
+            const depositRowValues = new Array(monthlyFlows.length).fill(0);
+            if (depositRowValues.length > 0) depositRowValues[0] = depositAmount;
+            rows.push({ label: 'Land Deposit', values: depositRowValues, total: depositAmount });
+
+            const settlementAmount = site.acquisition.purchasePrice * (1 - site.acquisition.depositPercent / 100);
+            const settlementMonth = site.acquisition.settlementPeriod || 0;
+            const settlementRowValues = new Array(monthlyFlows.length).fill(0);
+            if (settlementMonth < settlementRowValues.length) settlementRowValues[settlementMonth] = settlementAmount;
+            rows.push({ label: 'Land Settlement', values: settlementRowValues, total: settlementAmount });
+        }
+
+        scenario.costs.filter(c => c.category === catName).forEach(cost => {
+            const rowValues = new Array(monthlyFlows.length).fill(0);
+            
+            const constructionTotal = scenario.costs.filter(c => c.category === CostCategory.CONSTRUCTION).reduce((a, b) => a + b.amount, 0);
+            const estTotalRev = scenario.revenues.reduce((a, b) => a + (b.units * b.pricePerUnit), 0);
+            const totalItemAmount = calculateLineItemTotal(cost, scenario.settings, site, constructionTotal, estTotalRev, taxScales);
+
+            for (let m = 0; m < monthlyFlows.length; m++) {
+                if (m >= cost.startDate && m < cost.startDate + cost.span) {
+                    rowValues[m] = distributeValue(totalItemAmount, m - cost.startDate, cost).toNumber();
+                }
+            }
+
+            rows.push({ 
+                label: cost.description, 
+                values: rowValues, 
+                total: rowValues.reduce((a, b) => a + b, 0) 
+            });
         });
-        if (rows.length > 0) categories.push({ name, rows });
+
+        if (rows.length > 0) {
+            const catDisplayName = catName === CostCategory.LAND ? 'Land & Acquisition' : catName;
+            categories.push({ name: catDisplayName as any, rows });
+        }
     });
 
-    return {
-        headers: monthlyFlows.map(f => f.label),
-        categories
-    };
+    return { headers: monthlyFlows.map(f => f.label), categories };
 };
 
 export const calculateLineItemSummaries = (scenario: FeasibilityScenario, site: Site, taxScales: TaxConfiguration = DEFAULT_TAX_SCALES): LineItemSummary[] => {

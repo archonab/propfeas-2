@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Site, SiteIdentity, SiteAcquisition, SitePlanning } from '../types-v2';
 import { TaxState, PermitStatus, FloodZone } from '../types';
@@ -92,6 +91,36 @@ export const SiteAssetRegister: React.FC<Props> = ({ site, onUpdate, readOnly = 
               <option value="NSW">New South Wales</option>
               <option value="QLD">Queensland</option>
             </select>
+          </div>
+
+          <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Gross Floor Area (GFA)</label>
+              <div className="relative">
+                  <input 
+                      type="number"
+                      value={site.identity.totalGFA || 0}
+                      onChange={(e) => updateIdentity('totalGFA', parseFloat(e.target.value))}
+                      disabled={readOnly}
+                      className="w-full border-slate-200 rounded-lg focus:ring-blue-500"
+                      placeholder="Total Building Area"
+                  />
+                  <span className="absolute right-3 top-2 text-xs font-bold text-slate-400">sqm</span>
+              </div>
+          </div>
+
+          <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Net Saleable Area (NSA)</label>
+              <div className="relative">
+                  <input 
+                      type="number"
+                      value={site.identity.totalNSA || 0}
+                      onChange={(e) => updateIdentity('totalNSA', parseFloat(e.target.value))}
+                      disabled={readOnly}
+                      className="w-full border-slate-200 rounded-lg focus:ring-blue-500"
+                      placeholder="Internal Sellable Area"
+                  />
+                  <span className="absolute right-3 top-2 text-xs font-bold text-slate-400">sqm</span>
+              </div>
           </div>
           
           <div>

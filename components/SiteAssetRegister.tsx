@@ -98,13 +98,13 @@ export const SiteAssetRegister: React.FC<Props> = ({ site, onUpdate, readOnly = 
               <div className="relative">
                   <input 
                       type="number"
-                      value={site.identity.totalGFA || 0}
+                      value={site.identity.totalGFA || ''}
                       onChange={(e) => updateIdentity('totalGFA', parseFloat(e.target.value))}
                       disabled={readOnly}
-                      className="w-full border-slate-200 rounded-lg focus:ring-blue-500"
-                      placeholder="Total Building Area"
+                      className="w-full border-slate-200 rounded-lg focus:ring-blue-500 text-sm font-bold"
+                      placeholder="0"
                   />
-                  <span className="absolute right-3 top-2 text-xs font-bold text-slate-400">sqm</span>
+                  <span className="absolute right-3 top-2 text-[10px] font-bold text-slate-400">sqm</span>
               </div>
           </div>
 
@@ -113,13 +113,13 @@ export const SiteAssetRegister: React.FC<Props> = ({ site, onUpdate, readOnly = 
               <div className="relative">
                   <input 
                       type="number"
-                      value={site.identity.totalNSA || 0}
+                      value={site.identity.totalNSA || ''}
                       onChange={(e) => updateIdentity('totalNSA', parseFloat(e.target.value))}
                       disabled={readOnly}
-                      className="w-full border-slate-200 rounded-lg focus:ring-blue-500"
-                      placeholder="Internal Sellable Area"
+                      className="w-full border-slate-200 rounded-lg focus:ring-blue-500 text-sm font-bold"
+                      placeholder="0"
                   />
-                  <span className="absolute right-3 top-2 text-xs font-bold text-slate-400">sqm</span>
+                  <span className="absolute right-3 top-2 text-[10px] font-bold text-slate-400">sqm</span>
               </div>
           </div>
           

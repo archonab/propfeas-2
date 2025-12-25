@@ -24,6 +24,7 @@ const FONTS = {
 };
 
 const formatCurrency = (val: number) => {
+  if (val === undefined || val === null || isNaN(val)) return "-";
   if (Math.abs(val) < 0.01) return "-";
   const absVal = Math.abs(val).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   return val < 0 ? `(${absVal})` : `${absVal}`;

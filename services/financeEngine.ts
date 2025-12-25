@@ -370,6 +370,7 @@ export const generateItemisedCashflowData = (
     Object.values(CostCategory).forEach(catName => {
         const rows: ItemisedRow[] = [];
         
+        // Inject implicit land costs for the report to match engine simulation reality
         if (catName === CostCategory.LAND) {
             const depositAmount = site.acquisition.purchasePrice * (site.acquisition.depositPercent / 100);
             const depositRowValues = new Array(monthlyFlows.length).fill(0);
@@ -386,6 +387,7 @@ export const generateItemisedCashflowData = (
         scenario.costs.filter(c => c.category === catName).forEach(cost => {
             const rowValues = new Array(monthlyFlows.length).fill(0);
             
+            // Recalculate the SPECIFIC item's distribution for the report
             const constructionTotal = scenario.costs.filter(c => c.category === CostCategory.CONSTRUCTION).reduce((a, b) => a + b.amount, 0);
             const estTotalRev = scenario.revenues.reduce((a, b) => a + (b.units * b.pricePerUnit), 0);
             const totalItemAmount = calculateLineItemTotal(cost, scenario.settings, site, constructionTotal, estTotalRev, taxScales);

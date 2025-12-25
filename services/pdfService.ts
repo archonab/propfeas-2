@@ -388,7 +388,7 @@ export class PdfService {
     this.doc.setFontSize(10);
     this.doc.setTextColor(150);
     this.doc.text(`Date: ${new Date().toLocaleDateString()}`, 20, pageHeight - 30);
-    this.doc.text("Prepared by DevFeas Pro", 20, pageHeight - 25);
+    this.doc.text("Prepared by SH Connect", 20, pageHeight - 25);
     this.doc.text("Commercial in Confidence", pageWidth - 20, pageHeight - 25, { align: 'right' });
   }
 
@@ -806,7 +806,7 @@ export class PdfService {
     
     this.doc.setFontSize(8);
     this.doc.setTextColor(100);
-    this.doc.text("DevFeas Pro | Commercial in Confidence", 15, pageHeight - 10);
+    this.doc.text("SH Connect | Commercial in Confidence", 15, pageHeight - 10);
     this.doc.text(`Page ${pageNum}`, pageWidth - 15, pageHeight - 10, { align: "right" });
   }
 }

@@ -31,11 +31,11 @@ export const AppShell: React.FC<Props> = ({ children, activeModule = 'portfolio'
     <div className="flex h-screen w-screen bg-slate-50 overflow-hidden font-sans">
       
       {/* GLOBAL RAIL (Immutable) */}
-      <aside className="w-[60px] bg-slate-900 flex flex-col items-center py-6 shrink-0 z-[60] border-r border-slate-800">
+      <aside className="w-[60px] bg-slate-900 flex flex-col items-center py-6 shrink-0 z-[60] relative border-r border-slate-800">
         
         {/* Brand */}
         <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-xl flex items-center justify-center text-white font-black text-xs mb-8 shadow-inner border border-white/10">
-           DF
+           SH
         </div>
 
         {/* App Switcher */}

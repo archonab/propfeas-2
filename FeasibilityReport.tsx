@@ -382,7 +382,7 @@ export const FeasibilityReport: React.FC<Props> = ({ scenario, site, stats, onNa
             : <ValuerReport scenario={scenario} stats={stats} detailedCosts={detailedCosts} onNavigate={onNavigate} site={site} />
           }
           <div className="mt-12 text-center text-[10px] text-slate-300 border-t border-slate-100 pt-4 flex justify-between uppercase tracking-widest font-bold">
-            <p>DevFeas Pro System</p>
+            <p>SH Connect System</p>
             <p>Commercial in Confidence</p>
           </div>
        </div>

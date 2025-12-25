@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { FeasibilityScenario, ScenarioStatus } from '../types';
+// Fixed: Separated imports for shared status and V2 scenario structure
+import { ScenarioStatus } from '../types';
+import { FeasibilityScenario } from '../types-v2';
 import { BASE_SELL_TEMPLATE, BASE_HOLD_TEMPLATE } from '../constants';
 
 interface Props {
@@ -28,7 +30,8 @@ export const ScenarioWizard: React.FC<Props> = ({ isOpen, onClose, onCreate, pro
       ...JSON.parse(JSON.stringify(template)),
       id: `scen-${Date.now()}`,
       name: name || (strategy === 'SELL' ? 'New Trading Scenario' : 'New Hold Scenario'),
-      lastUpdated: new Date().toISOString(),
+      // Fixed: updated lastUpdated to updatedAt to match V2 schema
+      updatedAt: new Date().toISOString(),
       isBaseline: false, 
       status: ScenarioStatus.DRAFT,
       strategy: strategy

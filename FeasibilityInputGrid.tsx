@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { CostCategory, DistributionMethod, InputType, LineItem, FeasibilitySettings, LineItemTag, MilestoneLink, SiteDNA, TaxConfiguration, CalculationLink, GstTreatment, InputScale } from './types';
 import { Site } from './types-v2';
@@ -22,7 +21,7 @@ interface Props {
   libraryData?: LineItem[];
   landArea: number; 
   strategy?: 'SELL' | 'HOLD';
-  siteDNA?: SiteDNA; // Deprecated but kept for signature compatibility if needed
+  // Fixed: Removed deprecated siteDNA prop
   site: Site; // V2 Required
   taxScales?: TaxConfiguration;
 }

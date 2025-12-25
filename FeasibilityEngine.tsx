@@ -575,7 +575,6 @@ export const FeasibilityEngine: React.FC<Props> = ({
                   libraryData={libraryData}
                   landArea={site.identity.landArea} 
                   strategy={isHoldStrategy ? 'HOLD' : 'SELL'}
-                  siteDNA={site.identity as any} 
                   site={site} 
                 />
               </div>

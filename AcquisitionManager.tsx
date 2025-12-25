@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState, useEffect } from 'react';
 import { FeasibilitySettings, LineItem, RevenueItem, TaxConfiguration } from './types';
 import { Site, SiteAcquisition } from './types-v2';
@@ -90,7 +89,8 @@ export const AcquisitionManager: React.FC<Props> = ({ settings, onUpdate, costs 
                       settings,
                       costs,
                       revenues,
-                      site.identity // Passing site DNA logic (identity)
+                      // Fixed: Pass the whole site object instead of site.identity to match V2 Solver signature
+                      site
                   );
                   
                   if (result.success && result.landValue !== acquisition.purchasePrice) {

@@ -195,18 +195,29 @@ export const calculateMonthlyCashflow = (
 
     const hardCostBasis = budgetedHardCosts + acquisitionTotal;
 
-    // --- 2. RESOLVE DEBT LIMITS ---
-    const resolveLimit = (tier: CapitalTier) => {
+    // --- 2. RESOLVE DEBT & EQUITY LIMITS ---
+    const resolveLimit = (tier: CapitalTier, basis: number) => {
         if (tier.limitMethod === DebtLimitMethod.LTC) {
-            return new Decimal(hardCostBasis).mul((tier.limit || 0) / 100);
+            return new Decimal(basis).mul((tier.limit || 0) / 100);
         }
-        // FIX: Default to hardCostBasis if no limit specified to prevent trillion-dollar fees
-        return new Decimal(tier.limit || hardCostBasis); 
+        return new Decimal(tier.limit || basis); 
     };
 
-    const seniorCeiling = resolveLimit(scenario.settings.capitalStack.senior);
-    const mezzCeiling = resolveLimit(scenario.settings.capitalStack.mezzanine);
-    const equityLimit = new Decimal(scenario.settings.capitalStack.equity.initialContribution);
+    // Fix: Resolve dynamic equity limit based on mode
+    let resolvedEquityLimit = new Decimal(scenario.settings.capitalStack.equity.initialContribution);
+    if (scenario.settings.capitalStack.equity.mode === EquityMode.PCT_LAND) {
+        const purchasePrice = site.acquisition.purchasePrice;
+        const pct = scenario.settings.capitalStack.equity.percentageInput / 100;
+        let basis = purchasePrice;
+        if (scenario.settings.capitalStack.equity.includeAcquisitionCosts) {
+            basis = acquisitionTotal;
+        }
+        resolvedEquityLimit = new Decimal(basis).mul(pct);
+    }
+
+    const equityLimit = resolvedEquityLimit;
+    const seniorCeiling = resolveLimit(scenario.settings.capitalStack.senior, hardCostBasis);
+    const mezzCeiling = resolveLimit(scenario.settings.capitalStack.mezzanine, hardCostBasis);
 
     let seniorBal = new Decimal(0);
     let mezzBal = new Decimal(0);
@@ -288,6 +299,7 @@ export const calculateMonthlyCashflow = (
         if (netCash < 0) {
             let deficit = Math.abs(netCash) + lineFee;
             
+            // 1. Draw Equity up to calculated limit
             const eqAvail = Decimal.max(0, equityLimit.sub(equityBal));
             const eqDraw = Decimal.min(deficit, eqAvail);
             dEquity = eqDraw.toNumber();
@@ -310,6 +322,7 @@ export const calculateMonthlyCashflow = (
                 deficit -= dMezz;
             }
 
+            // 4. Track Gap Equity (Deficit remaining after all limits)
             if (deficit > 0) {
                 dEquity += deficit;
                 equityBal = equityBal.add(deficit);
@@ -394,7 +407,7 @@ export const generateItemisedCashflowData = (
         }
 
         scenario.costs.filter(c => c.category === catName).forEach(cost => {
-            // FIX: Recalculate the SPECIFIC item's flow for this row to show individual fee distribution
+            // FIX: Recalculate the SPECIFIC item's flow for this row
             const totalItemAmount = calculateLineItemTotal(cost, scenario.settings, site, constructionSum, estTotalRev, taxScales);
             
             const rowValues = monthlyFlows.map((_, m) => {

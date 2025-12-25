@@ -1,7 +1,7 @@
-
 import React from 'react';
 import { FeasibilityEngine } from './FeasibilityEngine';
-import { Site } from './types';
+// Fixed: Changed Site import to use types-v2
+import { Site } from './types-v2';
 import { useProject } from './contexts/SiteContext';
 
 interface Props {

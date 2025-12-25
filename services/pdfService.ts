@@ -448,8 +448,8 @@ export class PdfService {
         styles: { font: "helvetica", fontSize: 8, cellPadding: 1.2 },
         columnStyles: { 
             0: { cellWidth: 110 }, 
-            1: { cellWidth: 40, halign: 'right', font: "courier" }, 
-            2: { cellWidth: 40, halign: 'right', font: "courier", fontStyle: 'bold' } 
+            1: { cellWidth: 40, halign: 'right', font: FONTS.mono }, 
+            2: { cellWidth: 40, halign: 'right', font: FONTS.mono, fontStyle: 'bold' } 
         },
         didParseCell: (data) => {
             const rowInfo = rows[data.row.index];
@@ -547,10 +547,10 @@ export class PdfService {
             head: tableHeaders,
             body: tableBody,
             theme: 'grid',
-            styles: { fontSize: 7, cellPadding: 2, font: "courier", overflow: 'linebreak' },
+            styles: { fontSize: 7, cellPadding: 2, font: FONTS.mono, overflow: 'linebreak' },
             headStyles: { fillColor: [30, 41, 59], halign: 'center' },
             columnStyles: {
-                0: { cellWidth: 45, font: "helvetica", fontStyle: 'bold' },
+                0: { cellWidth: 45, font: FONTS.body, fontStyle: 'bold' },
                 [currentHeaders.length + 1]: { cellWidth: 25, halign: 'right', fontStyle: 'bold' }
             },
             didParseCell: (data) => {
